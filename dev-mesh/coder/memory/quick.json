@@ -1,0 +1,27 @@
+{
+  "win-cmd-spawn": {
+    "status": "active",
+    "valid_to": null,
+    "core": true,
+    "l0": "Windows: never spawn a .cmd/.bat directly — unwrap the npm shim first.",
+    "l1": "Modern Node refuses to spawn a .cmd/.bat without a shell (CVE-2024-27980) → spawn EINVAL. Route every claude/git spawn through src/process.js resolveSpawnTarget, which follows the npm .cmd shim to its real .exe/.js, for both bare `claude` and a concrete AGENT_MESH_CLAUDE=...claude.cmd path.",
+    "value": "When adding a new spawn site, never use raw spawn('claude', …). Use spawnFile/resolveSpawnTarget. resolveConcreteWin handles a concrete .cmd path (the 2026-06-09 fix; before it only .js was special-cased so a concrete .cmd hit EINVAL). Regression coverage: test/process.test.js (win32-guarded).",
+    "provenance": { "source": "CLAUDE.md#Lessons-learned", "ts": "2026-06-14" }
+  },
+  "dashboard-resume-id": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Dashboard/session launches must use `claude --resume <id>`, never --continue.",
+    "l1": "--continue is a recency heuristic: another terminal or transcript touch in the same cwd can make Claude pick a different context. If the UI has a concrete session id, always pass that UUID as --resume <id>; use --session-id only for a reserved canonical id whose transcript doesn't exist yet.",
+    "value": "Root cause of the 2026-06-09 alternating-context bug. Do not use --continue from dashboard/session launch routes. Regression: test/shell-endpoint.test.js, test/session-routes.test.js.",
+    "provenance": { "source": "CLAUDE.md#Lessons-learned", "ts": "2026-06-14" }
+  },
+  "hermetic-no-first-turn-tools": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Never gate tests/prompts on first-turn MCP tool visibility.",
+    "l1": "In headless `claude -p`, the stream-json init event reports every MCP server as pending — the first model call may begin before mcp__agentmesh_peerbridge__* registers. A worker asked to enumerate or call a tool too early truthfully denies having it.",
+    "value": "Mitigations: phrase worker tasks FUNCTIONALLY (describe the goal, never the internal tool name); eval fixtures must not assert first-turn tool enumeration; src/cli.js lazy-loads per command to shrink the window. The race is claude-CLI sequencing — not fixable framework-side.",
+    "provenance": { "source": "CLAUDE.md#Lessons-learned", "ts": "2026-06-14" }
+  }
+}

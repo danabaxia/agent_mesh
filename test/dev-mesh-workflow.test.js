@@ -93,3 +93,30 @@ test('each workflow drives its own role via dev-mesh/<role>', () => {
     assert.match(wf[n], new RegExp(`dev-mesh/${role[n]}`), `${n}: should reference dev-mesh/${role[n]}`);
   }
 });
+
+// --- Task 9: the nightly dogfood (Phase-1 mesh-native, non-gating) ---
+const dogfood = (() => {
+  const p = `${dir}dev-mesh-dogfood.yml`;
+  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+})();
+
+test('dogfood: scheduled + manual, NEVER per-PR (non-gating)', () => {
+  assert.ok(dogfood, 'dev-mesh-dogfood.yml missing');
+  assert.match(dogfood, /schedule:/);
+  assert.match(dogfood, /workflow_dispatch:/);
+  // A push/pull_request trigger here would run a real claude on every change and
+  // could become a de-facto gate — forbidden.
+  assert.doesNotMatch(dogfood, /^\s*push:/m, 'dogfood must not run on push');
+  assert.doesNotMatch(dogfood, /^\s*pull_request:/m, 'dogfood must not run on pull_request');
+  assert.match(dogfood, /cancel-in-progress:\s*false/, 'a half-finished end-to-end run must not be cancelled');
+});
+
+test('dogfood: real-claude, materializes the real mesh, read-only & non-merging', () => {
+  assert.match(dogfood, /npm i -g @anthropic-ai\/claude-code/, 'installs the real claude');
+  assert.match(dogfood, /if \[ -z "\$ANTHROPIC_API_KEY" \]/, 'fail-fast secret preflight');
+  assert.match(dogfood, /doctor dev-mesh --apply/, 'materializes the real Dev-mesh (Phase 1)');
+  // Observational: read-only repo, artifacts logs, never merges.
+  assert.match(dogfood, /contents:\s*read/, 'dogfood must be read-only (no pushes)');
+  assert.match(dogfood, /upload-artifact/, 'dogfood artifacts its run logs');
+  assert.doesNotMatch(dogfood, /gh pr merge|merge_pull_request|--auto\b/i, 'dogfood never merges');
+});
