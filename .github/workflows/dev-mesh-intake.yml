@@ -1,0 +1,54 @@
+# Dev-mesh · Analyst (intake) — Phase 0.
+# Reacts to backlog Issues: discusses, drafts specs, manages lifecycle labels.
+# This is the front of the approval gate (§5.3): discussion + spec only, NEVER code.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §5/§6
+name: dev-mesh-intake
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+  issue_comment:
+    types: [created]
+
+# Discuss + draft specs + manage labels. May open a spec PR (pull-requests: write)
+# but must NOT push code to the repo — read-only repo contents keeps the approval
+# gate honest.
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: dev-mesh-intake-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    # Ignore the society's own bot comments to avoid a self-trigger loop.
+    if: github.event.sender.type != 'Bot'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Drive the Analyst (discuss → spec → labels)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the **Analyst** of the agent_mesh Dev-mesh. Read your role at
+            `dev-mesh/analyst/AGENT.md` and skills under `dev-mesh/analyst/skills/`.
+            The backlog is GitHub Issues, each in exactly one label-encoded state
+            (idea → discussing → spec:draft → spec:in-review → approved → …). The label
+            conventions live in `dev-mesh/backlog.md`.
+
+            Issue #${{ github.event.issue.number }} just changed. Move it forward by one
+            honest step: clarify/discuss an `idea`, or — when scope is clear — write a
+            ready-for-review spec (skill `write-spec`) and open a spec PR labeled
+            `spec:in-review`. Update the lifecycle label to match reality.
+
+            HARD RULE (approval gate, §5.3): do NOT implement anything. No code edits, no
+            code branch, no `approved` label — only a human grants approval. You produce
+            discussion, specs, and label transitions only.

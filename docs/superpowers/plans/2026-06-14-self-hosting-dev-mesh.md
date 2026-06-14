@@ -91,13 +91,13 @@ execution (tests/eval/git/act) runs as **workflow steps**, never model `Bash`
 - [x] Hermetic test: every card skill has a matching `SKILL.md` (frontmatter name == id) + safety-critical skills encode the invariants.
 - _Secondary skills (absorb-findings/ideate/dedupe/conformance-fix/worktree-hygiene/spec-conformance/drift-prune) deferred — add as the workflows that exercise them land._
 
-### Task 6: Phase-0 workflows (per-role claude-code-action)
+### Task 6: Phase-0 workflows (per-role claude-code-action) ✅ DONE
 
-**Files:** Create the six `.github/workflows/dev-mesh-*.yml` + `test/dev-mesh-workflow.test.js`.
+**Files:** six `.github/workflows/dev-mesh-{research,intake,backlog,triage,review,curate}.yml` + `test/dev-mesh-workflow.test.js`.
 
-- [ ] **Step 1 — lint test first:** assert each workflow (a) triggers as specified, (b) is **fork-PR-safe** (no secrets exposed to `pull_request` from forks), (c) backlog/triage use `concurrency:` for the claim lock, (d) auto-merge is absent.
-- [ ] **Step 2:** author the workflows: checkout → install → `claude-code-action@v1` with the role prompt + skills + the classifier/backlog modules; intake/backlog enforce the approval gate (no `do` work unless Issue is `approved`).
-- [ ] **Step 3:** dry-run with `act` locally where feasible; green the lint test.
+- [x] **Step 1 — lint test first (TDD):** 8 assertions over raw workflow text (zero-dep, like `integration-workflow.test.js`): triggers match §6; **F4 fork-PR safety** (no `pull_request_target` anywhere; `review`/`curate` gate on `head.repo.full_name == github.repository`); ask-role least-privilege (`review` keeps `contents: read`); claim lock (`backlog`/`triage` `concurrency` + `cancel-in-progress: false`); approval gate (`backlog` gates on `approved`, `intake` never writes repo contents); **no auto-merge** anywhere; each drives its own `dev-mesh/<role>`.
+- [x] **Step 2:** authored all six — checkout → setup-node → `claude-code-action@v1` with the role prompt pointing at `dev-mesh/<role>/AGENT.md` + skills + the classifier/backlog modules; intake/backlog enforce the approval gate; `backlog` runs the suite as a workflow shell step (§4.1).
+- [x] **Step 3:** all six validated as parseable YAML; lint test 8/8 green; full suite 121/122 (1 = container signing flake).
 
 ### Task 7: Phase-1 mesh-native (dogfooding milestone)
 

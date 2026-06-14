@@ -1,0 +1,61 @@
+# Dev-mesh · Maintainer → Coder (backlog) — Phase 0.
+# Picks up APPROVED, unclaimed work (event + poll), claims it atomically, and builds.
+# The concurrency group is the claim lock (§9): at most one run per issue, never
+# cancelled mid-flight, so two ticks can't double-claim the same task.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §5.5/§6/§9
+name: dev-mesh-backlog
+
+on:
+  issues:
+    types: [labeled]
+  schedule:
+    - cron: '*/30 * * * *' # poll every 30 min for approved ∧ unclaimed
+
+# The workflow (not the model) holds write: it commits the Coder's edits and opens
+# the PR. The model never gets push tokens directly.
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: dev-mesh-backlog-${{ github.event.issue.number || 'poll' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Drive Maintainer → Coder → Tester
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the **Maintainer** of the agent_mesh Dev-mesh. Read your role at
+            `dev-mesh/maintainer/AGENT.md` and skills (route-work, watch-backlog). The
+            lifecycle/labels are in `dev-mesh/backlog.md`; the state machine is
+            `src/dev-mesh/backlog.js`.
+
+            APPROVAL GATE (§5.3): only act on Issues that are `approved` AND unclaimed
+            (no assignee, not `in-progress`). If none qualify, do nothing and stop.
+
+            For one ready task (FIFO): CLAIM it atomically — assign yourself (the assignee
+            is the lock) and move the label `approved → in-progress` — then act as the
+            **Coder** (`dev-mesh/coder/AGENT.md`, skills patch-planning + test-strategy):
+            make the smallest correct edit; uphold the invariants (no Bash in do, single
+            writable root, anti-spoof surface). Then act as the **Tester** to interpret
+            the suite output. Iterate within a bounded retry budget; if you can't reach
+            green, stop and report on the Issue.
+      # §4.1: the WORKFLOW runs all shell — the suite that verifies the change.
+      - name: Verify (workflow-run suite)
+        run: node run-all-tests.mjs
+      - name: Open PR for review (no auto-merge — a human merges)
+        if: success()
+        run: |
+          echo "Coder's branch is verified; open a PR via the GitHub MCP and move the"
+          echo "Issue to pr:in-review. Merge stays human-held (auto-merge is off)."
