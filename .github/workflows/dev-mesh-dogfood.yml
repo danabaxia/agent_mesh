@@ -40,10 +40,10 @@ jobs:
       # Fail-fast on a missing secret (clear error beats a per-step timeout).
       - name: Preflight — require the real-claude key
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::ANTHROPIC_API_KEY is required for the dogfood run"; exit 1
+          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN is required for the dogfood run"; exit 1
           fi
       - name: Install the real claude CLI
         run: npm i -g @anthropic-ai/claude-code
@@ -56,7 +56,7 @@ jobs:
                       test/dev-mesh-workflow.test.js test/dev-mesh-memory.test.js
       - name: Drive the Maintainer end-to-end (real claude over serve-a2a)
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Depth covers Maintainer → Triager → Coder → Tester (one onward hop each).
           AGENT_MESH_DEPTH: '4'
         run: |
@@ -66,7 +66,7 @@ jobs:
           # over serve-a2a/peer-bridge. The Coder's do-mode edits stay inside its
           # path-guarded worktree (single writable root) — proven by the e2e net.
           claude -p "You are the Maintainer of dev-mesh. Read dev-mesh/maintainer/AGENT.md. $TASK Do NOT push, merge, or mutate the repo — this is an observability dogfood." \
-            --model claude-opus-4-8 --output-format json > dogfood-run.json || echo "::warning::dogfood run exited non-zero (captured for triage)"
+            --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }} --output-format json > dogfood-run.json || echo "::warning::dogfood run exited non-zero (captured for triage)"
       - name: Upload run logs (artifact, non-gating)
         if: always()
         uses: actions/upload-artifact@v4

@@ -32,14 +32,15 @@ jobs:
           node-version: 20
       - name: Drive Maintainer → Coder → Tester
         uses: anthropics/claude-code-action@v1
+        id: claude
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Pin the standard Opus 4.8. The action otherwise defaults to the gated
-          # 1M-context Opus variant, which the API rejects instantly (is_error,
-          # $0). The plain id is proven-good (keycheck run).
+          # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
+          # action otherwise forces Opus 4.8, which THIS key cannot access (instant
+          # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
-            --model claude-opus-4-8
+            --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
           prompt: |
             You are the **Maintainer** of the agent_mesh Dev-mesh. Read your role at
             `dev-mesh/maintainer/AGENT.md` and skills (route-work, watch-backlog). The
@@ -64,3 +65,8 @@ jobs:
         run: |
           echo "Coder's branch is verified; open a PR via the GitHub MCP and move the"
           echo "Issue to pr:in-review. Merge stays human-held (auto-merge is off)."
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

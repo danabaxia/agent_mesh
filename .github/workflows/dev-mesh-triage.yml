@@ -36,14 +36,15 @@ jobs:
           node-version: 20
       - name: Drive Maintainer → Triager (classify CI failure)
         uses: anthropics/claude-code-action@v1
+        id: claude
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Pin the standard Opus 4.8. The action otherwise defaults to the gated
-          # 1M-context Opus variant, which the API rejects instantly (is_error,
-          # $0). The plain id is proven-good (keycheck run).
+          # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
+          # action otherwise forces Opus 4.8, which THIS key cannot access (instant
+          # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
-            --model claude-opus-4-8
+            --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
           prompt: |
             You are the **Triager** of the agent_mesh Dev-mesh. Read your role at
             `dev-mesh/triager/AGENT.md` and skill `classify-ci-failure`. The classifier
@@ -57,3 +58,8 @@ jobs:
               - flake       → re-kick (max 2×); never if the diff touches the failing area.
               - real_bug    → write a fix plan and hand it to the backlog/Coder flow.
             Post the label + reason + action as a comment. You do not edit code here.
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

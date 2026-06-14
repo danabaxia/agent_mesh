@@ -3,7 +3,24 @@
 // run, so health is judged on the result ENVELOPE, not the job conclusion.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyRunHealth, assessMesh, renderHealthReport } from '../src/dev-mesh/health.js';
+import { classifyRunHealth, assessMesh, renderHealthReport, extractResultEnvelope } from '../src/dev-mesh/health.js';
+
+test('extractResultEnvelope: finds the result in a stream-json array, object, or wrapper', () => {
+  // stream-json array (claude-code-action's saved output): pick the last result event.
+  const stream = [
+    { type: 'system', subtype: 'init' },
+    { type: 'assistant' },
+    { type: 'result', subtype: 'success', is_error: true, total_cost_usd: 0, num_turns: 1 },
+  ];
+  assert.equal(extractResultEnvelope(stream).is_error, true);
+  // single result object
+  assert.equal(extractResultEnvelope({ type: 'result', is_error: false, num_turns: 3, total_cost_usd: 0.04 }).num_turns, 3);
+  // {result:{…}} wrapper
+  assert.equal(extractResultEnvelope({ result: { is_error: false, num_turns: 2, total_cost_usd: 0.01 } }).num_turns, 2);
+  // nothing usable
+  assert.equal(extractResultEnvelope([{ type: 'system' }]), null);
+  assert.equal(extractResultEnvelope(null), null);
+});
 
 test('classifyRunHealth: the real masking bug — is_error despite "success" subtype', () => {
   // The exact envelope from the first live intake run.
@@ -13,16 +30,24 @@ test('classifyRunHealth: the real masking bug — is_error despite "success" sub
   assert.equal(h.status, 'errored');
 });
 
-test('classifyRunHealth: green-but-no-op ($0 / ≤1 turn) is unhealthy', () => {
-  const h = classifyRunHealth({ is_error: false, num_turns: 1, total_cost_usd: 0 });
+test('classifyRunHealth: zero turns is a no-op (nothing ran)', () => {
+  const h = classifyRunHealth({ is_error: false, num_turns: 0, total_cost_usd: 0 });
   assert.equal(h.healthy, false);
   assert.equal(h.status, 'noop');
 });
 
-test('classifyRunHealth: a real working run (cost + turns) is healthy', () => {
+test('classifyRunHealth: a real working run is healthy (API-billed)', () => {
   const h = classifyRunHealth({ is_error: false, num_turns: 6, total_cost_usd: 0.12 });
   assert.equal(h.healthy, true);
   assert.equal(h.status, 'ok');
+});
+
+test('classifyRunHealth: subscription run ($0 but real turns) is healthy, not a false no-op', () => {
+  // OAuth/subscription auth always reports $0 — must NOT be flagged unhealthy.
+  const h = classifyRunHealth({ is_error: false, num_turns: 3, total_cost_usd: 0 });
+  assert.equal(h.healthy, true);
+  assert.equal(h.status, 'ok');
+  assert.match(h.reason, /subscription/);
 });
 
 test('classifyRunHealth: missing/garbage envelope is unknown (unhealthy, never throws)', () => {
