@@ -23,7 +23,7 @@ test('all six Dev-mesh workflows exist and are well-formed', () => {
     assert.match(wf[n], /^name:/m, `${n}: needs a name`);
     assert.match(wf[n], /^on:/m, `${n}: needs triggers`);
     assert.match(wf[n], /anthropics\/claude-code-action@v1/, `${n}: must drive claude-code-action@v1`);
-    assert.match(wf[n], /secrets\.ANTHROPIC_API_KEY/, `${n}: must wire the API key from secrets`);
+    assert.match(wf[n], /secrets\.CLAUDE_CODE_OAUTH_TOKEN/, `${n}: must wire subscription auth (CLAUDE_CODE_OAUTH_TOKEN) from secrets`);
   }
 });
 
@@ -153,7 +153,7 @@ test('health monitor: scheduled, judges the result envelope (not just the green 
 
 test('dogfood: real-claude, materializes the real mesh, read-only & non-merging', () => {
   assert.match(dogfood, /npm i -g @anthropic-ai\/claude-code/, 'installs the real claude');
-  assert.match(dogfood, /if \[ -z "\$ANTHROPIC_API_KEY" \]/, 'fail-fast secret preflight');
+  assert.match(dogfood, /if \[ -z "\$CLAUDE_CODE_OAUTH_TOKEN" \]/, 'fail-fast secret preflight');
   assert.match(dogfood, /doctor dev-mesh --apply/, 'materializes the real Dev-mesh (Phase 1)');
   assert.match(dogfood, /vars\.DEV_MESH_MODEL/, 'dogfood uses the DEV_MESH_MODEL repo variable');
   assert.doesNotMatch(dogfood, /claude-opus-4-8/, 'dogfood must not force Opus (key has no access)');
