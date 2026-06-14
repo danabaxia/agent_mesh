@@ -94,7 +94,7 @@ test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallba
   // checked separately.) This guard keeps it from regressing back to a forced Opus.
   for (const n of NAMES) {
     assert.match(wf[n], /vars\.DEV_MESH_MODEL/, `${n}: model must come from the DEV_MESH_MODEL repo variable`);
-    assert.match(wf[n], /'claude-sonnet-4-6'/, `${n}: needs a Sonnet fallback the key can access`);
+    assert.match(wf[n], /'sonnet'/, `${n}: fallback must be the 'sonnet' alias (resolves to a model the key has)`);
     assert.doesNotMatch(wf[n], /claude-opus-4-8/, `${n}: must not force Opus (key has no access)`);
   }
 });

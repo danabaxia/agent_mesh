@@ -43,7 +43,7 @@ jobs:
           # action otherwise forces Opus 4.8, which THIS key cannot access (instant
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
-            --model ${{ vars.DEV_MESH_MODEL || 'claude-sonnet-4-6' }}
+            --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
           prompt: |
             You are the **Curator** of the agent_mesh Dev-mesh. Read your role at
             `dev-mesh/curator/AGENT.md` and skills distill-lesson + promote-to-memory.
