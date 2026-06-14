@@ -87,13 +87,15 @@ test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
   }
 });
 
-test('MODEL PIN: every workflow pins standard claude-opus-4-8 (not the gated [1m] variant)', () => {
-  // The action/CLI otherwise defaults to claude-opus-4-8[1m] (1M-context), which the
-  // API rejects instantly (is_error, $0) — the loop silently no-ops. Pinning the plain
-  // id is the fix; this guard keeps it from regressing. (dogfood checked separately.)
+test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
+  // The action otherwise forces Opus 4.8, which the deploy key can't access (instant
+  // is_error/$0 — the loop silently no-ops). The model is a repo variable so it can be
+  // changed without a PR; the fallback is a model an API key reliably has. (dogfood
+  // checked separately.) This guard keeps it from regressing back to a forced Opus.
   for (const n of NAMES) {
-    assert.match(wf[n], /--model claude-opus-4-8(?!\[)/, `${n}: must pin --model claude-opus-4-8`);
-    assert.doesNotMatch(wf[n], /claude-opus-4-8\[1m\]/, `${n}: must not request the gated [1m] variant`);
+    assert.match(wf[n], /vars\.DEV_MESH_MODEL/, `${n}: model must come from the DEV_MESH_MODEL repo variable`);
+    assert.match(wf[n], /'claude-sonnet-4-6'/, `${n}: needs a Sonnet fallback the key can access`);
+    assert.doesNotMatch(wf[n], /claude-opus-4-8/, `${n}: must not force Opus (key has no access)`);
   }
 });
 
@@ -153,7 +155,8 @@ test('dogfood: real-claude, materializes the real mesh, read-only & non-merging'
   assert.match(dogfood, /npm i -g @anthropic-ai\/claude-code/, 'installs the real claude');
   assert.match(dogfood, /if \[ -z "\$ANTHROPIC_API_KEY" \]/, 'fail-fast secret preflight');
   assert.match(dogfood, /doctor dev-mesh --apply/, 'materializes the real Dev-mesh (Phase 1)');
-  assert.match(dogfood, /--model claude-opus-4-8(?!\[)/, 'dogfood pins the standard Opus 4.8, not the gated [1m] variant');
+  assert.match(dogfood, /vars\.DEV_MESH_MODEL/, 'dogfood uses the DEV_MESH_MODEL repo variable');
+  assert.doesNotMatch(dogfood, /claude-opus-4-8/, 'dogfood must not force Opus (key has no access)');
   // Observational: read-only repo, artifacts logs, never merges.
   assert.match(dogfood, /contents:\s*read/, 'dogfood must be read-only (no pushes)');
   assert.match(dogfood, /upload-artifact/, 'dogfood artifacts its run logs');

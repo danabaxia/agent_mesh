@@ -66,7 +66,7 @@ jobs:
           # over serve-a2a/peer-bridge. The Coder's do-mode edits stay inside its
           # path-guarded worktree (single writable root) — proven by the e2e net.
           claude -p "You are the Maintainer of dev-mesh. Read dev-mesh/maintainer/AGENT.md. $TASK Do NOT push, merge, or mutate the repo — this is an observability dogfood." \
-            --model claude-opus-4-8 --output-format json > dogfood-run.json || echo "::warning::dogfood run exited non-zero (captured for triage)"
+            --model ${{ vars.DEV_MESH_MODEL || 'claude-sonnet-4-6' }} --output-format json > dogfood-run.json || echo "::warning::dogfood run exited non-zero (captured for triage)"
       - name: Upload run logs (artifact, non-gating)
         if: always()
         uses: actions/upload-artifact@v4
