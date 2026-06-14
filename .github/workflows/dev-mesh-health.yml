@@ -1,0 +1,66 @@
+# Dev-mesh · health monitor.
+# Runs the framework's own conformance (doctor --apply) AND reads the dogfood
+# canary's result envelope to judge whether the society is actually WORKING — not
+# merely whether CI is green. Born from the 2026-06-14 bug where a model error
+# (claude-opus-4-8[1m]) produced a green job that did no work: job conclusion lies,
+# the result envelope (is_error/cost/turns) does not.
+#
+# Goes red (and escalates) only on REAL unhealth, so a red here is a true signal.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6
+name: dev-mesh-health
+
+on:
+  schedule:
+    - cron: '0 */6 * * *' # every 6h
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read      # download the dogfood canary artifact
+  issues: write      # escalate a health alert
+
+concurrency:
+  group: dev-mesh-health
+  cancel-in-progress: true
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Pull the most recent dogfood run's envelope as the live canary (best-effort:
+      # if no dogfood has run yet, we fall back to conformance-only).
+      - name: Fetch dogfood canary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p canary
+          id=$(gh run list --workflow=dev-mesh-dogfood.yml --status completed -L 1 \
+                 --json databaseId --jq '.[0].databaseId' 2>/dev/null || true)
+          if [ -n "$id" ]; then
+            gh run download "$id" -n dev-mesh-dogfood-logs -D canary 2>/dev/null \
+              || echo "note: no dogfood artifact on run $id"
+          else
+            echo "note: no completed dogfood run yet — conformance-only health check"
+          fi
+      - name: Assess mesh health (conformance + canary envelope)
+        run: |
+          node scripts/dev-mesh-health.mjs canary/dogfood-run.json
+      # On real unhealth the step above exits non-zero → escalate without spamming:
+      # one open alert issue at a time.
+      - name: Escalate health alert
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          title="Dev-mesh health alert"
+          open=$(gh issue list --search "\"$title\" in:title state:open" --json number --jq '.[0].number' || true)
+          body="The scheduled health monitor found the Dev-mesh unhealthy. See the run summary: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body" --label blocked
+          fi
