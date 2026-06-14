@@ -36,6 +36,11 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Pin the standard Opus 4.8. The action otherwise defaults to the gated
+          # 1M-context Opus variant, which the API rejects instantly (is_error,
+          # $0). The plain id is proven-good (keycheck run).
+          claude_args: |
+            --model claude-opus-4-8
           prompt: |
             You are the **Analyst** of the agent_mesh Dev-mesh. First read your role
             definition at `dev-mesh/analyst/AGENT.md` and your skills under
