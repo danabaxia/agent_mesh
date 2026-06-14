@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-mesh — Project Map</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #57606a; --accent: #0969da;
+    --code-bg: #f6f8fa; --border: #d0d7de;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d1117; --fg: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+      --code-bg: #161b22; --border: #30363d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 20px 80px;
+    max-width: 1200px; margin-inline: auto;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, "Segoe UI", "PingFang SC", system-ui, sans-serif;
+    line-height: 1.6;
+  }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 32px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  h2 { margin-top: 48px; padding-bottom: 6px; border-bottom: 1px solid var(--border); font-size: 20px; }
+  h3 { margin-top: 28px; font-size: 16px; }
+  p, li { font-size: 14.5px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin: 0; }
+  .toc {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 18px;
+  }
+  .toc ol { margin: 6px 0; padding-left: 22px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .diagram-box {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin: 16px 0; overflow-x: auto; background: var(--bg);
+  }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--code-bg); font-weight: 600; }
+  code {
+    background: var(--code-bg); padding: 1px 6px; border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em;
+  }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin: 12px 0; font-size: 13px; }
+  .legend span { padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); }
+  .legend .done { background: #d4edda; color: #155724; border-color: #28a745; }
+  .legend .pending { background: #fff3cd; color: #856404; border-color: #ffc107; }
+  .legend .blocked { background: #f8d7da; color: #721c24; border-color: #dc3545; }
+  .legend .deferred { background: #e2e3e5; color: #383d41; border-color: #6c757d; }
+  .legend .contract { background: #cce5ff; color: #004085; border-color: #004085; }
+  footer { margin-top: 64px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
+  .meta { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .note { background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 16px; font-size: 13.5px; color: var(--muted); }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: dark ? 'dark' : 'default',
+      flowchart: { curve: 'basis', useMaxWidth: true },
+      stateDiagram: { useMaxWidth: true }
+    });
+  });
+</script>
+</head>
+<body>
+<header>
+  <h1>agent-mesh — Project Map</h1>
+  <p class="subtitle">Per-folder A2A agent delegation over stdio · pure-core safety logic + thin impure shell · no central broker</p>
+  <div class="meta">
+    <span>Generated: 2026-06-05</span>
+    <span>Branch: <code>v1.0-development</code></span>
+    <span>Mode: GENERIC (adapted to A2A domain)</span>
+  </div>
+</header>
+
+<section class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#fig1">Project hierarchy</a></li>
+    <li><a href="#fig2">Delegation outcome &rarr; A2A Task status flow</a></li>
+    <li><a href="#fig3">Runtime delegation flow (one <code>message/send</code>)</a></li>
+    <li><a href="#fig4">Code architecture — wired vs planned</a></li>
+    <li><a href="#status">Build &amp; review status</a></li>
+  </ol>
+</section>
+
+<h2 id="fig1">1. Project hierarchy</h2>
+<p>Top-down view of the deliverable: one entry point fans into four code layers plus the example agents and the test net. Each layer lists its actual modules.</p>
+<div class="legend">
+  <span class="done">wired &amp; validated</span>
+  <span class="contract">compat / orthogonal layer</span>
+  <span class="pending">examples / fixtures</span>
+  <span class="deferred">test &amp; tooling</span>
+</div>
+<div class="diagram-box"><pre class="mermaid">
+flowchart TB
+    P["agent-mesh<br/>(reference A2A delegation server)"]:::done
+
+    subgraph L2["Entry"]
+      direction LR
+      BIN["bin/agent-mesh.js"]:::done
+      CLI["src/cli.js<br/>realpath + serve-a2a | serve"]:::done
+    end
+
+    subgraph L3["A2A layer (stdio binding)"]
+      direction LR
+      PROTO["protocol.js<br/>AgentCard / Task / JSON-RPC"]:::done
+      SRV["stdio-server.js<br/>initialize · message/send · ping"]:::done
+      CLT["stdio-client.js<br/>spawn peer · request"]:::done
+      REG["registry.js<br/>static peer wiring"]:::done
+    end
+
+    subgraph L4["Pure core — safety logic"]
+      direction LR
+      DEL["delegate.js<br/>spawn pipeline + MCP grant"]:::done
+      CTX["context.js<br/>cycle / depth guard"]:::done
+      CHG["change-detect.js<br/>files_changed"]:::done
+      AGC["agent-context.js<br/>runtime prompt + grant policy"]:::done
+    end
+
+    subgraph L5["Impure shell — touches OS"]
+      direction LR
+      PROC["process.js<br/>spawn · timeout · tree-kill"]:::done
+      PG["path-guard.js + hooks/<br/>write boundary (realpath)"]:::done
+    end
+
+    subgraph L6["Compat (orthogonal)"]
+      direction LR
+      MCP["mcp.js<br/>legacy MCP server"]:::contract
+    end
+
+    subgraph L7["Example agents"]
+      direction LR
+      A["agent-a<br/>caller"]:::pending
+      B["agent-b (library)<br/>book-search MCP · prompts · memory · skills"]:::pending
+      CA["coding-agent<br/>peer"]:::pending
+    end
+
+    subgraph L8["Demo &amp; tests"]
+      direction LR
+      SCR["scripts/<br/>demo-setup · complex-demo"]:::deferred
+      TST["test/ — 17 files / 59 tests"]:::deferred
+    end
+
+    P --> BIN --> CLI
+    CLI --> PROTO &amp; SRV &amp; REG
+    CLI --> MCP
+    SRV --> CLT
+    SRV --> DEL
+    DEL --> CTX &amp; CHG &amp; AGC
+    DEL --> PROC &amp; PG
+    REG --> A &amp; B &amp; CA
+    P --> SCR &amp; TST
+
+    classDef done fill:#d4edda,stroke:#28a745,color:#155724
+    classDef pending fill:#fff3cd,stroke:#ffc107,color:#856404
+    classDef blocked fill:#f8d7da,stroke:#dc3545,color:#721c24
+    classDef deferred fill:#e2e3e5,stroke:#6c757d,color:#383d41
+    classDef contract fill:#cce5ff,stroke:#004085,color:#004085
+</pre></div>
+
+<h3>1.2 — Source map (drill-in)</h3>
+<table>
+  <tr><th>Layer</th><th>Modules</th><th>Source of truth</th></tr>
+  <tr><td>Entry</td><td><code>bin/agent-mesh.js</code> &rarr; <code>src/cli.js</code></td><td>CLAUDE.md · Architecture</td></tr>
+  <tr><td>A2A layer</td><td><code>src/a2a/{protocol,stdio-server,stdio-client,registry}.js</code></td><td>PROJECT.md §2.2–2.4</td></tr>
+  <tr><td>Pure core</td><td><code>src/{delegate,context,change-detect,agent-context,description,contract,errors,config}.js</code></td><td>CLAUDE.md · Invariants</td></tr>
+  <tr><td>Impure shell</td><td><code>src/{process,path-guard,lock,log}.js</code> · <code>hooks/path-guard.js</code></td><td>PROJECT.md §1.5–1.6</td></tr>
+  <tr><td>Compat</td><td><code>src/mcp.js</code></td><td>PROJECT.md §2.1</td></tr>
+  <tr><td>Examples</td><td><code>examples/{agent-a,agent-b,coding-agent}/</code></td><td>PROJECT.md §3.5</td></tr>
+</table>
+
+<h2 id="fig2">2. Delegation outcome &rarr; A2A Task status flow</h2>
+<p>Every <code>message/send</code> <strong>always returns a Task</strong> — outcomes are data, never JSON-RPC errors (except un-parseable requests). This maps each internal <code>delegateTask</code> result to its terminal A2A <code>status.state</code> (PROJECT.md §1.7).</p>
+<div class="legend">
+  <span class="done">completed</span>
+  <span class="blocked">failed</span>
+  <span class="deferred">rejected</span>
+</div>
+<div class="diagram-box"><pre class="mermaid">
+stateDiagram-v2
+    [*] --> Received: message/send
+    Received --> Validate
+
+    Validate --> rejected_bad: params shape-invalid
+    Validate --> Guards: valid {mode, task}
+
+    Guards --> rejected_cycle: own root in call-path
+    Guards --> rejected_depth: depth budget exhausted
+    Guards --> rejected_ro: do from ask parent
+    Guards --> Spawn: passes
+
+    Spawn --> failed_spawn: spawn_failed
+    Spawn --> Worker: claude -p (cwd=B)
+
+    Worker --> completed: exit 0 (done)
+    Worker --> failed_timeout: timeout -> tree-kill
+    Worker --> failed_internal: non-zero exit
+
+    state "completed" as completed
+    state "failed (spawn_failed)" as failed_spawn
+    state "failed (timeout)" as failed_timeout
+    state "failed (internal)" as failed_internal
+    state "rejected (bad_input)" as rejected_bad
+    state "rejected (cycle)" as rejected_cycle
+    state "rejected (depth_budget)" as rejected_depth
+    state "rejected (readonly_parent)" as rejected_ro
+
+    completed --> [*]
+    failed_spawn --> [*]
+    failed_timeout --> [*]
+    failed_internal --> [*]
+    rejected_bad --> [*]
+    rejected_cycle --> [*]
+    rejected_depth --> [*]
+    rejected_ro --> [*]
+</pre></div>
+<p class="note">Write-boundary denials are <em>not</em> a terminal state: the path-guard hook denies the write inside the worker (<code>exit 2</code>, logged, counted in <code>isolation_violations</code>); the task still finishes <code>completed</code>/<code>failed</code> with the write simply absent from <code>files_changed</code>. <code>boundary_denied</code> is reserved/planned.</p>
+
+<h2 id="fig3">3. Runtime delegation flow (one <code>message/send</code>)</h2>
+<p>What actually happens end-to-end when a caller delegates to a peer. The two mode branches (<code>ask</code> read-only vs <code>do</code> write+hook) are the security-critical fork.</p>
+<div class="diagram-box"><pre class="mermaid">
+flowchart TD
+    U(["Caller (Agent A)"]) --> RG["registry.js<br/>resolve peer &rarr; canonical root"]
+    RG --> SP["stdio-client.js<br/>spawn long-lived peer server"]
+    SP --> MS["message/send (A2A)"]
+    MS --> V{"validateMessageSendParams"}
+    V -- invalid --> T1["Task: rejected (bad_input)"]
+    V -- valid --> G{"enterCallContext<br/>cycle / depth / readonly_parent"}
+    G -- refuse --> T2["Task: rejected"]
+    G -- ok --> Q["SerialQueue<br/>(do = 1 writer per folder)"]
+    Q --> CS["captureChangeState (git snapshot)"]
+    CS --> MODE{"mode?"}
+
+    MODE -- ask --> A1["read-only tools<br/>+ read-only-marked MCP grant"]
+    MODE -- do --> D1["read + write tools<br/>+ PreToolUse path-guard hook<br/>+ acceptEdits"]
+
+    A1 --> SPAWN["process.js: spawn claude -p<br/>cwd=B · detached"]
+    D1 --> SPAWN
+    SPAWN --> WORK["worker runs<br/>(writes gated by hook)"]
+    WORK --> TO{"timeout?"}
+    TO -- yes --> KILL["tree-kill: SIGTERM &rarr; SIGKILL<br/>await tree death, then resolve"]
+    TO -- no --> DONE["worker exits"]
+    KILL --> CD["computeFilesChanged<br/>porcelain &cup; digest delta"]
+    DONE --> CD
+    CD --> LOG["writeRunLog (.agent-mesh/logs)"]
+    LOG --> TASK["buildTaskFromDelegateResult"]
+    TASK --> RET(["Task back to caller"])
+
+    classDef sec fill:#f8d7da,stroke:#dc3545,color:#721c24
+    class D1,KILL sec
+</pre></div>
+
+<h2 id="fig4">4. Code architecture — wired vs planned</h2>
+<p>The deliberate split: a unit-provable <strong>pure core</strong>, a thin <strong>impure shell</strong> that is the only thing touching the OS, the <strong>A2A binding</strong>, an <strong>orthogonal compat</strong> MCP layer, and the <strong>planned</strong> surfaces not yet built.</p>
+<div class="legend">
+  <span class="done">wired &amp; validated</span>
+  <span class="contract">orthogonal / compat</span>
+  <span class="deferred">planned (Future Work)</span>
+</div>
+<div class="diagram-box"><pre class="mermaid">
+flowchart LR
+    subgraph SHELL["Impure shell (OS edge)"]
+      direction TB
+      PROC["process.js<br/>spawn · timeout · tree-kill"]:::done
+      PG["path-guard.js + hooks/<br/>realpath write boundary"]:::done
+      LCK["lock.js · log.js"]:::done
+    end
+
+    subgraph CORE["Pure core (unit-provable)"]
+      direction TB
+      DEL["delegate.js"]:::done
+      CTX["context.js"]:::done
+      CHG["change-detect.js"]:::done
+      AGC["agent-context.js"]:::done
+      DESC["description.js · contract.js · errors.js · config.js"]:::done
+    end
+
+    subgraph A2A["A2A binding (stdio)"]
+      direction TB
+      PROTO["protocol.js"]:::done
+      SRV["stdio-server.js"]:::done
+      CLT["stdio-client.js"]:::done
+      REG["registry.js"]:::done
+    end
+
+    subgraph COMPAT["Orthogonal"]
+      MCP["mcp.js (legacy MCP server)"]:::contract
+    end
+
+    subgraph PLAN["Planned (Future Work)"]
+      direction TB
+      HTTP["HTTP(S) JSON-RPC binding"]:::deferred
+      LIFE["message/stream · tasks/get · tasks/cancel"]:::deferred
+      FED["federated/untrusted profile + OS sandbox"]:::deferred
+      BD["boundary_denied surfaced as Task"]:::deferred
+    end
+
+    A2A --> CORE
+    CORE --> SHELL
+    A2A -. compat-only .-> COMPAT
+    A2A -. next binding .-> HTTP
+    A2A -. next lifecycle .-> LIFE
+    SHELL -. gate before shell/Bash .-> FED
+    SHELL -. promote hook denial .-> BD
+
+    classDef done fill:#d4edda,stroke:#28a745,color:#155724
+    classDef contract fill:#cce5ff,stroke:#004085,color:#004085
+    classDef deferred fill:#e2e3e5,stroke:#6c757d,color:#383d41
+</pre></div>
+
+<h2 id="status">Build &amp; review status</h2>
+<table>
+  <tr><th>Item</th><th>State</th></tr>
+  <tr><td>Branch</td><td><code>v1.0-development</code>, 23 commits ahead of <code>main</code></td></tr>
+  <tr><td>Core safety mesh (A2A + pure core + path-guard)</td><td>Shipped &amp; validated (real-<code>claude</code> A&rarr;B proof)</td></tr>
+  <tr><td>Agent anatomy + runtime grant (<code>agent-context.js</code>)</td><td>Shipped</td></tr>
+  <tr><td>Observable 4-scenario demo + coding-agent peer</td><td>Shipped</td></tr>
+  <tr><td>Two-round adversarial code review</td><td>All findings fixed (incl. timeout lock-release race)</td></tr>
+  <tr><td>Test suite</td><td>17 files / 59 tests — 56 pass, 3 opt-in real-<code>claude</code> e2e skipped</td></tr>
+  <tr><td>Open item</td><td>Review fixes uncommitted (22 paths); committing clears 3 stale review findings</td></tr>
+  <tr><td>Next milestones</td><td>HTTP binding · richer A2A lifecycle · federated/sandbox profile</td></tr>
+</table>
+
+<footer>
+  <p>Open this file in any browser. Diagrams render client-side via Mermaid CDN (no build, no server).</p>
+  <p>Sources: CLAUDE.md (architecture &amp; invariants), PROJECT.md (§1.5–1.11 contract, §2.x reference modules, §3.5 demo, Future Work), <code>git log</code>, and the live <code>src/</code> · <code>examples/</code> · <code>test/</code> tree.</p>
+</footer>
+</body>
+</html>

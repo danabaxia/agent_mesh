@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>agent_mesh - Three Panel Layout Review</title>
+<style>
+  :root{
+    --paper:#f5f3ec;
+    --paper2:#efece3;
+    --surface:#fffefb;
+    --surface2:#faf8f2;
+    --ink:#1c1b17;
+    --muted:#6f7269;
+    --faint:#9a9c91;
+    --line:#e3e0d6;
+    --line2:#d2cec1;
+    --teal:#0f7a6b;
+    --teal-soft:#e2f1ee;
+    --amber:#b8742a;
+    --amber-soft:#f6ebdd;
+    --slate:#5b6b78;
+    --slate-soft:#e8edf0;
+    --rose:#b5485a;
+    --ui:Inter, "Segoe UI", system-ui, sans-serif;
+    --mono:"Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+    --sh:0 1px 2px rgba(28,27,23,.04),0 10px 30px -18px rgba(28,27,23,.35);
+  }
+
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:var(--ui);
+    color:var(--ink);
+    background:
+      radial-gradient(120% 90% at 0 0,#fffdf8 0,transparent 54%),
+      radial-gradient(100% 80% at 100% 0,#eef4f2 0,transparent 58%),
+      var(--paper);
+    overflow:hidden;
+  }
+
+  button,select{font:inherit}
+  .app{height:100vh;display:flex;flex-direction:column;min-width:0}
+
+  header{
+    height:58px;
+    flex:none;
+    display:flex;
+    align-items:center;
+    gap:16px;
+    padding:0 18px;
+    border-bottom:1px solid var(--line);
+    background:rgba(255,254,251,.78);
+    backdrop-filter:blur(8px);
+  }
+
+  .brand{
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:16px;
+    letter-spacing:.01em;
+    white-space:nowrap;
+  }
+  .brand span{color:var(--teal)}
+
+  .scope{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:var(--faint);
+    font-family:var(--mono);
+    font-size:10px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+  }
+  .scope select{
+    font-family:var(--mono);
+    font-size:12px;
+    text-transform:none;
+    letter-spacing:0;
+    color:var(--ink);
+    background:var(--surface);
+    border:1px solid var(--line2);
+    border-radius:8px;
+    padding:6px 10px;
+    box-shadow:var(--sh);
+  }
+
+  .stats{
+    display:flex;
+    gap:14px;
+    color:var(--muted);
+    font-family:var(--mono);
+    font-size:11px;
+    white-space:nowrap;
+  }
+  .dot{
+    width:7px;
+    height:7px;
+    display:inline-block;
+    border-radius:50%;
+    background:var(--teal);
+    box-shadow:0 0 0 3px var(--teal-soft);
+    margin-right:4px;
+  }
+
+  .toolbar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    margin-left:auto;
+    min-width:0;
+  }
+  .group{
+    display:flex;
+    gap:4px;
+    padding:3px;
+    border:1px solid var(--line);
+    border-radius:9px;
+    background:var(--surface);
+  }
+  .btn{
+    border:0;
+    border-radius:7px;
+    padding:6px 10px;
+    background:transparent;
+    color:var(--muted);
+    font-size:12px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .btn:hover{color:var(--ink);background:var(--surface2)}
+  .btn.on{color:#fff;background:var(--teal)}
+  .iconbtn{
+    width:30px;
+    height:30px;
+    display:grid;
+    place-items:center;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:var(--surface);
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .iconbtn.on{color:var(--teal);border-color:var(--teal);background:var(--teal-soft)}
+
+  .body{
+    flex:1;
+    min-height:0;
+    display:flex;
+  }
+  .pane{
+    min-height:0;
+    overflow:auto;
+    position:relative;
+  }
+  .pane.files{
+    width:250px;
+    min-width:170px;
+    flex:none;
+    background:var(--surface2);
+  }
+  .pane.board{
+    width:calc(100vw - 250px - 380px - 14px);
+    min-width:280px;
+    flex:none;
+    background:transparent;
+  }
+  .pane.chat{
+    width:380px;
+    min-width:260px;
+    flex:none;
+    background:var(--surface);
+  }
+  .pane.hidden{display:none}
+
+  .gutter{
+    width:7px;
+    flex:none;
+    cursor:col-resize;
+    position:relative;
+    background:transparent;
+  }
+  .gutter::after{
+    content:"";
+    position:absolute;
+    top:0;
+    bottom:0;
+    left:3px;
+    width:1px;
+    background:var(--line2);
+  }
+  .gutter:hover,
+  .gutter.dragging{background:var(--teal-soft)}
+  .gutter:hover::after,
+  .gutter.dragging::after{background:var(--teal)}
+
+  .pane-head{
+    min-height:40px;
+    position:sticky;
+    top:0;
+    z-index:2;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    padding:10px 14px;
+    border-bottom:1px solid var(--line);
+    background:inherit;
+  }
+  .pane-title{
+    font-family:var(--mono);
+    font-size:10px;
+    color:var(--faint);
+    letter-spacing:.14em;
+    text-transform:uppercase;
+  }
+  .width-pill{
+    font-family:var(--mono);
+    font-size:10px;
+    color:var(--muted);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:2px 7px;
+    background:var(--surface);
+  }
+
+  .tree{
+    list-style:none;
+    margin:0;
+    padding:9px 0 18px;
+    font-size:12px;
+  }
+  .tree li{
+    display:flex;
+    align-items:center;
+    gap:7px;
+    height:27px;
+    padding:0 14px;
+    white-space:nowrap;
+  }
+  .tree li:hover{background:var(--paper2)}
+  .tree .sel{
+    background:var(--teal-soft);
+    box-shadow:inset 2px 0 0 var(--teal);
+  }
+  .indent1{padding-left:28px!important}
+  .indent2{padding-left:42px!important}
+  .muted{color:var(--muted)}
+
+  .boardbar{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:12px 18px 0;
+  }
+  .content{
+    padding:16px 18px 22px;
+  }
+  .cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+    gap:14px;
+  }
+  .card{
+    min-width:0;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--surface);
+    box-shadow:var(--sh);
+    padding:14px;
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";
+    position:absolute;
+    top:0;
+    left:0;
+    right:0;
+    height:3px;
+    background:var(--teal);
+  }
+  .card h3{
+    margin:3px 0 8px;
+    font-size:20px;
+    font-weight:750;
+    letter-spacing:0;
+  }
+  .pill{
+    display:inline-flex;
+    align-items:center;
+    border-radius:999px;
+    background:var(--teal-soft);
+    color:var(--teal);
+    padding:2px 8px;
+    font-family:var(--mono);
+    font-size:10px;
+  }
+  .metrics{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px;
+    margin:10px 0;
+  }
+  .metric{
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:var(--surface2);
+    padding:7px 8px;
+    color:var(--muted);
+    font-family:var(--mono);
+    font-size:10px;
+  }
+  .metric b{
+    display:block;
+    color:var(--ink);
+    font-family:var(--ui);
+    font-size:18px;
+    line-height:1;
+  }
+  .resource{
+    margin-top:7px;
+    border:1px solid var(--line);
+    border-radius:7px;
+    background:var(--surface2);
+    padding:8px;
+    font-size:11px;
+    color:var(--muted);
+    line-height:1.35;
+  }
+  .resource b{
+    display:block;
+    color:var(--ink);
+    font-family:var(--mono);
+    font-size:10px;
+    margin-bottom:2px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+
+  .canvas{
+    min-height:330px;
+    display:grid;
+    place-items:center;
+    border:1px dashed var(--line2);
+    border-radius:8px;
+    color:var(--muted);
+    text-align:center;
+    line-height:1.5;
+    padding:24px;
+    background:rgba(255,254,251,.45);
+  }
+  .canvas b{color:var(--ink)}
+
+  .chat-shell{
+    height:calc(100% - 41px);
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+  }
+  .messages{
+    flex:1;
+    min-height:0;
+    overflow:auto;
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    background:linear-gradient(180deg,var(--surface),var(--surface2));
+  }
+  .msg{
+    max-width:86%;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:9px 11px;
+    background:var(--surface);
+    box-shadow:var(--sh);
+    line-height:1.45;
+    font-size:12px;
+  }
+  .msg.user{
+    align-self:flex-end;
+    background:var(--teal-soft);
+    border-color:#c6e3dd;
+  }
+  .msg .by{
+    display:block;
+    margin-bottom:4px;
+    color:var(--faint);
+    font-family:var(--mono);
+    font-size:10px;
+    text-transform:uppercase;
+  }
+  .compose{
+    flex:none;
+    padding:10px;
+    border-top:1px solid var(--line);
+    display:flex;
+    gap:8px;
+    background:var(--surface);
+  }
+  .compose input{
+    flex:1;
+    min-width:0;
+    border:1px solid var(--line2);
+    border-radius:9px;
+    padding:9px 10px;
+    background:var(--surface2);
+    color:var(--ink);
+  }
+  .send{
+    flex:none;
+    border:0;
+    border-radius:9px;
+    padding:0 14px;
+    background:var(--teal);
+    color:#fff;
+    font-weight:800;
+    cursor:pointer;
+  }
+
+  .review-note{
+    position:fixed;
+    left:18px;
+    bottom:18px;
+    width:min(460px,calc(100vw - 36px));
+    border:1px solid var(--line2);
+    border-radius:8px;
+    background:rgba(255,254,251,.96);
+    box-shadow:0 20px 60px -28px rgba(28,27,23,.55);
+    padding:13px 14px;
+    font-size:12px;
+    line-height:1.45;
+  }
+  .review-note h2{
+    margin:0 0 7px;
+    font-size:14px;
+  }
+  .review-note ul{
+    margin:7px 0 0 18px;
+    padding:0;
+  }
+  .review-note li{margin:3px 0}
+  .review-note button{
+    position:absolute;
+    right:8px;
+    top:8px;
+    border:0;
+    background:transparent;
+    color:var(--faint);
+    cursor:pointer;
+    font-weight:900;
+  }
+
+  body.is-dragging{
+    cursor:col-resize;
+    user-select:none;
+  }
+
+  @media (max-width:860px){
+    body{overflow:auto}
+    .app{height:auto;min-height:100vh}
+    header{height:auto;min-height:58px;flex-wrap:wrap;padding:10px 12px}
+    .toolbar{width:100%;margin-left:0;justify-content:flex-start;flex-wrap:wrap}
+    .body{display:block}
+    .pane{
+      width:100%!important;
+      min-width:0!important;
+      max-height:none;
+      border-bottom:1px solid var(--line);
+    }
+    .gutter{display:none}
+    .pane.files{max-height:260px}
+    .pane.chat{height:420px}
+    .review-note{position:static;width:auto;margin:14px 12px 18px}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">agent<span>_</span>mesh</div>
+    <label class="scope">scope
+      <select id="scope">
+        <option>agent: data-analyst</option>
+        <option>agent: knowledge</option>
+        <option>mesh: all agents</option>
+      </select>
+    </label>
+    <div class="stats">
+      <span><span class="dot"></span><b>2</b> agents</span>
+      <span><b>2</b> served</span>
+    </div>
+    <div class="toolbar">
+      <div class="group" aria-label="Pane visibility">
+        <button class="btn on" data-toggle="files">Files</button>
+        <button class="btn on" data-toggle="board">Board</button>
+        <button class="btn on" data-toggle="chat">Chat</button>
+      </div>
+      <div class="group" aria-label="Layout presets">
+        <button class="iconbtn on" title="Balanced layout" data-preset="balanced">|||</button>
+        <button class="iconbtn" title="Wide board" data-preset="wide-board">|[]</button>
+        <button class="iconbtn" title="Wide chat" data-preset="wide-chat">[]|</button>
+        <button class="iconbtn" title="Chat focus" data-preset="chat-focus">[]</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="body" id="body">
+    <aside class="pane files" id="files-pane">
+      <div class="pane-head">
+        <div class="pane-title">Files</div>
+        <div class="width-pill" data-width-for="files-pane">250px</div>
+      </div>
+      <ul class="tree">
+        <li class="sel"><span>&gt;</span><b>my-mesh</b></li>
+        <li class="indent1"><span>v</span><b>.agent</b></li>
+        <li class="indent2 muted">skills</li>
+        <li class="indent2 muted">workflows</li>
+        <li class="indent1"><span>v</span><b>dashboard</b></li>
+        <li class="indent2">public/app.js</li>
+        <li class="indent2">public/app.css</li>
+        <li class="indent2">public/session-log.js</li>
+        <li class="indent1">mesh.json</li>
+        <li class="indent1">README.md</li>
+      </ul>
+    </aside>
+
+    <div class="gutter" data-left="files-pane" data-right="board-pane" title="Resize Files and Board"></div>
+
+    <section class="pane board" id="board-pane">
+      <div class="pane-head">
+        <div class="pane-title">Board</div>
+        <div class="width-pill" data-width-for="board-pane">auto</div>
+      </div>
+      <div class="boardbar">
+        <div class="group">
+          <button class="btn on">Agents</button>
+          <button class="btn">Skills</button>
+          <button class="btn">MCP</button>
+        </div>
+        <div class="group">
+          <button class="btn on">Kanban</button>
+          <button class="btn">Graph</button>
+        </div>
+      </div>
+      <div class="content">
+        <div class="cards">
+          <article class="card">
+            <span class="pill">served</span>
+            <h3>data-analyst</h3>
+            <div class="metrics">
+              <div class="metric"><b>6</b>local skills</div>
+              <div class="metric"><b>3</b>tools reused</div>
+            </div>
+            <div class="resource"><b>circuit-diagram</b>Reads schematic notes and extracts component relationships.</div>
+            <div class="resource"><b>git-commit</b>Summarizes changed files and stages intentional commits.</div>
+          </article>
+          <article class="card">
+            <span class="pill">served</span>
+            <h3>knowledge</h3>
+            <div class="metrics">
+              <div class="metric"><b>4</b>local skills</div>
+              <div class="metric"><b>2</b>MCP tools</div>
+            </div>
+            <div class="resource"><b>auto-research</b>Runs bounded research loops and records the evidence trail.</div>
+            <div class="resource"><b>doc-index</b>Finds notes, source files, and reference fragments.</div>
+          </article>
+          <article class="card">
+            <span class="pill">activity</span>
+            <h3>tool statistics</h3>
+            <div class="metrics">
+              <div class="metric"><b>18</b>calls</div>
+              <div class="metric"><b>7</b>unique tools</div>
+            </div>
+            <div class="canvas">
+              <div>
+                <b>Activity panel proposal</b><br />
+                Use this board space for tool counts, reuse rate, and session-level stats when Activity is selected.
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <div class="gutter" data-left="board-pane" data-right="chat-pane" title="Resize Board and Chat"></div>
+
+    <aside class="pane chat" id="chat-pane">
+      <div class="pane-head">
+        <div class="pane-title">Chat</div>
+        <div class="width-pill" data-width-for="chat-pane">380px</div>
+      </div>
+      <div class="chat-shell">
+        <div class="messages">
+          <div class="msg user"><span class="by">User</span>hi</div>
+          <div class="msg"><span class="by">Claude CLI</span>Hello. I can see the dashboard session and mirror the live output here.</div>
+          <div class="msg"><span class="by">System</span>History stays hidden until the user unfolds it from the session panel.</div>
+        </div>
+        <div class="compose">
+          <input value="Type a dashboard message..." />
+          <button class="send">Send</button>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<aside class="review-note" id="note">
+  <button title="Hide note" onclick="document.getElementById('note').style.display='none'">x</button>
+  <h2>Review focus</h2>
+  <div>This mock is for discussing the horizontal resize behavior before we keep refining the live dashboard.</div>
+  <ul>
+    <li>Drag the left gutter to resize Files and Board together.</li>
+    <li>Drag the right gutter to resize Board and Chat together.</li>
+    <li>Preset buttons reset explicit widths and show possible layout modes.</li>
+    <li>Width pills show current panel size while reviewing.</li>
+  </ul>
+</aside>
+
+<script>
+  const panes = {
+    files: document.getElementById('files-pane'),
+    board: document.getElementById('board-pane'),
+    chat: document.getElementById('chat-pane')
+  };
+
+  function paneMinWidth(pane) {
+    if (!pane) return 180;
+    if (pane.id === 'files-pane') return 170;
+    if (pane.id === 'chat-pane') return 260;
+    return 280;
+  }
+
+  function setWidths(files, board, chat) {
+    panes.files.style.width = files;
+    panes.board.style.width = board;
+    panes.chat.style.width = chat;
+    Object.values(panes).forEach((pane) => {
+      pane.style.flex = 'none';
+    });
+    updateWidthPills();
+  }
+
+  function visiblePaneCount() {
+    return Object.values(panes).filter((pane) => !pane.classList.contains('hidden')).length;
+  }
+
+  function updateWidthPills() {
+    document.querySelectorAll('[data-width-for]').forEach((pill) => {
+      const pane = document.getElementById(pill.dataset.widthFor);
+      if (!pane || pane.classList.contains('hidden')) {
+        pill.textContent = 'hidden';
+        return;
+      }
+      pill.textContent = Math.round(pane.getBoundingClientRect().width) + 'px';
+    });
+  }
+
+  function clearPresetState() {
+    document.querySelectorAll('[data-preset]').forEach((button) => button.classList.remove('on'));
+  }
+
+  function activatePreset(name) {
+    Object.values(panes).forEach((pane) => pane.classList.remove('hidden'));
+    document.querySelectorAll('[data-toggle]').forEach((button) => button.classList.add('on'));
+    clearPresetState();
+    document.querySelector(`[data-preset="${name}"]`)?.classList.add('on');
+
+    if (name === 'balanced') setWidths('250px', 'calc(100vw - 250px - 380px - 14px)', '380px');
+    if (name === 'wide-board') setWidths('220px', 'calc(100vw - 220px - 310px - 14px)', '310px');
+    if (name === 'wide-chat') setWidths('210px', 'calc(50vw - 110px)', '50vw');
+    if (name === 'chat-focus') {
+      panes.files.classList.add('hidden');
+      panes.board.classList.add('hidden');
+      panes.chat.style.width = '100vw';
+      panes.chat.style.flex = 'none';
+      document.querySelector('[data-toggle="files"]').classList.remove('on');
+      document.querySelector('[data-toggle="board"]').classList.remove('on');
+      updateWidthPills();
+    }
+  }
+
+  document.querySelectorAll('.gutter').forEach((gutter) => {
+    gutter.addEventListener('mousedown', (event) => {
+      const leftPane = document.getElementById(gutter.dataset.left);
+      const rightPane = document.getElementById(gutter.dataset.right);
+      if (!leftPane || !rightPane || leftPane.classList.contains('hidden') || rightPane.classList.contains('hidden')) return;
+
+      event.preventDefault();
+      clearPresetState();
+      gutter.classList.add('dragging');
+      document.body.classList.add('is-dragging');
+
+      const startX = event.clientX;
+      const leftStart = leftPane.getBoundingClientRect().width;
+      const rightStart = rightPane.getBoundingClientRect().width;
+      const total = leftStart + rightStart;
+      const minLeft = paneMinWidth(leftPane);
+      const minRight = paneMinWidth(rightPane);
+
+      function onMove(moveEvent) {
+        const dx = moveEvent.clientX - startX;
+        let nextLeft = leftStart + dx;
+        nextLeft = Math.max(minLeft, Math.min(total - minRight, nextLeft));
+        const nextRight = total - nextLeft;
+        leftPane.style.width = Math.round(nextLeft) + 'px';
+        rightPane.style.width = Math.round(nextRight) + 'px';
+        leftPane.style.flex = 'none';
+        rightPane.style.flex = 'none';
+        updateWidthPills();
+      }
+
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        gutter.classList.remove('dragging');
+        document.body.classList.remove('is-dragging');
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  document.querySelectorAll('[data-toggle]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const pane = panes[button.dataset.toggle];
+      if (!pane) return;
+      if (!pane.classList.contains('hidden') && visiblePaneCount() <= 1) return;
+      pane.classList.toggle('hidden');
+      button.classList.toggle('on', !pane.classList.contains('hidden'));
+      clearPresetState();
+      updateWidthPills();
+    });
+  });
+
+  document.querySelectorAll('[data-preset]').forEach((button) => {
+    button.addEventListener('click', () => activatePreset(button.dataset.preset));
+  });
+
+  window.addEventListener('resize', updateWidthPills);
+  updateWidthPills();
+</script>
+</body>
+</html>

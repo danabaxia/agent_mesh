@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "book-search": {
+      "command": "node",
+      "args": ["tools/book-search/server.mjs"],
+      "x-agentmesh": { "readOnly": true }
+    },
+    "memory-recall": {
+      "command": "node",
+      "args": ["tools/memory/server.mjs"],
+      "x-agentmesh": { "readOnly": true }
+    }
+  }
+}

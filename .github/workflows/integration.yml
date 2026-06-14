@@ -1,0 +1,160 @@
+name: Integration (nightly)
+
+# SEPARATE from ci.yml (the per-PR L0 hermetic gate). This pipeline runs the
+# Evaluation Methodology's integration tier against a REAL `claude`, on a
+# schedule — it NEVER gates per-PR merges. Spec:
+# docs/superpowers/specs/2026-06-13-integration-test-pipeline-design.md
+#
+# Tiers (ascending cost):
+#   L1 real-claude e2e        — gates the nightly (deterministic pass/fail)
+#   L2 behavior eval          — record-only scorecard (artifact + summary)
+#   L3 adversarial battery    — gates WHEN PRESENT (security, --min-pass-rate 1.0)
+#   L4 performance benchmark  — record-only scorecard
+# L3/L4 are skip-guarded on their script's existence, so this ships before
+# backlog #3/#4 land and lights up automatically once they do.
+#
+# DEFAULT-BRANCH CAVEAT: GitHub `schedule` triggers fire only from the repo's
+# DEFAULT branch, so jobs explicitly `checkout` `v0.4-development` (the
+# integration branch under test). Until this file is on the default branch, use
+# `workflow_dispatch` for an immediate run. Auth is fail-fast: a missing
+# ANTHROPIC_API_KEY secret errors out clearly rather than timing out per tier.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'         # nightly (UTC), after a day's merges land
+  workflow_dispatch:
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: false      # never cancel a half-finished scorecard
+
+permissions:
+  contents: read
+
+env:
+  # Add ANTHROPIC_API_KEY to the repo's Actions secrets. Without it the auth
+  # preflight in each tier fails fast.
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+  # The branch the integration tier always evaluates (see DEFAULT-BRANCH CAVEAT).
+  INTEGRATION_REF: v0.4-development
+
+jobs:
+  l1-e2e:
+    name: L1 real-claude e2e (gates)
+    runs-on: ubuntu-latest        # real-claude tiers are POSIX-first (demo-e2e is POSIX-only)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install claude CLI
+        run: npm i -g @anthropic-ai/claude-code
+      - name: Auth preflight (fail fast)
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set — add it to the repo's Actions secrets."
+            exit 1
+          fi
+          claude --version
+      - name: L1 — demo e2e (real claude delegates a real write across folders)
+        run: AGENT_MESH_E2E=1 node --test test/demo-e2e.test.js
+
+  l2-behavior:
+    name: L2 behavior eval scorecard (record-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install claude CLI
+        run: npm i -g @anthropic-ai/claude-code
+      - name: Auth preflight (fail fast)
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set."
+            exit 1
+          fi
+      - name: L2 — A2A behavior eval (scorecard; non-gating, exits 0)
+        run: node scripts/eval-a2a.mjs --trials 3 --out eval-results
+      - name: Summarize scorecard
+        if: always()
+        run: find eval-results -name scorecard.md -exec cat {} >> "$GITHUB_STEP_SUMMARY" \; 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l2-behavior-scorecard
+          path: eval-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  l3-adversarial:
+    name: L3 adversarial battery (gates when present)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install claude CLI
+        run: npm i -g @anthropic-ai/claude-code
+      - name: L3 — adversarial battery (skip until scripts/eval-adversarial.mjs lands; backlog #3)
+        run: |
+          if [ -f scripts/eval-adversarial.mjs ]; then
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::error::ANTHROPIC_API_KEY secret is not set."; exit 1
+            fi
+            node scripts/eval-adversarial.mjs --min-pass-rate 1.0 --out adversarial-results
+          else
+            echo "::notice::scripts/eval-adversarial.mjs not present yet — skipping L3 (backlog #3)."
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l3-adversarial-results
+          path: adversarial-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  l4-perf:
+    name: L4 performance benchmark (record-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install claude CLI
+        run: npm i -g @anthropic-ai/claude-code
+      - name: L4 — performance benchmark (skip until scripts/eval-perf.mjs lands; backlog #4)
+        run: |
+          if [ -f scripts/eval-perf.mjs ]; then
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::error::ANTHROPIC_API_KEY secret is not set."; exit 1
+            fi
+            node scripts/eval-perf.mjs --trials 5 --out perf-results
+          else
+            echo "::notice::scripts/eval-perf.mjs not present yet — skipping L4 (backlog #4)."
+          fi
+      - name: Summarize PerfCard
+        if: always()
+        run: find perf-results -name perfcard.md -exec cat {} >> "$GITHUB_STEP_SUMMARY" \; 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l4-perf-scorecard
+          path: perf-results/
+          retention-days: 14
+          if-no-files-found: ignore

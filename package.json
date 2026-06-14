@@ -1,0 +1,23 @@
+{
+  "name": "agent-mesh",
+  "version": "0.1.0",
+  "description": "Static per-folder MCP delegation mesh for Claude Code agents, with a read-only dashboard (session log + management + result canvas).",
+  "type": "module",
+  "bin": {
+    "agent-mesh": "./bin/agent-mesh.js"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "hooks/",
+    "README.md",
+    "INSTALL.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

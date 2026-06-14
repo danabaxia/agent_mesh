@@ -1,0 +1,17 @@
+{
+  "protocolVersion": "1.0",
+  "name": "library",
+  "description": "A library agent that answers questions about its book catalog (title, author, shelf).",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "book-lookup",
+      "name": "Book lookup",
+      "description": "Find a book in the catalog by title or author and report its shelf.",
+      "tags": ["library", "catalog", "search"]
+    }
+  ],
+  "x-agentmesh": { "modes": ["ask", "do"] }
+}

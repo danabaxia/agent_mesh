@@ -1,0 +1,317 @@
+/* result-canvas.css — light-paper canvas styles (wide-rule C) */
+
+/* ── root / stream container ── */
+.rc-root { overflow: auto; height: 100%; }
+.rc-stream.measure { max-width: 660px; margin: 0 auto; padding: 12px; }
+.rc-presentation .rc-stream { max-width: 900px; }
+
+/* ── blocks ── */
+.rc-blk { position: relative; margin: 10px 0; }
+.rc-blk.breakout { max-width: min(900px, 100%); margin-left: auto; margin-right: auto; }
+
+/* ── copy button (shown on hover) ── */
+.rc-copy {
+  position: absolute; top: 4px; right: 4px; opacity: 0; transition: opacity .15s;
+  border: 1px solid var(--line2); background: var(--surface); border-radius: 6px;
+  font: 10px var(--mono); padding: 2px 6px; cursor: pointer; color: var(--muted);
+}
+.rc-blk:hover .rc-copy { opacity: 1; }
+.rc-copy:hover { color: var(--teal); border-color: var(--teal); }
+
+/* ── block types ── */
+.rc-you {
+  background: var(--teal-soft); border: 1px solid #cfe6e0;
+  border-radius: 11px 11px 4px 11px; padding: 7px 11px;
+  max-width: 72%; margin-left: auto;
+}
+/* assistant reply: same card chrome as tools/results so the conversation
+   reads as one consistent stream of cards (was: bare markdown, which made
+   the longest blocks "disappear" between bubbles + tool cards). The teal
+   left-accent marks the Claude reply lane. */
+.rc-text {
+  background: var(--surface); border: 1px solid var(--line);
+  border-left: 3px solid var(--teal);
+  border-radius: 9px; padding: 10px 13px; box-shadow: var(--sh);
+}
+.rc-h { font-family: var(--disp); font-weight: 600; margin: 4px 0 2px; }
+.rc-ul { margin: 6px 0 6px 18px; padding: 0; list-style: none; }
+.rc-li { position: relative; padding-left: 16px; margin: 3px 0; line-height: 1.55; }
+.rc-li::before { content: "▸"; position: absolute; left: 0; color: var(--muted); font-size: 11px; top: 1px; }
+.rc-p { margin: 4px 0; line-height: 1.65; }
+
+/* GFM table */
+.rc-table-wrap { overflow: auto; border: 1px solid var(--line); border-radius: 7px; margin: 8px 0; background: var(--surface); }
+.rc-table { width: 100%; border-collapse: collapse; font: 12.5px var(--ui); }
+.rc-table th, .rc-table td {
+  padding: 6px 11px; text-align: left; border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.rc-table th {
+  background: var(--surface2); font: 600 10px var(--ui); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.rc-table tr:last-child td { border-bottom: none; }
+.rc-table td.c, .rc-table th.c { text-align: center; }
+.rc-table td.r, .rc-table th.r { text-align: right; font-variant-numeric: tabular-nums; }
+.rc-tool,
+.rc-result {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 9px; padding: 8px 10px; box-shadow: var(--sh);
+}
+.rc-toolname { font-family: var(--mono); font-size: 11px; color: var(--teal); display: block; margin-bottom: 4px; }
+.rc-code {
+  background: #1c1b17; color: #e8e6df; border-radius: 8px;
+  padding: 9px 11px; font: 12px/1.5 var(--mono); overflow: auto; margin: 4px 0;
+}
+.rc-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--line2); display: block; }
+.rc-imgblocked {
+  font: 11px var(--mono); color: var(--slate); background: var(--slate-soft);
+  border: 1px solid var(--line2); border-radius: 6px; padding: 4px 9px; display: inline-block;
+}
+.rc-chart {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; display: block;
+}
+.rc-meta {
+  font: 10px var(--mono); color: var(--faint); padding: 2px 0;
+}
+.rc-done { color: var(--teal); }
+.rc-err {
+  font: 12px var(--mono); color: var(--rose); background: var(--surface);
+  border: 1px solid #f2cdd4; border-radius: 8px; padding: 8px 10px;
+}
+
+/* ───────────────────────────────────────────────────────────────────────
+   session-log B-view: one canonical session per agent. No rail/list.
+   Layout: toolbar / (board + Session panel) / optional Activity stats view.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* The chat pane (#inspect) hosts the session-log B-view with its Session panel
+   visible by default. Layout-preset classes still win with !important. */
+.pane.inspect.has-sl { width: 560px; display: flex; flex-direction: column; }
+.pane.inspect.has-sl > .info-panel { display: none; }
+.sl-mount { flex: 1 1 auto; min-height: 440px; display: flex; min-width: 0; }
+.sl-mount .sl-root { flex: 1 1 auto; margin-top: 10px; }
+
+.sl-root {
+  display: flex; flex-direction: column; position: relative; height: 100%; min-height: 0;
+  margin-top: 10px; border: 1px solid var(--line); border-radius: 10px;
+  overflow: hidden; background: var(--surface);
+}
+.sl-root.sl-presentation {
+  position: fixed; inset: 0; z-index: 60; margin: 0; border-radius: 0;
+  box-shadow: 0 0 0 100vmax rgba(28,27,23,.4);
+}
+
+/* ── toolbar (sid + per-session actions on left; view switch on right) ── */
+.sl-bar {
+  display: flex; align-items: center; gap: 6px; flex: none;
+  padding: 6px 9px; border-bottom: 1px solid var(--line); background: var(--surface);
+}
+.sl-spacer { flex: 1; }
+.sl-sid { font: 11px var(--mono); color: var(--muted); }
+.sl-btn {
+  font: 600 11px var(--ui); color: var(--muted); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line2); border-radius: 7px;
+  padding: 3px 8px; transition: color .12s, border-color .12s, background .12s;
+}
+.sl-btn:hover { color: var(--ink); border-color: var(--ink); }
+.sl-btn.on { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
+.sl-btn.sl-amber { color: var(--amber); border-color: #e3c79a; }
+.sl-btn.sl-amber:hover { background: var(--amber-soft); }
+.sl-btn:disabled {
+  cursor: default; opacity: .45; color: var(--faint); border-color: var(--line);
+  background: var(--paper2);
+}
+
+/* ── canvas = board + Session side panel, or full Activity stats view ───── */
+.sl-canvas { flex: 1; min-height: 0; display: flex; min-width: 0; }
+.sl-board-frame { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; }
+.sl-board {
+  flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--paper);
+}
+.sl-history-blank {
+  margin: 88px auto 0; max-width: 420px; padding: 18px 20px;
+  color: var(--muted); font: 13px/1.55 var(--ui); text-align: center;
+  border: 1px dashed var(--line2); border-radius: 8px; background: rgba(255,254,251,.7);
+}
+
+/* upper-right overlay on the board: per-type filter chips + Full button.
+   Frosted, floats over content, never scrolls with the conversation. */
+.sl-overlay-tr {
+  position: absolute; top: 8px; right: 10px; z-index: 5;
+  display: flex; align-items: center; gap: 7px;
+}
+.sl-filters {
+  display: flex; gap: 2px; padding: 3px;
+  background: rgba(255,254,251,.85);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--sh);
+}
+.sl-filter {
+  font: 600 11px var(--ui); color: var(--muted); background: transparent;
+  border: none; border-radius: 5px; padding: 3px 8px; cursor: pointer;
+  transition: color .12s, background .12s, opacity .12s;
+}
+.sl-filter:hover { color: var(--ink); }
+.sl-filter.on { color: var(--teal); background: var(--teal-soft); }
+.sl-filter:not(.on) { opacity: .45; text-decoration: line-through; text-decoration-thickness: 1px; }
+.sl-filter:not(.on):hover { opacity: .85; }
+.sl-fullbtn {
+  font: 600 12px var(--ui); color: var(--muted);
+  background: rgba(255,254,251,.85);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px; cursor: pointer;
+  box-shadow: var(--sh); transition: color .12s, border-color .12s, background .12s;
+}
+.sl-fullbtn:hover { color: var(--ink); border-color: var(--line2); background: var(--surface); }
+
+/* per-card-type hide rules driven by the filter chips. Tools span two kinds
+   (rc-tool + rc-result) because a tool turn is the call AND the result. */
+.sl-board.hide-you  .rc-you   { display: none; }
+.sl-board.hide-text .rc-text  { display: none; }
+.sl-board.hide-tool .rc-tool,
+.sl-board.hide-tool .rc-result { display: none; }
+
+/* flash the target card when jumped from the outline */
+.rc-blk.flash { animation: rcflash 1.6s ease-out; }
+@keyframes rcflash {
+  0%   { box-shadow: 0 0 0 3px var(--teal), var(--sh); }
+  100% { box-shadow: var(--sh); }
+}
+
+/* ── side panels (shared shell — Session / Activity / Work log) ────────── */
+.sl-side {
+  width: 300px; flex: none; min-height: 0; display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); background: var(--surface2);
+}
+.sl-side-head {
+  display: flex; align-items: center; justify-content: space-between; flex: none;
+  font: 600 11px var(--ui); color: var(--muted);
+  padding: 7px 10px; border-bottom: 1px solid var(--line);
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.sl-side-title { display: flex; align-items: center; gap: 6px; }
+.sl-pill {
+  font: 600 9px var(--mono); color: var(--muted); background: var(--paper2);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+  letter-spacing: 0; text-transform: none;
+}
+.sl-side-x {
+  font: 600 10px var(--ui); line-height: 1; color: var(--muted); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line2); border-radius: 6px;
+  padding: 4px 8px; transition: color .12s, border-color .12s;
+}
+.sl-side-x:hover { color: var(--ink); border-color: var(--ink); }
+.sl-side-body { flex: 1; min-height: 0; overflow: auto; }
+.sl-empty { color: var(--faint); font: 12px var(--ui); padding: 14px; line-height: 1.5; }
+.sl-empty code { font-family: var(--mono); color: var(--muted); }
+
+.sl-root.sl-view-session .sl-side.sl-activity { display: none; }
+.sl-root.sl-view-activity .sl-board-frame,
+.sl-root.sl-view-activity .sl-side.sl-session { display: none; }
+.sl-root.sl-view-activity .sl-side.sl-activity {
+  display: flex; width: 100%; border-left: none; background: var(--surface);
+}
+.sl-root.sl-presentation .sl-side { display: none; }
+
+/* Activity tool statistics */
+.toolstats { padding: 16px; color: var(--ink); }
+.ts-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 10px;
+}
+.ts-card {
+  border: 1px solid var(--line); background: var(--paper); border-radius: 8px;
+  padding: 12px; box-shadow: var(--sh);
+}
+.ts-card span {
+  display: block; font: 600 10px var(--ui); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.ts-card b { display: block; margin-top: 7px; font: 600 26px var(--disp); color: var(--ink); }
+.ts-scope {
+  display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 14px;
+  font: 10px var(--mono); color: var(--faint);
+}
+.ts-scope span { border: 1px solid var(--line); background: var(--paper2); border-radius: 999px; padding: 3px 8px; }
+.ts-section {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 8px;
+  padding: 12px; box-shadow: var(--sh);
+}
+.ts-title {
+  font: 600 10px var(--ui); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px;
+}
+.ts-empty { color: var(--faint); font: 12px var(--ui); padding: 6px 0; }
+.ts-tool { padding: 8px 0; border-top: 1px solid var(--line); }
+.ts-tool:first-of-type { border-top: none; }
+.ts-tool-head { display: flex; justify-content: space-between; gap: 10px; font: 12px var(--mono); }
+.ts-tool-head b { color: var(--ink); font-weight: 600; word-break: break-all; }
+.ts-tool-head span { color: var(--faint); flex: none; }
+.ts-bar { height: 5px; margin-top: 7px; background: var(--paper2); border-radius: 999px; overflow: hidden; }
+.ts-bar i { display: block; height: 100%; background: var(--teal); border-radius: inherit; }
+
+/* ── Session panel content ─────────────────────────────────────────────── */
+.sm { padding: 10px 12px 6px; }
+.sm-row {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  padding: 5px 0; border-bottom: 1px dashed var(--line);
+}
+.sm-row:last-child { border-bottom: none; }
+.sm-k {
+  font: 10px var(--mono); color: var(--faint); flex: none; padding-top: 1px;
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.sm-v { font: 12px var(--mono); color: var(--ink); text-align: right; word-break: break-all; }
+.sm-v.muted { color: var(--muted); }
+.sm-history {
+  padding: 9px 12px 10px; border-top: 1px solid var(--line); background: var(--paper2);
+}
+.sm-history-actions { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.sm-history-actions .sl-btn { text-align: center; }
+.sm-history-status {
+  margin-top: 7px; font: 10px/1.4 var(--mono); color: var(--faint);
+}
+.sm-actions {
+  display: flex; gap: 6px; padding: 9px 12px;
+  border-top: 1px solid var(--line); background: var(--surface);
+}
+.sm-actions .sl-btn { flex: 1; text-align: center; font-size: 10px; }
+
+/* transcript outline — one row per turn; click jumps + flashes the board card */
+.sm-outline-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 12px 5px; font: 600 10px var(--ui); color: var(--muted);
+  text-transform: uppercase; letter-spacing: .08em;
+  border-top: 1px solid var(--line); background: var(--paper2);
+}
+.sm-outline-count { font: 10px var(--mono); color: var(--faint); text-transform: none; letter-spacing: 0; }
+.sm-outline { padding: 4px 6px; }
+.ol {
+  display: flex; gap: 8px; align-items: baseline; padding: 5px 6px;
+  border-radius: 5px; cursor: pointer; font-size: 11.5px; color: var(--ink);
+  transition: background .12s;
+}
+.ol:hover { background: var(--paper2); }
+.ol-t { font: 10px var(--mono); color: var(--faint); flex: none; width: 40px; }
+.ol-r {
+  font: 600 9px var(--mono); text-transform: uppercase; letter-spacing: .04em;
+  flex: none; min-width: 42px; padding: 1px 5px; border-radius: 3px; text-align: center;
+}
+.r-you    { color: var(--teal);  background: var(--teal-soft); }
+.r-text   { color: var(--muted); background: var(--paper2); }
+.r-tool   { color: var(--amber); background: var(--amber-soft); }
+.r-result { color: var(--slate); background: var(--slate-soft); }
+.r-raw    { color: var(--faint); background: var(--paper2); }
+.ol-x {
+  flex: 1; color: var(--ink); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+
+/* ephemeral status toast inside the view */
+.sl-flash {
+  position: absolute; bottom: 56px; left: 50%; transform: translateX(-50%);
+  font: 12px var(--ui); color: #fff; background: rgba(28,27,23,.9);
+  border-radius: 8px; padding: 6px 12px; opacity: 0; pointer-events: none;
+  transition: opacity .2s; z-index: 5;
+}
+.sl-flash.on { opacity: 1; }

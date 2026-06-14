@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>agent_mesh — board2</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,360..600&family=JetBrains+Mono:wght@400;500;600&family=Spline+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/board2.css">
+<!-- Session tab styles (session-view.js — turn-based view). result-canvas.css
+     stays linked while session-canvas.js exists (removed in Phase-7 Task 3). -->
+<link rel="stylesheet" href="/result-canvas.css">
+<link rel="stylesheet" href="/board2-session.css">
+</head>
+<body>
+
+<!-- ═══════════════ VIEW 1: BOARD (fleet overview only) ═══════════════ -->
+<div class="view on" id="view-board">
+<header>
+  <span class="logo">agent_mesh</span>
+  <span class="pill alive">● <b id="pill-agents">—</b> agents</span>
+  <span class="pill">⇄ <b id="pill-deleg">—</b> active delegations</span>
+  <span class="pill">⌘ <b id="pill-sessions">—</b> live sessions</span>
+  <span class="spacer"></span>
+  <div class="bview"><span class="on" data-bv="cards">▦ cards</span><span data-bv="net">◉ network</span></div>
+  <button class="hbtn">＋ Add agent</button>
+</header>
+
+<div class="mesh-kpis">
+  <div class="mkpi" id="kpi-agents"><b>—<span class="sub"></span></b><div class="kl">AGENTS</div></div>
+  <div class="mkpi" id="kpi-skills"><b>—<span class="sub"></span></b><div class="kl">SKILLS (ALL AGENTS)</div></div>
+  <div class="mkpi" id="kpi-mcps"><b>—<span class="sub"></span></b><div class="kl">MCP SERVERS</div></div>
+  <div class="mkpi" id="kpi-workflows" title="Phase 2"><b>—<span class="sub"></span></b><div class="kl">WORKFLOWS</div></div>
+  <div class="mkpi" id="kpi-sched" title="Phase 2"><b>—<span class="sub"></span></b><div class="kl">SCHEDULED JOBS</div></div>
+  <div class="mkpi" id="kpi-sessions"><b>—<span class="sub"></span></b><div class="kl">SESSIONS TODAY</div></div>
+  <div class="mkpi" id="kpi-a2a"><b>—<span class="sub"></span></b><div class="kl">A2A TODAY</div></div>
+  <div class="mkpi" id="kpi-artifacts" title="Phase 2"><b>—<span class="sub"></span></b><div class="kl">SAVED ARTIFACTS</div></div>
+</div>
+
+<div class="a2a-lane">
+  <span class="lane-label">A2A</span>
+  <div id="lane" style="display:contents"></div>
+</div>
+
+<main id="cards-main"></main>
+
+<!-- ◉ network: top-level topology -->
+<div id="netview">
+  <div class="netwrap">
+    <svg id="netsvg" viewBox="0 0 900 430" width="100%" height="100%"></svg>
+    <div class="netlegend">● green live · ● amber working · ● grey idle — amber dashed edge = running delegation · click a node to open its workspace</div>
+  </div>
+</div>
+
+<div class="dock" id="dock">
+  <div class="dhead" id="dock-toggle" title="fold / unfold the timeline">
+    <span class="dock-caret">▾</span><span>MESH TIMELINE</span><span class="live-ind">● live</span>
+  </div>
+  <div class="events" id="events"></div>
+</div>
+</div>
+
+<!-- ═══════════════ VIEW 2: AGENT WORKSPACE (one agent only) ═══════════════ -->
+<div class="view" id="view-ws">
+  <div class="ws-head">
+    <button class="back" id="ws-back">← Board</button>
+    <span class="dot" id="ws-dot"></span>
+    <h2 id="ws-name"></h2>
+    <span class="pill" id="ws-pill">▤ —</span>
+    <div class="tabs">
+      <span class="on" data-wstab="session">Session</span>
+      <span data-wstab="activity">Activity</span>
+      <span data-wstab="schedule">Schedule</span>
+      <span data-wstab="files">Files</span>
+      <span data-wstab="artifacts">Artifacts</span>
+      <span data-wstab="workflows">Workflows</span>
+    </div>
+    <span class="spacer"></span>
+    <button class="hbtn amber" id="ws-terminal">⌘ Terminal — open in Claude CLI</button>
+  </div>
+  <div id="ws-body"></div>
+</div>
+
+<!-- session-log.js stays loaded: session-view.js imports transcriptWindowUrl/
+     streamUrl from it (its only import-time side effect is window.mountSessionLog). -->
+<script type="module" src="/session-log.js"></script>
+<script type="module" src="/board2.js"></script>
+</body>
+</html>

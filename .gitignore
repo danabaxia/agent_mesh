@@ -1,0 +1,33 @@
+.draw_and_plan/
+.DS_Store
+.codex/
+.superpowers/
+# Per-folder run logs / denial logs (AGENT_MESH_LOG_DIR default), incl. under examples/
+.agent-mesh/
+
+# Local dev / verification artifacts (browser screenshots, MCP cache, worktrees,
+# generated walkthrough/scratch HTML, npm pack output) — not part of the source.
+.playwright-mcp/
+.worktrees/
+/*.png
+/WALKTHROUGH.html
+/mvp.html
+/dashboard-demo.html
+*.tgz
+node_modules/
+/mesh/
+/my-mesh/
+# Dashboard restart wrapper logs (transient runtime artifacts)
+/.dashboard-restart.log
+/.dashboard-restart.err.log
+
+# A2A behavior eval output (scripts/eval-a2a.mjs)
+eval-results/
+# Perf benchmark output (scripts/eval-perf.mjs)
+eval-perf-results/
+# Adversarial battery output (scripts/eval-adversarial.mjs)
+eval-adversarial-results/
+
+# local Claude Code settings (machine-specific paths — never publish)
+**/.claude/settings.json
+**/.claude/settings.local.json

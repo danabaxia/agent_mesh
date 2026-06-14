@@ -1,0 +1,7 @@
+[
+  { "title": "Dune", "author": "Frank Herbert", "shelf": 3 },
+  { "title": "Dune Messiah", "author": "Frank Herbert", "shelf": 3 },
+  { "title": "Neuromancer", "author": "William Gibson", "shelf": 7 },
+  { "title": "The Left Hand of Darkness", "author": "Ursula K. Le Guin", "shelf": 5 },
+  { "title": "Foundation", "author": "Isaac Asimov", "shelf": 1 }
+]

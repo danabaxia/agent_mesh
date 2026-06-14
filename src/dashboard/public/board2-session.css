@@ -1,0 +1,257 @@
+/* board2-session.css — styles for the board2 Session tab (session-view.js).
+
+   The top block re-declares the CSS variables app.css would normally provide
+   (board2 does NOT link app.css — it clobbers body/header/.pill chrome), so
+   anything ported from the legacy palette keeps resolving. Values copied from
+   app.css :root. */
+#ws-body {
+  --paper: #f5f3ec; --paper2: #efece3; --surface: #fffefb; --surface2: #faf8f2;
+  --ink: #1c1b17; --muted: #6f7269; --faint: #9a9c91; --line: #e3e0d6; --line2: #d2cec1;
+  --teal: #0f7a6b; --teal-soft: #e2f1ee; --amber: #b8742a; --amber-soft: #f6ebdd;
+  --slate: #5b6b78; --slate-soft: #e8edf0; --rose: #b5485a;
+  --ui: 'Spline Sans', system-ui, sans-serif;
+  --disp: 'Fraunces', Georgia, serif;
+  --mono: 'JetBrains Mono', Consolas, monospace;
+  --sh: 0 1px 2px rgba(28,27,23,.04), 0 6px 22px -12px rgba(28,27,23,.18);
+}
+
+/* #ws-body is the tab content host inside the .view flex column: fill the
+   remaining height and let the session view stretch. */
+#ws-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+/* ── scv2-* — turn-based session view, turn-based session view (its .chat /
+   .canvas / .meta grid + artifact-card anatomy), mapped onto board2's palette
+   variables. Scoped under #ws-body — never leaks to the legacy '/'. ────────── */
+
+#ws-body .scv2-root {
+  flex: 1; min-height: 0; position: relative;
+  display: grid; grid-template-columns: 30% 1fr 230px;
+  background: var(--paper);
+}
+#ws-body .scv2-loading, #ws-body .scv2-blank {
+  padding: 18px; font: italic 12.5px var(--ui); color: var(--faint);
+}
+#ws-body .scv2-empty {
+  grid-column: 1 / -1; align-self: center; justify-self: center;
+  max-width: 440px; text-align: center; padding: 28px;
+  display: flex; flex-direction: column; gap: 10px; font: 13px var(--ui); color: var(--muted);
+}
+#ws-body .scv2-btn {
+  border: 1px solid var(--line2); background: var(--surface); color: var(--ink);
+  border-radius: 8px; font: 600 12px var(--ui); padding: 7px 14px; cursor: pointer;
+}
+#ws-body .scv2-amber { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+
+/* ── chat column ──────────────────────────────────────────────────────────── */
+#ws-body .scv2-chat {
+  border-right: 1px solid var(--line); background: var(--surface);
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+}
+#ws-body .scv2-clabel {
+  flex: none; display: flex; align-items: center; gap: 6px;
+  font: 600 10px var(--mono); letter-spacing: 1px; color: var(--muted);
+  padding: 8px 14px 4px;
+}
+#ws-body .scv2-chips { margin-left: auto; display: flex; gap: 4px; }
+#ws-body .scv2-chip {
+  cursor: pointer; border: 1px solid var(--line); border-radius: 999px;
+  padding: 0 8px; background: var(--surface); color: var(--faint);
+  font: 600 10px var(--ui); letter-spacing: 0;
+}
+#ws-body .scv2-chip.on { color: var(--teal); border-color: var(--teal); }
+#ws-body .scv2-chatlog {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  padding: 8px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+#ws-body .scv2-olderbtn {
+  flex: none; align-self: center; cursor: pointer;
+  border: 1px solid var(--line2); border-radius: 999px; background: var(--surface);
+  color: var(--muted); font: 600 10.5px var(--ui); padding: 2px 12px;
+}
+#ws-body .scv2-olderbtn:hover { color: var(--teal); border-color: var(--teal); }
+/* stitched-timeline seam: a muted, centered session boundary between segments
+   (2026-06-13 §7). The em-dashes are in the markup; clickable → pin session. */
+#ws-body .scv2-seam {
+  flex: none; align-self: center; cursor: pointer; text-align: center;
+  font: 600 9.5px var(--mono); letter-spacing: 1px; color: var(--faint);
+  text-transform: uppercase; padding: 6px 8px; margin: 2px 0; white-space: nowrap;
+}
+#ws-body .scv2-seam:hover { color: var(--teal); }
+/* turn cards (reference .turn/.who/.when) */
+#ws-body .scv2-turn {
+  flex: none; border: 1px solid var(--line); border-radius: 9px;
+  padding: 7px 10px; font-size: 12.5px; background: #fff;
+  white-space: pre-wrap; word-break: break-word;
+}
+#ws-body .scv2-turn .who {
+  font: 600 10px var(--mono); letter-spacing: 1px; color: var(--muted);
+  margin-bottom: 3px; display: flex; gap: 6px; white-space: normal;
+}
+#ws-body .scv2-turn .when { margin-left: auto; font-weight: 400; }
+#ws-body .scv2-turn.user { border-left: 3px solid #14b8a6; }
+#ws-body .scv2-turn.tool {
+  border-left: 3px solid #c4b5fd; background: #fbfaff;
+  font: 11px var(--mono); color: #4c1d95;
+}
+#ws-body .scv2-turn.reply { border-left: 3px solid #15803d; }
+#ws-body .scv2-turn.scv2-ans { cursor: pointer; }
+#ws-body .scv2-turn.scv2-ans:hover { border-color: var(--teal); }
+#ws-body .scv2-artlink { color: var(--teal); cursor: pointer; font-weight: 600; }
+/* filter chips hide card kinds */
+#ws-body .scv2-chatlog.hide-user  .scv2-turn.user  { display: none; }
+#ws-body .scv2-chatlog.hide-reply .scv2-turn.reply { display: none; }
+#ws-body .scv2-chatlog.hide-tool  .scv2-turn.tool  { display: none; }
+/* composer (shown only when the shell gate is on) */
+#ws-body .scv2-composer {
+  flex: none; display: flex; gap: 8px; padding: 10px 14px;
+  border-top: 1px solid var(--line); background: var(--surface2);
+}
+#ws-body .scv2-input {
+  flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 11px; font: 12.5px var(--ui); background: #fff;
+}
+#ws-body .scv2-send {
+  border: none; background: var(--teal); color: #fff; border-radius: 8px;
+  padding: 8px 16px; font: 600 12px var(--ui); cursor: pointer;
+}
+#ws-body .scv2-send:disabled { opacity: .5; }
+
+/* ── center canvas: tab strip + one artifact card ─────────────────────────── */
+#ws-body .scv2-canvas {
+  display: flex; flex-direction: column; min-height: 0; min-width: 0;
+  background: var(--surface2); border-right: 1px solid var(--line);
+}
+#ws-body .scv2-atabs {
+  flex: none; display: flex; flex-wrap: wrap; gap: 5px;
+  padding: 8px 16px 0; border-bottom: 1px solid var(--line);
+}
+#ws-body .scv2-atab {
+  cursor: pointer; font-size: 11px; padding: 3px 10px;
+  border: 1px solid var(--line); border-bottom: none; border-radius: 8px 8px 0 0;
+  background: var(--paper2); color: var(--muted); white-space: nowrap;
+}
+#ws-body .scv2-atab.on { background: #fff; color: var(--ink); font-weight: 600; border-color: #14b8a6; }
+#ws-body .scv2-aolder {
+  font-size: 11px; border: 1px solid var(--line); border-radius: 8px 8px 0 0;
+  background: var(--paper2); color: var(--muted); padding: 2px 6px; max-width: 150px;
+}
+#ws-body .scv2-tabs-empty { font: italic 11.5px var(--ui); color: var(--faint); padding: 2px 0 7px; }
+#ws-body .scv2-cwrap { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px; }
+/* artifact card anatomy (reference .ahead/.abadge/.ameta/.aacts/.aq/.abody) */
+#ws-body .scv2-ahead {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 12px;
+}
+#ws-body .scv2-abadge {
+  font: 600 10px var(--mono); letter-spacing: 1px; color: #fff;
+  background: var(--teal); border-radius: 5px; padding: 2px 8px;
+}
+#ws-body .scv2-ahead h3 { font: 600 16px var(--disp); margin: 0; }
+#ws-body .scv2-ameta { font: 11px var(--mono); color: var(--muted); }
+#ws-body .scv2-aacts { margin-left: auto; display: flex; gap: 6px; }
+#ws-body .scv2-aacts button {
+  border: 1px solid var(--line); background: #fff; border-radius: 6px;
+  font-size: 11px; padding: 2px 9px; cursor: pointer;
+}
+#ws-body .scv2-aacts button:hover { color: var(--teal); border-color: var(--teal); }
+#ws-body .scv2-aq {
+  background: var(--teal-soft); border: 1px solid var(--line); border-left: 3px solid #14b8a6;
+  border-radius: 8px; padding: 8px 12px; font-size: 12.5px; margin-bottom: 12px; max-width: 980px;
+  white-space: pre-wrap; word-break: break-word;
+}
+#ws-body .scv2-aq b { font: 600 10px var(--mono); color: var(--muted); margin-right: 6px; }
+#ws-body .scv2-abody {
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  padding: 16px 20px; font-size: 13px; max-width: 980px;
+}
+#ws-body .scv2-abody h3, #ws-body .scv2-abody h4, #ws-body .scv2-abody h5 {
+  font-family: var(--disp); margin: 12px 0 6px;
+}
+#ws-body .scv2-abody p { margin: 6px 0; }
+#ws-body .scv2-abody ul, #ws-body .scv2-abody ol { margin: 6px 0 6px 22px; }
+#ws-body .scv2-abody table { border-collapse: collapse; margin: 10px 0; font-size: 12.5px; }
+#ws-body .scv2-abody th, #ws-body .scv2-abody td {
+  border: 1px solid var(--line); padding: 4px 9px; text-align: left;
+}
+#ws-body .scv2-abody th { background: #eef6f4; font: 600 11px var(--mono); color: var(--muted); }
+#ws-body .scv2-abody code {
+  font-family: var(--mono); font-size: 11.5px; background: var(--paper2);
+  padding: 0 4px; border-radius: 3px;
+}
+#ws-body .scv2-abody .cb {
+  background: #1f2937; color: #e5e7eb; border-radius: 8px; padding: 10px 14px;
+  overflow: auto; font-size: 11.5px; margin: 8px 0;
+}
+#ws-body .scv2-abody .cb code { background: none; color: inherit; padding: 0; }
+#ws-body .scv2-abody hr { border: none; border-top: 1px solid var(--line); margin: 10px 0; }
+
+/* ↓ save mini-form (under the artifact card) */
+#ws-body .scv2-form {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 14px; margin: 10px 0 4px; max-width: 980px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+#ws-body .scv2-form input, #ws-body .scv2-form textarea {
+  border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: 12px var(--mono);
+}
+#ws-body .scv2-form-row { display: flex; align-items: center; gap: 10px; }
+#ws-body .scv2-form button {
+  align-self: flex-start; border: 1px solid var(--teal); color: var(--teal);
+  background: #fff; border-radius: 6px; font-size: 11px; font-weight: 600;
+  padding: 3px 10px; cursor: pointer;
+}
+#ws-body .scv2-form button:disabled { opacity: .5; cursor: default; }
+#ws-body .scv2-ferr { color: var(--rose); font: 11px var(--mono); }
+#ws-body .scv2-saved { color: var(--teal); font: 600 12px var(--ui); }
+
+/* ── right meta panel ─────────────────────────────────────────────────────── */
+#ws-body .scv2-meta {
+  background: var(--surface); padding: 10px 13px; font-size: 11.5px;
+  overflow: auto; min-width: 0;
+}
+#ws-body .scv2-shead {
+  font: 600 11px var(--mono); letter-spacing: 1px; color: var(--muted); margin-bottom: 8px;
+}
+/* follow-mode badge (live / pinned / digesting) under the SESSION head */
+#ws-body .scv2-follow {
+  font: 600 10px var(--ui); border-radius: 6px; padding: 3px 8px; margin-bottom: 6px;
+  border: 1px solid var(--line);
+}
+#ws-body .scv2-follow.live { color: var(--teal); border-color: var(--teal); background: var(--teal-soft); }
+#ws-body .scv2-follow.pinned { color: var(--amber); border-color: var(--amber); background: var(--amber-soft); cursor: pointer; }
+#ws-body .scv2-follow.digest { color: var(--slate); border-color: var(--slate); background: var(--slate-soft); }
+#ws-body .scv2-meta td { padding: 4px 6px 4px 0; vertical-align: top; word-break: break-word; }
+#ws-body .scv2-meta td:first-child { font: 600 9.5px var(--mono); color: var(--muted); white-space: nowrap; }
+#ws-body .scv2-mbtns { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+#ws-body .scv2-mbtns button {
+  border: 1px solid var(--line2); background: var(--surface); color: var(--ink);
+  border-radius: 6px; font: 600 11px var(--ui); padding: 4px 10px; cursor: pointer; text-align: left;
+}
+#ws-body .scv2-mbtns button:hover { border-color: var(--teal); color: var(--teal); }
+#ws-body .scv2-mbtns button.scv2-amber { border-color: var(--amber); color: var(--amber); background: var(--amber-soft); }
+#ws-body .scv2-mbtns button.scv2-amber:hover { color: var(--amber); border-color: var(--amber); }
+
+/* ── ephemeral toast (absolute — does not join the grid) ─────────────────── */
+#ws-body .scv2-flash {
+  position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+  background: var(--ink); color: #fff; border-radius: 8px; padding: 7px 14px;
+  font: 600 12px var(--ui); opacity: 0; pointer-events: none; transition: opacity .2s;
+  z-index: 5; max-width: 70%;
+}
+#ws-body .scv2-flash.on { opacity: .92; }
+
+/* image gallery under the artifact body (answers referencing produced images) */
+#ws-body .scv2-gallery { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; max-width: 980px; }
+#ws-body .scv2-fig { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+#ws-body .scv2-fig img { max-width: 100%; height: auto; display: block; border-radius: 6px; }
+#ws-body .scv2-fig figcaption { font: 10.5px var(--mono); color: var(--muted); padding-top: 6px; }
+#ws-body .scv2-imgnote {
+  border: 1px dashed var(--line2); border-radius: 8px; padding: 8px 12px;
+  font: italic 12px var(--ui); color: var(--muted); background: var(--surface2);
+}

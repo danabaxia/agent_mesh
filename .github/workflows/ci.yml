@@ -1,0 +1,66 @@
+name: CI
+
+# The per-PR L0 hermetic gate. The suite is zero-dependency (no npm install —
+# package.json has no deps by design) and stubs `claude`, so runners need only Node.
+#
+# run-all-tests.mjs is the sequential per-file runner: each test file gets its
+# own `node --test` process and a hard 240s timeout, so one wedged spawn-heavy
+# file cannot hang the job (the Windows-stability lesson — see CLAUDE.md).
+# Windows is a first-class target here (.cmd spawn shims, transcript-path
+# encoding), hence the OS matrix.
+#
+# Actions-minute budget (private repo: Windows bills 2x): the FULL cross-platform
+# matrix runs where it matters — on pull_request (the merge gate) and on manual
+# dispatch. Pushes only trigger on the protected lines (post-merge integration
+# smoke already gated by the PR), and there they run Linux-only. Feature-branch
+# pushes don't trigger CI at all — their open PR is the gate. This roughly halves
+# routine consumption WITHOUT weakening the gate: every PR still gets the full
+# ubuntu+windows × node 20/22 matrix before it can merge.
+
+on:
+  push:
+    branches: [main, 'v*-development']
+  pull_request:
+    branches: [main, 'v*-development']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Pick the OS/Node matrix from the event. pull_request + workflow_dispatch get
+  # the full cross-platform matrix (the gate); a push to a protected line gets a
+  # cheap Linux-only smoke (it is post-merge code the PR already gated on Windows).
+  matrix:
+    name: pick matrix
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.pick.outputs.include }}
+    steps:
+      - id: pick
+        shell: bash
+        run: |
+          full='[{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"windows-latest","node":20},{"os":"windows-latest","node":22}]'
+          linux='[{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22}]'
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "include=$linux" >> "$GITHUB_OUTPUT"
+          else
+            echo "include=$full" >> "$GITHUB_OUTPUT"
+          fi
+
+  test:
+    needs: matrix
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.include) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node run-all-tests.mjs

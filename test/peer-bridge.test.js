@@ -1,0 +1,308 @@
+/**
+ * test/peer-bridge.test.js
+ *
+ * Inc 1 — readManagedRegistry + the peer-bridge core (ask-only onward delegation).
+ * Hermetic: the A2A client is injected as a fake; no real peer spawn.
+ */
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, writeFile, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { readManagedRegistry } from '../src/a2a/registry.js';
+import { createBridge, RESERVED_BRIDGE_ENV, BRIDGE_SERVER_NAME } from '../src/a2a/peer-bridge.js';
+import { readRunLogRecords } from '../src/log.js';
+
+// Read all a2a records written under an agent root (newest date file).
+async function readA2aRecords(root) {
+  const dir = join(root, '.agent-mesh', 'logs');
+  let files = [];
+  try { files = await readdir(dir); } catch { return []; }
+  const a2a = files.filter((f) => f.startsWith('a2a-') && f.endsWith('.jsonl')).sort();
+  const out = [];
+  for (const f of a2a) out.push(...await readRunLogRecords(join(dir, f)));
+  return out;
+}
+
+async function agentRootWith(registryObj) {
+  const root = await mkdtemp(join(tmpdir(), 'peer-bridge-'));
+  if (registryObj !== undefined) {
+    await writeFile(join(root, 'registry.json'), JSON.stringify(registryObj), 'utf8');
+  }
+  return root;
+}
+
+// Build an agent root INSIDE a minimal mesh so the bridge can resolve the agent's
+// unique manifest name — onward delegation now refuses without a resolvable caller
+// (spec §3.5 / Decision 2). Pass `AGENT_MESH_MESH_CEILING: meshRoot` in the bridge env.
+async function meshAgentRootWith(registryObj, name = 'caller') {
+  const meshRoot = await mkdtemp(join(tmpdir(), 'peer-bridge-mesh-'));
+  const root = join(meshRoot, name);
+  await mkdir(root, { recursive: true });
+  if (registryObj !== undefined) {
+    await writeFile(join(root, 'registry.json'), JSON.stringify(registryObj), 'utf8');
+  }
+  await writeFile(join(meshRoot, 'mesh.json'), JSON.stringify({
+    'x-agentmesh-generated': true, meshVersion: '1', agents: [{ name, root: `./${name}` }]
+  }), 'utf8');
+  return { root, meshRoot, name };
+}
+
+const MARKED = {
+  'x-agentmesh-generated': true,
+  peers: {
+    library: {
+      root: '/tmp/lib',
+      command: 'node',
+      args: ['/bin/agent-mesh.js', 'serve-a2a', '/tmp/lib'],
+      cwd: '/tmp/lib',
+      env: { AGENT_MESH_ENABLED_MODES: 'ask,do' }
+    }
+  }
+};
+
+function doneTask(text = 'Dune is on shelf 3.') {
+  return {
+    id: 't1',
+    status: { state: 'TASK_STATE_COMPLETED', message: { role: 'ROLE_AGENT', parts: [{ text: 'ok' }] }, timestamp: new Date().toISOString() },
+    artifacts: [{ artifactId: 't1-s', name: 'summary', parts: [{ text }] }],
+    metadata: { 'agentmesh/log_path': '/logs/t1.json', 'agentmesh/files_changed': null }
+  };
+}
+
+function failedTask() {
+  return {
+    id: 't2',
+    status: { state: 'TASK_STATE_REJECTED', message: { role: 'ROLE_AGENT', parts: [{ text: 'no such mode' }] }, timestamp: new Date().toISOString() },
+    artifacts: [],
+    metadata: { 'agentmesh/error_code': 'mode_disabled', 'agentmesh/log_path': '/logs/t2.json' }
+  };
+}
+
+function fakeClientFactory({ task = doneTask() } = {}) {
+  const calls = { factory: [], sent: [], closed: 0 };
+  const factory = async (registry, options) => {
+    calls.factory.push({ registry, options });
+    return {
+      async send(peer, message) { calls.sent.push({ peer, message }); return task; },
+      async close() { calls.closed++; }
+    };
+  };
+  return { factory, calls };
+}
+
+// ---------------------------------------------------------------------------
+// readManagedRegistry
+// ---------------------------------------------------------------------------
+
+test('readManagedRegistry: marked registry yields peers', async () => {
+  const root = await agentRootWith(MARKED);
+  const r = await readManagedRegistry(root);
+  assert.equal(r.ok, true);
+  assert.deepEqual(Object.keys(r.registry.peers), ['library']);
+});
+
+test('readManagedRegistry: markerless registry yields no peers', async () => {
+  const root = await agentRootWith({ peers: MARKED.peers }); // no marker
+  const r = await readManagedRegistry(root);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'stale_registry');
+  assert.deepEqual(r.registry.peers, {});
+});
+
+test('readManagedRegistry: bare/array peers yields no peers', async () => {
+  const root = await agentRootWith({ 'x-agentmesh-generated': true, peers: [] });
+  const r = await readManagedRegistry(root);
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.registry.peers, {});
+});
+
+test('readManagedRegistry: absent registry yields no peers', async () => {
+  const root = await agentRootWith(undefined);
+  const r = await readManagedRegistry(root);
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'absent');
+});
+
+// ---------------------------------------------------------------------------
+// bridge.listPeers
+// ---------------------------------------------------------------------------
+
+test('listPeers reflects the managed registry (enriched with the peer description)', async () => {
+  const root = await agentRootWith(MARKED);
+  const bridge = createBridge({ root, env: {}, createClient: fakeClientFactory().factory });
+  const peers = await bridge.listPeers();
+  assert.deepEqual(peers.map((p) => p.name), ['library']);
+  // discovery enrichment: a description field is always present (peer's bounded
+  // AGENT.md text, a fallback note, or null when the root is unusable)
+  assert.ok('description' in peers[0]);
+});
+
+test('listPeers is empty for a markerless registry', async () => {
+  const root = await agentRootWith({ peers: MARKED.peers });
+  const bridge = createBridge({ root, env: {}, createClient: fakeClientFactory().factory });
+  assert.deepEqual(await bridge.listPeers(), []);
+});
+
+// ---------------------------------------------------------------------------
+// delegateToPeer — happy path
+// ---------------------------------------------------------------------------
+
+test('delegateToPeer(ask) routes an ask message and maps the final Task', async () => {
+  const { root, meshRoot, name } = await meshAgentRootWith(MARKED);
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MODE: 'ask', AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'find Dune' });
+  assert.equal(res.ok, true);
+  assert.equal(res.status, 'completed');
+  assert.match(res.summary, /shelf 3/);
+  assert.equal(res.log_path, '/logs/t1.json');
+
+  // message + options assertions
+  assert.equal(calls.sent.length, 1);
+  assert.equal(calls.sent[0].peer, 'library');
+  assert.equal(calls.sent[0].message.metadata['agentmesh/mode'], 'ask');
+  assert.equal(calls.sent[0].message.metadata['agentmesh/caller'], name);
+  assert.equal(calls.sent[0].message.parts[0].text, 'find Dune');
+  // reserved env protection is requested
+  for (const k of RESERVED_BRIDGE_ENV) {
+    assert.ok(calls.factory[0].options.protectedEnv.includes(k), `protects ${k}`);
+  }
+  assert.equal(calls.closed, 1);
+});
+
+test('delegateToPeer defaults mode to ask', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+  const res = await bridge.delegateToPeer({ peer: 'library', task: 'hi' });
+  assert.equal(res.ok, true);
+  assert.equal(calls.sent[0].message.metadata['agentmesh/mode'], 'ask');
+});
+
+// ---------------------------------------------------------------------------
+// delegateToPeer — gates (no spawn)
+// ---------------------------------------------------------------------------
+
+test('delegateToPeer(do) → mode_disabled, NO peer spawn', async () => {
+  const root = await agentRootWith(MARKED);
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: {}, createClient: factory });
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'rm -rf' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'mode_disabled');
+  assert.equal(calls.factory.length, 0, 'must not construct a client for do');
+});
+
+test('delegateToPeer unknown peer → bad_input, no spawn', async () => {
+  const root = await agentRootWith(MARKED);
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: {}, createClient: factory });
+  const res = await bridge.delegateToPeer({ peer: 'ghost', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
+  assert.equal(calls.factory.length, 0);
+});
+
+test('delegateToPeer with markerless registry → bad_input (no peers), no spawn', async () => {
+  const root = await agentRootWith({ peers: MARKED.peers }); // unmarked
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: {}, createClient: factory });
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
+  assert.equal(calls.factory.length, 0);
+});
+
+test('delegateToPeer empty/oversized task → bad_input', async () => {
+  const root = await agentRootWith(MARKED);
+  const bridge = createBridge({ root, env: {}, createClient: fakeClientFactory().factory });
+  assert.equal((await bridge.delegateToPeer({ peer: 'library', task: '  ' })).error_code, 'bad_input');
+  assert.equal((await bridge.delegateToPeer({ peer: 'library', task: 'x'.repeat(20000) })).error_code, 'bad_input');
+});
+
+// ---------------------------------------------------------------------------
+// audit propagation on downstream failure
+// ---------------------------------------------------------------------------
+
+test('a failed peer Task preserves error_code + log_path in the result', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory({ task: failedTask() });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.status, 'rejected');
+  assert.equal(res.error_code, 'mode_disabled');
+  assert.equal(res.log_path, '/logs/t2.json');
+});
+
+test('reserved bridge server name carries the framework prefix', () => {
+  assert.ok(BRIDGE_SERVER_NAME.startsWith('agentmesh_'));
+});
+
+// ---------------------------------------------------------------------------
+// a2a audit log — Task 1
+// ---------------------------------------------------------------------------
+
+test('delegateToPeer(ask) writes a2a started+done records under the caller root', async () => {
+  const { root, meshRoot, name } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory();                       // doneTask(): completed, log_path /logs/t1.json
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot, AGENT_MESH_RUN_ID: 'run-parent' }, createClient: factory });
+
+  await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'find Dune' });
+
+  const recs = await readA2aRecords(root);
+  const started = recs.find((r) => r.state === 'started');
+  const done = recs.find((r) => r.state === 'done');
+  assert.ok(started && done, 'both a2a records written');
+  assert.equal(started.id, done.id, 'start+done share one id');
+  assert.equal(done.kind, 'a2a');
+  assert.equal(done.from, name);
+  assert.equal(done.to, 'library');
+  assert.equal(done.mode, 'ask');
+  assert.equal(done.parent_run_id, 'run-parent');
+  assert.equal(done.status, 'completed');
+  assert.equal(done.child_log_path, '/logs/t1.json');           // on-disk only
+  assert.ok(typeof done.finished_at === 'string');
+});
+
+test('delegateToPeer refusal (mode_disabled) writes a single a2a done:rejected record, no started', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'rm -rf' });
+  assert.equal(res.error_code, 'mode_disabled');
+  assert.equal(calls.factory.length, 0, 'no peer spawn');
+
+  const recs = await readA2aRecords(root);
+  assert.equal(recs.filter((r) => r.state === 'started').length, 0, 'no started record on a pre-send refusal');
+  const done = recs.find((r) => r.state === 'done');
+  assert.ok(done, 'a refusal is still recorded');
+  assert.equal(done.status, 'rejected');
+  assert.equal(done.error_code, 'mode_disabled');
+  assert.equal(done.to, 'library');
+});
+
+test('delegateToPeer logs started + done:error when the peer send throws (post-dispatch failure)', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const throwingClient = async () => ({
+    async send() { throw new Error('connection reset'); },
+    async close() {}
+  });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: throwingClient });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'spawn_failed');
+
+  const recs = await readA2aRecords(root);
+  const started = recs.find((r) => r.state === 'started');
+  const done = recs.find((r) => r.state === 'done');
+  assert.ok(started && done, 'both records written on a post-dispatch failure');
+  assert.equal(started.id, done.id);
+  assert.equal(done.status, 'error');
+});

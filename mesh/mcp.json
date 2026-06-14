@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "citation-policy": {
+      "command": "node",
+      "args": ["mesh/tools/citation-policy/server.mjs"],
+      "description": "Repository-wide citation policy helper. Declared globally so any agent can SEE it, but per spec §5 lines 162-163 the MVP never grants or invokes it — discovery and logging only."
+    }
+  }
+}

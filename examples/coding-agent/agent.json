@@ -1,0 +1,31 @@
+{
+  "protocolVersion": "1.0",
+  "name": "coding-agent",
+  "description": "A Claude Code-backed peer agent for scoped coding tasks, patch planning, implementation, review, and test strategy.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "code-implementation",
+      "name": "Code implementation",
+      "description": "Implement scoped code changes inside the assigned project root.",
+      "tags": ["coding", "patch", "claude-code"]
+    },
+    {
+      "id": "code-review",
+      "name": "Code review",
+      "description": "Review code for bugs, regressions, missing tests, and maintainability risks.",
+      "tags": ["review", "quality"]
+    },
+    {
+      "id": "test-strategy",
+      "name": "Test strategy",
+      "description": "Recommend focused verification commands and test coverage for a scoped change.",
+      "tags": ["tests", "verification"]
+    }
+  ],
+  "x-agentmesh": {
+    "modes": ["ask", "do"]
+  }
+}
