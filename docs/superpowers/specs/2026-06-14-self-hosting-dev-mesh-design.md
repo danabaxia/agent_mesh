@@ -38,7 +38,7 @@ runtime + GitHub auth, with the agent-mesh society materialized in the runner.
 
 | Mesh | Lives in | Writable? | Purpose |
 |------|----------|-----------|---------|
-| **Dev-mesh** (the workforce) | `mesh/dev/<role>/` | each agent only its own root | intake/spec/code/test/review/curate the repo |
+| **Dev-mesh** (the workforce) | `dev-mesh/<role>/` | each agent only its own root | intake/spec/code/test/review/curate the repo |
 | **Subject-mesh** (test fixtures) | `examples/eval-{pair,trio}` → materialized to temp | disposable temp roots | the Tester spins these up to exercise mesh features |
 
 Strict isolation: an eval run (Subject-mesh) can never touch the Dev-mesh — the
@@ -50,7 +50,7 @@ definition folder. So:
 - the **Coder** is served with its writable root = a **per-task git worktree** of
   the repo (created fresh per task); that worktree *is* its single root, and the
   path-guard confines it there. Its definition (`AGENT.md`/skills) lives in
-  `mesh/dev/coder/` but is never the write target.
+  `dev-mesh/coder/` but is never the write target.
 - the **Curator** is served with root = the Dev-mesh **memory** location only.
 - the **Analyst/Triager/Reviewer/Maintainer** are `ask` (no writable root at all).
 The live checkout is never a writable root for any agent.
@@ -228,7 +228,7 @@ The highest-value testable artifact — build it pure, gate it hermetically, fir
 - **Never push protected branches.** Always worktree → branch → PR → CI gate.
 - **Coder edits a git worktree**, not the live checkout — bad edits are isolated.
 - **Pinned framework + workforce per cycle (F6).** Changes to `src/**` *and*
-  `mesh/dev/**` (the agents' own prompts/skills) are validated by CI and merged
+  `dev-mesh/**` (the agents' own prompts/skills) are validated by CI and merged
   *before* the society adopts them — agents never hot-swap their own legs or rewrite
   themselves mid-task.
 - **Atomic claim, not a label race (F5).** Task claiming uses an Actions
@@ -275,7 +275,7 @@ the pure backlog logic + the six workflows + the backlog/label conventions.
 1. **Classifier** (`src/dev-mesh/classify.js`) + hermetic tests — pure, no agents.
 2. **Backlog conventions**: label set + state machine + `backlog.md` mirror; a pure
    `src/dev-mesh/backlog.js` (parse/derive state, pick ready∧¬in-progress) + tests.
-3. **Agent folders** `mesh/dev/{maintainer,analyst,triager,coder,tester,reviewer,curator}`
+3. **Agent folders** `dev-mesh/{maintainer,analyst,triager,coder,tester,reviewer,curator}`
    (AGENT.md, agent.json, prompts, skills), wired via `init-mesh`/`add`/`doctor`.
 4. **Phase 0 workflows** (`dev-mesh-{research,intake,backlog,triage,review,curate}.yml`)
    using `claude-code-action`, role prompts + classifier + approval/claim gating;
@@ -292,7 +292,7 @@ the pure backlog logic + the six workflows + the backlog/label conventions.
 docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md   (this)
 src/dev-mesh/classify.js      + test/dev-mesh-classify.test.js
 src/dev-mesh/backlog.js       + test/dev-mesh-backlog.test.js
-mesh/dev/<role>/{AGENT.md,agent.json,prompts/*,skills/*/SKILL.md,memory/*}
+dev-mesh/<role>/{AGENT.md,agent.json,prompts/*,skills/*/SKILL.md,memory/*}
 .github/workflows/dev-mesh-research.yml
 .github/workflows/dev-mesh-intake.yml
 .github/workflows/dev-mesh-backlog.yml
@@ -349,7 +349,7 @@ durable state lives in one of two external stores, never the sandbox.
 | Tier | Where | Lifetime | Holds |
 |------|-------|----------|-------|
 | **Ephemeral (sandbox)** | the Actions runner FS | one run | the Coder's worktree, temp eval dirs, intermediate scorecards — scratch only |
-| **Durable in repo (git)** | committed files | versioned, forever | **agent memory** (`mesh/dev/<role>/memory/quick.json`, `workflows/*.md`), the `backlog.md` mirror, agent defs, code |
+| **Durable in repo (git)** | committed files | versioned, forever | **agent memory** (`dev-mesh/<role>/memory/quick.json`, `workflows/*.md`), the `backlog.md` mirror, agent defs, code |
 | **Durable in GitHub** | Issues + labels + PRs | forever | the **live backlog** state machine (authoritative to-do list) |
 
 - **Memory is committed to the repo, not the sandbox.** On start a runner checks

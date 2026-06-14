@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "1.0",
+  "name": "coder",
+  "description": "Implements an approved plan by editing files in a per-task git worktree (its single writable root). Delegates test interpretation to the Tester; never runs shell or merges.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    { "id": "patch-planning", "name": "Patch planning", "description": "Decompose an approved plan into minimal, reviewable file edits.", "tags": ["code", "patch"] },
+    { "id": "test-strategy", "name": "Test strategy", "description": "Add/adjust tests so the change is verified by the suite.", "tags": ["tests"] }
+  ],
+  "x-agentmesh": { "modes": ["ask", "do"] }
+}
