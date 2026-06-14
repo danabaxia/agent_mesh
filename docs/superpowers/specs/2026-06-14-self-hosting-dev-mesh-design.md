@@ -42,8 +42,18 @@ runtime + GitHub auth, with the agent-mesh society materialized in the runner.
 | **Subject-mesh** (test fixtures) | `examples/eval-{pair,trio}` → materialized to temp | disposable temp roots | the Tester spins these up to exercise mesh features |
 
 Strict isolation: an eval run (Subject-mesh) can never touch the Dev-mesh — the
-**single-writable-root + path-guard** invariant enforces it. The Dev-mesh edits
-the repo only via a **git worktree**, never the live checkout.
+**single-writable-root + path-guard** invariant enforces it.
+
+**Writable-root reconciliation (F1).** "Each agent writes only its own root" is the
+invariant, but a `do` agent's root is *the folder it is served on*, not its
+definition folder. So:
+- the **Coder** is served with its writable root = a **per-task git worktree** of
+  the repo (created fresh per task); that worktree *is* its single root, and the
+  path-guard confines it there. Its definition (`AGENT.md`/skills) lives in
+  `mesh/dev/coder/` but is never the write target.
+- the **Curator** is served with root = the Dev-mesh **memory** location only.
+- the **Analyst/Triager/Reviewer/Maintainer** are `ask` (no writable root at all).
+The live checkout is never a writable root for any agent.
 
 ## 4. The agent society
 
@@ -58,7 +68,7 @@ tools; `do` = write tools behind the path-guard.**
 | **Analyst** | ask | — | owns the **idea-intake door**; **researches similar OSS projects, absorbs findings, proposes ideas** (§5.0); discusses with the user; drafts the ready-for-review spec; shepherds approval; maintains backlog state | `research-landscape` (deep-research), `absorb-findings`, `ideate`, `brainstorm`, `write-spec`, `shepherd-approval`, `backlog-curate` |
 | **Triager** | ask | — | classify an issue/CI red; produce a fix plan | `classify-ci-failure`, `issue-to-plan`, `dedupe` |
 | **Coder** | **do** | Tester | implement the approved plan in a worktree, iterate to green | `patch-planning`, `test-strategy`, `conformance-fix`, `worktree-hygiene` |
-| **Tester** | **do** (own + temp roots) | Subject-mesh | run `run-all-tests.mjs` + materialize eval pair/trio + behavior/adversarial/perf evals; return scorecards | `run-suite`, `materialize-eval`, `interpret-scorecard`, `read-mesh-health` |
+| **Tester** | ask | Subject-mesh | **interpret** test/eval scorecards that the *workflow* produced (it never runs shell — see §4.1); flag regressions | `interpret-scorecard`, `read-mesh-health` |
 | **Reviewer** | ask | — | review the diff against the repo's security invariants; comment | `code-review`, `security-review`, `spec-conformance` |
 | **Curator** | **do** (memory only) | — | on merge/revert, distill lessons into `memory/` + `workflows/` | `distill-lesson`, `promote-to-memory`, `drift-prune` |
 
@@ -66,6 +76,23 @@ The command chain (Maintainer → Triager/Coder → Tester) is real onward deleg
 via `delegate_to_peer` — the exact two-hop pattern the `eval-trio` proves.
 `examples/coding-agent/skills/{code-review,patch-planning,test-strategy}` seeds the
 Coder/Reviewer skill sets.
+
+### 4.1 Execution model — who runs shell (F2)
+
+`do`-mode forbids `Bash` (a hard invariant: arbitrary shell can't be path-gated).
+So **agents never execute processes** — no `npm test`, no eval scripts, no `git`,
+no `act`. Division of labor:
+
+- **GitHub Actions workflow steps** run *all* shell: install, `run-all-tests.mjs`,
+  the eval setup scripts + scorecards, `git` (worktree, commit, push), `doctor`.
+- **`do` agents** (Coder, Curator) only **edit files** in their worktree/memory
+  root via Write/Edit tools.
+- **`ask` agents** (Maintainer, Analyst, Triager, Tester, Reviewer) only **read +
+  reason** — including reading the scorecards/logs the workflow produced.
+
+A "fix → verify" cycle is therefore: Coder edits (do) → *workflow* runs the suite
+(shell step) → Tester interprets the result (ask) → Coder edits again. The model
+proposes file changes; the runner executes and verifies them.
 
 ## 5. The front door — intake → spec → approval → backlog
 
@@ -169,10 +196,10 @@ PR (`ci.yml`) remains the **authoritative gate**.
 (2) [if instead a CI red] Maintainer → Triager: classify (§8)
         flake → re-kick, STOP · infra/auth → escalate, STOP · out-of-scope → report
         real bug → plan
-(3) Coder (do): implement plan in a fresh worktree
-(4) Coder → Tester (do): run-all-tests.mjs + eval pair/trio (+behavior) → scorecard
-(5) Coder: green? commit + open PR (GitHub MCP) + Issue → `pr:in-review`
-           red? back to (3), bounded retries
+(3) Coder (do): edit files in a fresh worktree
+(4) workflow (shell): run-all-tests.mjs + eval pair/trio (+behavior) → Tester (ask) interprets scorecard
+(5) green? workflow commits + opens PR (GitHub MCP) + Issue → `pr:in-review`
+    red? Tester's findings → Coder edits again (3), bounded retries
 (6) Reviewer (ask) on the PR: diff vs invariants → comment / approve
 (7) ci.yml on the PR = authoritative gate
 (8) merged → Curator (do, memory): distill lesson; Issue → `done`
@@ -200,12 +227,17 @@ The highest-value testable artifact — build it pure, gate it hermetically, fir
 - **Idempotent claim lock** on backlog pickup — two ticks never double-start a task.
 - **Never push protected branches.** Always worktree → branch → PR → CI gate.
 - **Coder edits a git worktree**, not the live checkout — bad edits are isolated.
-- **Pinned framework per cycle.** A `src/**` change is validated by CI *before* the
-  society runs on it — don't hot-swap your own legs.
+- **Pinned framework + workforce per cycle (F6).** Changes to `src/**` *and*
+  `mesh/dev/**` (the agents' own prompts/skills) are validated by CI and merged
+  *before* the society adopts them — agents never hot-swap their own legs or rewrite
+  themselves mid-task.
+- **Atomic claim, not a label race (F5).** Task claiming uses an Actions
+  `concurrency:` group keyed on the issue + issue **assignee** as the lock, not a
+  bare label (label add/check is not atomic across concurrent runs).
 - **Bounded retries per failure-signature** (≤3) + **progress detection** → escalate.
-- **`do`-scope minimalism.** Curator writes only `memory/`; Tester only temp roots;
-  Coder only the worktree — enforced by the path-guard root.
-- **No `Bash` in `do`** (existing invariant); shell-shaped steps are workflow steps.
+- **`do`-scope minimalism.** Curator writes only the memory root; Coder only its
+  per-task worktree — enforced by the path-guard root (§3), not honor code.
+- **No `Bash` in `do`** (existing invariant); all shell is workflow steps (§4.1).
 - **Cost ceiling.** Never re-kick expensive eval tiers speculatively; budget-gate.
 
 ## 10. Self-evolution: the memory feedback loop
@@ -236,7 +268,7 @@ primitives already in the tree.
 | GitHub surface | MCP servers in each `.mcp.json`, `readOnly`-marker mode-gated |
 
 ~70% is in place; new work is agent definitions + skills + the pure classifier +
-the five workflows + the backlog/label conventions.
+the pure backlog logic + the six workflows + the backlog/label conventions.
 
 ## 12. Implementation plan
 
@@ -245,8 +277,9 @@ the five workflows + the backlog/label conventions.
    `src/dev-mesh/backlog.js` (parse/derive state, pick ready∧¬in-progress) + tests.
 3. **Agent folders** `mesh/dev/{maintainer,analyst,triager,coder,tester,reviewer,curator}`
    (AGENT.md, agent.json, prompts, skills), wired via `init-mesh`/`add`/`doctor`.
-4. **Phase 0 workflows** (`dev-mesh-{intake,backlog,triage,review,curate}.yml`) using
-   `claude-code-action`, role prompts + classifier + approval/claim gating; auto-merge off.
+4. **Phase 0 workflows** (`dev-mesh-{research,intake,backlog,triage,review,curate}.yml`)
+   using `claude-code-action`, role prompts + classifier + approval/claim gating;
+   execution as shell steps (§4.1); fork-PR-safe (§15); auto-merge off.
 5. **Phase 1**: switch workflows to materialize the real Dev-mesh + drive the
    Maintainer over serve-a2a (dogfooding milestone).
 6. **Phase 2**: Curator memory writes + prefetch-on-next-run (self-evolution).
@@ -279,5 +312,32 @@ mesh/dev/<role>/{AGENT.md,agent.json,prompts/*,skills/*/SKILL.md,memory/*}
   conformance gate.
 - **Phase-1 runner cost/time** of materializing a full mesh per event — measure;
   Phase-0 per-role action is the fallback.
+- **Recursion depth budget.** The chain Maintainer→Triager→Coder→Tester is ~3 hops;
+  `AGENT_MESH_DEPTH` defaults to 3. Confirm the budget covers the deepest chain (incl.
+  Tester→Subject-mesh) or raise it explicitly — the recursion guard refuses past it.
+- **Curator memory approval.** Memory/workflow promotion is review-gated by design;
+  in an autonomous loop the "reviewer" must be defined — default to **human approval**
+  of Curator promotions (a `memory:promote` PR), not auto-write, until trusted.
+
+## 15. Security model
+
+The society ingests **untrusted external content** and runs in CI with secrets, so
+it inherits and extends the framework's threat model:
+
+- **All external content is data, never instructions (F3).** Issue/PR bodies,
+  review comments, CI logs, and **web research results** are treated like `AGENT.md`
+  — length-bounded, framed as data, never executed/obeyed. The `deep-research`
+  skill's adversarial verification + citation requirement is the first filter;
+  absorbed research is **cited and review-gated** (§5.0/§10) so a poisoned page
+  can't silently become a prefetched instruction.
+- **No secrets to untrusted code (F4).** Dev-mesh workflows run only on
+  **same-repo / trusted refs**; they must NOT expose `ANTHROPIC_API_KEY`/write
+  tokens to **fork PRs** (the `pull_request_target` "pwn request" class). Fork PRs
+  get read-only review at most.
+- **Least privilege per role.** `ask` roles get read-only GitHub MCP (the
+  `x-agentmesh readOnly` marker); only the workflow (not the model) holds write
+  tokens / pushes; `do` agents touch only their path-guarded root.
+- **Human at the two gates that matter.** Spec **approval** (§5.3) and PR **merge**
+  (auto-merge off) are human-held; everything between is reversible (branches/PRs).
 
 [cca]: https://code.claude.com/docs/en/github-actions
