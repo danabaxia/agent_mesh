@@ -340,4 +340,31 @@ it inherits and extends the framework's threat model:
 - **Human at the two gates that matter.** Spec **approval** (§5.3) and PR **merge**
   (auto-merge off) are human-held; everything between is reversible (branches/PRs).
 
+## 16. State & persistence (sandbox vs repo vs GitHub)
+
+Cloud-first agents run in **ephemeral GitHub Actions runners** — checked out fresh,
+destroyed after each run. Anything left only on the runner FS is lost, so all
+durable state lives in one of two external stores, never the sandbox.
+
+| Tier | Where | Lifetime | Holds |
+|------|-------|----------|-------|
+| **Ephemeral (sandbox)** | the Actions runner FS | one run | the Coder's worktree, temp eval dirs, intermediate scorecards — scratch only |
+| **Durable in repo (git)** | committed files | versioned, forever | **agent memory** (`mesh/dev/<role>/memory/quick.json`, `workflows/*.md`), the `backlog.md` mirror, agent defs, code |
+| **Durable in GitHub** | Issues + labels + PRs | forever | the **live backlog** state machine (authoritative to-do list) |
+
+- **Memory is committed to the repo, not the sandbox.** On start a runner checks
+  out the repo and the agent loads memory from git; the Curator persists new
+  lessons by **committing them back** via a review-gated `memory:promote` PR
+  (§10) — durable, versioned, diff-reviewable, shared across runs. Trade-offs:
+  commit churn + concurrent writes, mitigated by the review-gate (serializes
+  promotions) and the per-issue concurrency lock (§9).
+- **The backlog is detected by querying GitHub, not a sandbox file.** Each tick
+  lists Issues by label via the GitHub API/MCP (event: `approved`-label fires the
+  workflow; poll: scheduled list of `approved ∧ ¬assigned`). `backlog.md` is a
+  committed *mirror* generated from Issues, not the source of truth.
+
+Per-run lifecycle: `checkout (load memory) → query GitHub (load backlog) → work in
+ephemeral worktree → commit code (task PR) + memory (promote PR) → runner
+destroyed`. Only what is committed/pushed survives.
+
 [cca]: https://code.claude.com/docs/en/github-actions
