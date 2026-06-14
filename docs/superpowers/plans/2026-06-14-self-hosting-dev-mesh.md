@@ -80,14 +80,16 @@ execution (tests/eval/git/act) runs as **workflow steps**, never model `Bash`
 - [x] **Step 3:** hermetic test copies `dev-mesh`→temp, runs `doctor --apply`, asserts marker'd registries + serve-a2a peers + peer-bridge `.mcp.json` (maintainer/coder) + leaf has none + doctor idempotent.
 - [x] **Step 4:** commit `dev-mesh/**` content; **`.gitignore` excludes generated `registry.json`/`.mcp.json`** (machine-absolute paths — regenerated at runtime, like the eval setup scripts).
 
-### Task 5: Role skills (SKILL.md)
+### Task 5: Role skills (SKILL.md) ✅ DONE
 
-**Files:** Create `dev-mesh/<role>/skills/<name>/SKILL.md` per the spec §4 table.
+**Files:** `dev-mesh/<role>/skills/<id>/SKILL.md` (the card-advertised skills) + `test/dev-mesh-skills.test.js`.
 
-- [ ] Analyst: `research-landscape` (wraps deep-research), `absorb-findings`, `ideate`, `write-spec`, `shepherd-approval`, `backlog-curate`.
-- [ ] Triager: `classify-ci-failure` (invokes `src/dev-mesh/classify.js` semantics), `issue-to-plan`, `dedupe`.
-- [ ] Coder: `patch-planning`, `test-strategy`, `conformance-fix`, `worktree-hygiene` (seed from `examples/coding-agent/skills`).
-- [ ] Tester: `interpret-scorecard`, `read-mesh-health`. Reviewer: `code-review`, `security-review`, `spec-conformance`. Curator: `distill-lesson`, `promote-to-memory`, `drift-prune`.
+- [x] Maintainer `route-work`, `watch-backlog`; Analyst `research-landscape`, `write-spec`.
+- [x] Triager `classify-ci-failure` (states the classifier precedence), `issue-to-plan`.
+- [x] Coder `patch-planning`, `test-strategy` (TDD, no-Bash-in-do).
+- [x] Tester `interpret-scorecard`, `read-mesh-health`; Reviewer `code-review`, `security-review` (encodes the invariants); Curator `distill-lesson`, `promote-to-memory` (review-gated).
+- [x] Hermetic test: every card skill has a matching `SKILL.md` (frontmatter name == id) + safety-critical skills encode the invariants.
+- _Secondary skills (absorb-findings/ideate/dedupe/conformance-fix/worktree-hygiene/spec-conformance/drift-prune) deferred — add as the workflows that exercise them land._
 
 ### Task 6: Phase-0 workflows (per-role claude-code-action)
 
