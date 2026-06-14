@@ -294,6 +294,28 @@ test('delegateTask reports spawn failures as data', async () => {
   assert.match(result.error.message, /ENOENT/);
 });
 
+test('delegateTask forward-maintains the per-agent session manifest (spec §7, change-detection-excluded)', async () => {
+  const root = await createGitRepo();
+  const fakeClaude = await createFakeClaude(`console.log('done');`);
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_CLAUDE: fakeClaude },
+    input: { mode: 'ask', task: 'inspect the repo' },
+    route: 'probe'
+  });
+  assert.equal(result.status, 'done');
+  // The manifest lives under .agent-mesh/ → it must NOT count as agent work.
+  assert.deepEqual(result.files_changed, []);
+
+  const manifest = JSON.parse(await readFile(join(root, '.agent-mesh', 'sessions', 'index.json'), 'utf8'));
+  assert.equal(manifest.sessions.length, 1);
+  const entry = manifest.sessions[0];
+  assert.equal(entry.origin, 'worker:probe');
+  assert.equal(entry.status, 'active');
+  assert.deepEqual(entry.run_ids, [result.run_id]);
+  assert.match(entry.id, /^[0-9a-f-]{36}$/);
+});
+
 async function createGitRepo() {
   const root = await mkdtemp(join(tmpdir(), 'agent-mesh-delegate-'));
   await git(root, ['init']);

@@ -4,6 +4,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_LOG_DIR, READ_TOOLS, WRITE_TOOLS } from './config.js';
 import { buildAgentRuntimePrompt } from './agent-context.js';
+import { readQuickMemory } from './quick-memory.js';
+import { selectPrefetch, renderPrefetchBlock } from './prefetch.js';
 import { assembleMcpServers, buildBridgeEnv } from './mesh-mcp.js';
 import { mergeSettings, readLayer, resolveAuthorLayerPaths } from './settings-merge.js';
 import { resolveSkillPolicy, skillToolEnabled, skillPermissions } from './skills-policy.js';
@@ -38,7 +40,15 @@ export async function buildClaudeInvocation({ root, mode, task, env, callEnv, cl
     args.push(session.resume ? '--resume' : '--session-id', session.id);
   }
   const identity = await buildAgentRuntimePrompt(root, mode, { meshRoot, env });
-  if (identity) args.push('--append-system-prompt', identity);
+  // Headless prefetch (spec §6): the worker's task is known at spawn time and the
+  // first-turn MCP race makes a turn-1 `recall` unreliable, so match the task
+  // against quick-memory NOW and append the top-K bodies directly into the prompt,
+  // DATA-fenced. ADDITIVE — the `recall` verbs stay exposed for what prefetch
+  // missed (no weak lexical match strands the worker). A weak/empty match (e.g. a
+  // digest run, or an agent with no quick.json) appends nothing → unchanged.
+  const prefetch = renderPrefetchBlock(selectPrefetch(await readQuickMemory(root), task));
+  const promptParts = [identity, prefetch].filter(Boolean);
+  if (promptParts.length) args.push('--append-system-prompt', promptParts.join('\n\n'));
 
   // Unified mesh claude config (src/mesh-mcp.js) — the SAME assembler the native
   // CLI entry point uses: agent .mcp.json + mesh-global mesh/mcp.json (gated by
