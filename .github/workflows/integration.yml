@@ -59,6 +59,24 @@ jobs:
             exit 1
           fi
           claude --version
+      - name: Auth smoke — surface the real claude error (diagnostic, non-fatal)
+        run: |
+          # `claude --version` needs no auth, so it passing tells us nothing about
+          # whether `claude -p` can actually reach the API. The L1/L2 tiers were all
+          # failing in <1.5s with status 'error' — i.e. claude exits before any model
+          # turn. This step runs ONE real `claude -p` and prints its stdout+stderr so
+          # the actual cause (auth/permission/credit/config) is visible in the log.
+          # Non-fatal (exit 0) so the real e2e still runs and we get full diagnostics.
+          set +e
+          echo "--- claude -p smoke (stdout+stderr) ---"
+          OUT=$(claude -p "Reply with the single word OK." --output-format json 2>&1)
+          CODE=$?
+          echo "$OUT"
+          echo "--- claude -p exit code: $CODE ---"
+          if [ "$CODE" -ne 0 ]; then
+            echo "::error::claude -p failed (exit $CODE) — real error printed above; L1 e2e will fail until this is resolved (likely ANTHROPIC_API_KEY invalid / no API access / no credit)."
+          fi
+          exit 0
       - name: L1 — demo e2e (real claude delegates a real write across folders)
         run: AGENT_MESH_E2E=1 node --test test/demo-e2e.test.js
       - name: L1 — mesh e2e (real claude peer-selection + two-hop over stdio A2A)
