@@ -20,10 +20,12 @@ runtime + GitHub auth, with the agent-mesh society materialized in the runner.
 
 ## 2. Non-goals
 
-- **No autonomous idea generation.** The society only ever works on
-  **human-approved** specs — it does not invent features for itself.
-- **No code before an approved spec.** Discussion and spec drafting are cheap and
-  reversible; `do`-mode work is hard-gated behind explicit approval (§5.3).
+- **No autonomous *implementation*.** The Analyst MAY generate ideas — including
+  by researching similar open-source projects (§5.0) — but every idea is a
+  **proposal**: it becomes a draft spec for human review and is hard-gated behind
+  approval (§5.3) before any code. The society never *ships* unapproved work.
+- **No code before an approved spec.** Discussion, research, and spec drafting are
+  cheap and reversible; `do`-mode work is hard-gated behind explicit approval (§5.3).
 - **Not auto-merge by default.** The loop drives a PR to green + approved and
   *stops there*; merging requires explicit policy opt-in (Renovate-style).
 - **Not a local lane (yet).** The local-agent + `nektos/act` topology is a
@@ -53,7 +55,7 @@ tools; `do` = write tools behind the path-guard.**
 | Agent | Mode | Peers | Owns / does | Skills (SKILL.md) |
 |-------|------|-------|-------------|-------------------|
 | **Maintainer** | ask | all | human/scheduler entry; **watches the backlog**, claims ready tasks, routes work | `route-work`, `watch-backlog`, `claim-task` |
-| **Analyst** | ask | — | owns the **idea-intake door**; discusses with the user; drafts the ready-for-review spec; shepherds approval; maintains backlog state | `brainstorm`, `write-spec`, `shepherd-approval`, `backlog-curate` |
+| **Analyst** | ask | — | owns the **idea-intake door**; **researches similar OSS projects, absorbs findings, proposes ideas** (§5.0); discusses with the user; drafts the ready-for-review spec; shepherds approval; maintains backlog state | `research-landscape` (deep-research), `absorb-findings`, `ideate`, `brainstorm`, `write-spec`, `shepherd-approval`, `backlog-curate` |
 | **Triager** | ask | — | classify an issue/CI red; produce a fix plan | `classify-ci-failure`, `issue-to-plan`, `dedupe` |
 | **Coder** | **do** | Tester | implement the approved plan in a worktree, iterate to green | `patch-planning`, `test-strategy`, `conformance-fix`, `worktree-hygiene` |
 | **Tester** | **do** (own + temp roots) | Subject-mesh | run `run-all-tests.mjs` + materialize eval pair/trio + behavior/adversarial/perf evals; return scorecards | `run-suite`, `materialize-eval`, `interpret-scorecard`, `read-mesh-health` |
@@ -72,6 +74,20 @@ is refined into a **ready-for-review spec**, and only begins implementation
 **after the spec is approved**. This makes the repo's existing superpowers flow
 (brainstorm → spec → codex-spec-review → approval → plan → build) first-class and
 **continuously watched**.
+
+### 5.0 Research-driven ideation (Analyst)
+Ideas need not wait for a human to type them. On request ("research X and
+propose") or on a cadence, the **Analyst** uses the repo's **`deep-research`**
+skill (fan-out web search → fetch → adversarial verification → cited synthesis)
+to **scan the landscape of similar open-source projects** (e.g. OpenHands,
+SWE-agent, Aider, MetaGPT/ChatDev, Renovate, claude-code-action), **absorb** the
+findings into `memory/` (with citations, via the absorption pipeline), and
+**synthesize candidate ideas** for *this* project. Each promising idea is written
+as a **ready-for-review draft spec** (and an `idea` Issue carrying the research
+brief + sources). Crucially, these are **proposals only** — they enter the same
+backlog at `spec:in-review` and are subject to the §5.3 approval gate before any
+code. This makes the Analyst a continuously-learning scout, not an autonomous
+implementer.
 
 ### 5.1 The door (cloud-first = GitHub Issues)
 A user opens a **GitHub Issue** (label `idea`) — the door to discuss. The
@@ -125,6 +141,7 @@ drives the relevant agent headlessly; agents delegate onward over `serve-a2a`.
 
 | Workflow | Trigger | Drives |
 |----------|---------|--------|
+| `dev-mesh-research.yml` | `workflow_dispatch` + `schedule` (cadence) | Analyst (research OSS landscape → absorb → propose draft specs) |
 | `dev-mesh-intake.yml` | `issues` (opened/commented), label changes | Analyst (discuss, draft spec, manage labels) |
 | `dev-mesh-backlog.yml` | `schedule` + `issues` labeled `approved` | Maintainer → Coder (claim ready task, build) |
 | `dev-mesh-triage.yml` | `check_run` (failure), `schedule` | Maintainer → Triager → (Coder) |
@@ -212,6 +229,7 @@ primitives already in the tree.
 | health | `serve-mesh-health`: `check_conformance`, `ping_agent`, `triage_logs` |
 | observe | dashboard |
 | memory / evolution | `quick.json`, absorption/digest/drift, review-gated promotion |
+| research / ideation | superpowers: **`deep-research`** skill (fan-out search, verify, cited synthesis) + absorption pipeline |
 | intake/spec/review flow | superpowers: brainstorming → `codex-spec-review` → writing-plans |
 | backlog | `docs/superpowers/backlog.md` + GitHub Issues/labels |
 | test subjects | `examples/eval-{pair,trio}` + setup scripts |
@@ -242,6 +260,7 @@ docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md   (this)
 src/dev-mesh/classify.js      + test/dev-mesh-classify.test.js
 src/dev-mesh/backlog.js       + test/dev-mesh-backlog.test.js
 mesh/dev/<role>/{AGENT.md,agent.json,prompts/*,skills/*/SKILL.md,memory/*}
+.github/workflows/dev-mesh-research.yml
 .github/workflows/dev-mesh-intake.yml
 .github/workflows/dev-mesh-backlog.yml
 .github/workflows/dev-mesh-triage.yml
