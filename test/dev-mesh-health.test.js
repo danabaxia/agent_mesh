@@ -3,7 +3,24 @@
 // run, so health is judged on the result ENVELOPE, not the job conclusion.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyRunHealth, assessMesh, renderHealthReport } from '../src/dev-mesh/health.js';
+import { classifyRunHealth, assessMesh, renderHealthReport, extractResultEnvelope } from '../src/dev-mesh/health.js';
+
+test('extractResultEnvelope: finds the result in a stream-json array, object, or wrapper', () => {
+  // stream-json array (claude-code-action's saved output): pick the last result event.
+  const stream = [
+    { type: 'system', subtype: 'init' },
+    { type: 'assistant' },
+    { type: 'result', subtype: 'success', is_error: true, total_cost_usd: 0, num_turns: 1 },
+  ];
+  assert.equal(extractResultEnvelope(stream).is_error, true);
+  // single result object
+  assert.equal(extractResultEnvelope({ type: 'result', is_error: false, num_turns: 3, total_cost_usd: 0.04 }).num_turns, 3);
+  // {result:{…}} wrapper
+  assert.equal(extractResultEnvelope({ result: { is_error: false, num_turns: 2, total_cost_usd: 0.01 } }).num_turns, 2);
+  // nothing usable
+  assert.equal(extractResultEnvelope([{ type: 'system' }]), null);
+  assert.equal(extractResultEnvelope(null), null);
+});
 
 test('classifyRunHealth: the real masking bug — is_error despite "success" subtype', () => {
   // The exact envelope from the first live intake run.

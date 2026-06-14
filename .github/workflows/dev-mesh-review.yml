@@ -33,6 +33,7 @@ jobs:
           node-version: 20
       - name: Drive Maintainer → Reviewer (review the diff)
         uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -54,3 +55,8 @@ jobs:
 
             You COMMENT only. Do NOT edit files and do NOT merge — CI (ci.yml) is the
             authoritative gate and a human holds the merge.
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

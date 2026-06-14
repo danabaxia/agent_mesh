@@ -34,6 +34,7 @@ jobs:
           node-version: 20
       - name: Drive the Analyst (discuss → spec → labels)
         uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,3 +58,8 @@ jobs:
             HARD RULE (approval gate, §5.3): do NOT implement anything. No code edits, no
             code branch, no `approved` label — only a human grants approval. You produce
             discussion, specs, and label transitions only.
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

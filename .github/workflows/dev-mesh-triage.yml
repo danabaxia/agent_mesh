@@ -36,6 +36,7 @@ jobs:
           node-version: 20
       - name: Drive Maintainer → Triager (classify CI failure)
         uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,3 +58,8 @@ jobs:
               - flake       → re-kick (max 2×); never if the diff touches the failing area.
               - real_bug    → write a fix plan and hand it to the backlog/Coder flow.
             Post the label + reason + action as a comment. You do not edit code here.
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

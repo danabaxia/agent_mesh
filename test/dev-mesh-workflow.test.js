@@ -97,6 +97,15 @@ test('MODEL PIN: every workflow pins standard claude-opus-4-8 (not the gated [1m
   }
 });
 
+test('HONESTY GATE: every agent workflow fails on an errored/no-op model run', () => {
+  // green job != healthy run — each workflow must verify its agent actually worked
+  // (claude-code-action reports success even when the model errored instantly).
+  for (const n of NAMES) {
+    assert.match(wf[n], /id:\s*claude/, `${n}: action step needs id: claude for the gate`);
+    assert.match(wf[n], /assert-run-healthy\.mjs/, `${n}: must run the per-run honesty gate`);
+  }
+});
+
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
   for (const n of NAMES) {

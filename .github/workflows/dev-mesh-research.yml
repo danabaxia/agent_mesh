@@ -33,6 +33,7 @@ jobs:
           node-version: 20
       - name: Drive the Analyst (research → propose)
         uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -57,3 +58,8 @@ jobs:
             `docs/superpowers/specs/`. STOP THERE — propose only. Do NOT write code, do
             NOT open a code PR, do NOT approve anything. Everything you produce is subject
             to the human approval gate (§5.3).
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

@@ -38,6 +38,25 @@ export function classifyRunHealth(envelope) {
 }
 
 /**
+ * Pull the terminal result envelope out of whatever claude-code-action /
+ * `claude -p --output-format json` wrote: a stream-json array of events, a single
+ * result object, or a {result:{…}} wrapper. Returns null when none is present.
+ */
+export function extractResultEnvelope(parsed) {
+  if (Array.isArray(parsed)) {
+    for (let i = parsed.length - 1; i >= 0; i--) {
+      if (parsed[i] && typeof parsed[i] === 'object' && parsed[i].type === 'result') return parsed[i];
+    }
+    return null;
+  }
+  if (parsed && typeof parsed === 'object') {
+    if (parsed.type === 'result' || 'is_error' in parsed) return parsed;
+    if (parsed.result && typeof parsed.result === 'object') return parsed.result;
+  }
+  return null;
+}
+
+/**
  * Aggregate mesh health from probe runs + a conformance report.
  *   runs: [{ name, envelope }]      — e.g. the dogfood canary's result envelope
  *   conformanceFlags: string[]      — doctor's wiring/drift flags (empty = clean)

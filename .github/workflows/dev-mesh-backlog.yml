@@ -32,6 +32,7 @@ jobs:
           node-version: 20
       - name: Drive Maintainer → Coder → Tester
         uses: anthropics/claude-code-action@v1
+        id: claude
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -64,3 +65,8 @@ jobs:
         run: |
           echo "Coder's branch is verified; open a PR via the GitHub MCP and move the"
           echo "Issue to pr:in-review. Merge stays human-held (auto-merge is off)."
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs
