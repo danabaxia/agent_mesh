@@ -30,16 +30,24 @@ test('classifyRunHealth: the real masking bug — is_error despite "success" sub
   assert.equal(h.status, 'errored');
 });
 
-test('classifyRunHealth: green-but-no-op ($0 / ≤1 turn) is unhealthy', () => {
-  const h = classifyRunHealth({ is_error: false, num_turns: 1, total_cost_usd: 0 });
+test('classifyRunHealth: zero turns is a no-op (nothing ran)', () => {
+  const h = classifyRunHealth({ is_error: false, num_turns: 0, total_cost_usd: 0 });
   assert.equal(h.healthy, false);
   assert.equal(h.status, 'noop');
 });
 
-test('classifyRunHealth: a real working run (cost + turns) is healthy', () => {
+test('classifyRunHealth: a real working run is healthy (API-billed)', () => {
   const h = classifyRunHealth({ is_error: false, num_turns: 6, total_cost_usd: 0.12 });
   assert.equal(h.healthy, true);
   assert.equal(h.status, 'ok');
+});
+
+test('classifyRunHealth: subscription run ($0 but real turns) is healthy, not a false no-op', () => {
+  // OAuth/subscription auth always reports $0 — must NOT be flagged unhealthy.
+  const h = classifyRunHealth({ is_error: false, num_turns: 3, total_cost_usd: 0 });
+  assert.equal(h.healthy, true);
+  assert.equal(h.status, 'ok');
+  assert.match(h.reason, /subscription/);
 });
 
 test('classifyRunHealth: missing/garbage envelope is unknown (unhealthy, never throws)', () => {

@@ -25,16 +25,14 @@ export function classifyRunHealth(envelope) {
   }
   const cost = Number(envelope.total_cost_usd ?? 0);
   const turns = Number(envelope.num_turns ?? 0);
-  // The masking pattern: green job, but $0 spent in ≤1 turn ⇒ the model did no real
-  // work (e.g. an instant model/auth error the action swallowed into a "success").
-  if (cost === 0 && turns <= 1) {
-    return {
-      healthy: false,
-      status: 'noop',
-      reason: `green but did no work ($0 in ${turns} turn${turns === 1 ? '' : 's'}) — likely an instant model error`,
-    };
+  // Don't key off cost: subscription (OAuth) auth reports $0 even on success, so a
+  // cost-based "no-op" check false-fails every subscription run. The reliable
+  // signals are is_error (above) and turns. Zero turns ⇒ nothing ran.
+  if (turns === 0) {
+    return { healthy: false, status: 'noop', reason: 'green but did no work (0 turns) — nothing ran' };
   }
-  return { healthy: true, status: 'ok', reason: `ok (${turns} turns, $${cost.toFixed(4)})` };
+  const billed = cost > 0 ? `$${cost.toFixed(4)}` : '$0 (subscription)';
+  return { healthy: true, status: 'ok', reason: `ok (${turns} turns, ${billed})` };
 }
 
 /**
