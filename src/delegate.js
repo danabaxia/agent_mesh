@@ -18,6 +18,7 @@ import {
   buildClaudeInvocation, buildClaudeEnv, compactArgv
 } from './delegate-invocation.js';
 import { recordEvent } from './session-provenance.js';
+import { readManifest, writeManifest, upsertSession } from './session-manifest.js';
 
 export { resolveMeshRoot } from './delegate-invocation.js';
 
@@ -151,6 +152,21 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
       } catch { /* provenance is observability, never load-bearing for the turn */ }
     }
   }
+
+  // Forward-maintain the per-agent session manifest (spec §7): register this
+  // framework spawn (origin worker:<route>) so the dashboard task-session list and
+  // absorption see it. Lives under <root>/.agent-mesh/ → change-detection-excluded,
+  // so it never pollutes files_changed. Best-effort + atomic; delegate_task is
+  // per-folder-serialized by the caller's SerialQueue, so the read-modify-write
+  // doesn't race within a folder. Never load-bearing for the turn.
+  try {
+    const manifest = await readManifest(root);
+    const prior = manifest.sessions.find((s) => s.id === taggedSession.id);
+    const run_ids = [...new Set([...(prior?.run_ids || []), runId])];
+    await writeManifest(root, upsertSession(manifest, {
+      id: taggedSession.id, origin: `worker:${route || mode}`, status: 'active', run_ids
+    }));
+  } catch { /* manifest is observability, never fails a turn */ }
 
   let spawnResult;
   let invocation;
