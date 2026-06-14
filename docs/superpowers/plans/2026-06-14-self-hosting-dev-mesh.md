@@ -63,13 +63,13 @@ execution (tests/eval/git/act) runs as **workflow steps**, never model `Bash`
 - [x] Implement `src/dev-mesh/backlog.js` (`deriveState`, `isReady`, `selectReady`, `canTransition`/`nextState`, `planClaim`, `summarize`)
 - [x] Green: 8 tests incl. atomic-claim plan + illegal-transition guard
 
-### Task 3: Backlog markdown mirror (pure)
+### Task 3: Backlog markdown mirror (pure) ✅ DONE
 
 **Files:** Create `src/dev-mesh/backlog-mirror.js` + `test/dev-mesh-mirror.test.js`
 
-- [ ] **Step 1 — failing test:** given an Issues snapshot, `renderBacklog(issues)` returns deterministic Markdown grouped by state (uses `deriveState`/`summarize`), stable ordering, with issue number + title + state.
-- [ ] **Step 2 — implement** `renderBacklog`; pure, no IO. The workflow writes the string to `docs/superpowers/backlog.md` (the mirror; Issues remain source of truth).
-- [ ] **Step 3 — green** + `npm test`.
+- [x] **Step 1 — failing test:** given an Issues snapshot, `renderBacklog(issues)` returns deterministic Markdown grouped by state (uses `deriveState`/`summarize`), stable ordering, with issue number + title + state.
+- [x] **Step 2 — implement** `renderBacklog`; pure, no IO. The workflow writes the string to `docs/superpowers/backlog.md` (the mirror; Issues remain source of truth).
+- [x] **Step 3 — green** (5 tests).
 
 ### Task 4: Dev-mesh agent folders (content)
 
