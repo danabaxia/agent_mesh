@@ -53,7 +53,7 @@ the mere existence of a spec file.
 | 10 | **Prompt-cache reuse across delegations** — settings-inheritance Phase 2 | `idea` | — | [settings-inheritance §7](specs/2026-06-06-settings-inheritance-design.md) |
 | 11 | **Claude Agent SDK port** — replace `claude -p` spawn with the SDK | `idea` | — | [settings-inheritance §7](specs/2026-06-06-settings-inheritance-design.md) |
 | 12 | **Latency SLO gates / per-hop token budgets** — turn perf metrics into optional gates | `idea` | — | [perf-bench §12](specs/2026-06-13-mesh-perf-benchmark-design.md) |
-| 13 | **Single-agent session management** — identity layer + task-sessions, L0/L1/L2 tiered context, pull-on-demand recall, per-agent session manifest, manual review-gated absorption→workflow/quick-memory + retire | `in-progress` | [2026-06-13-single-agent-session-management-design.md](specs/2026-06-13-single-agent-session-management-design.md) | new (user pain: 单一入口频繁压缩) |
+| 13 | **Single-agent session management** — identity layer + task-sessions, L0/L1/L2 tiered context, pull-on-demand recall, per-agent session manifest, manual review-gated absorption→workflow/quick-memory + retire. **Partial WIP already in tree — EXTEND, don't rebuild:** _done (with tests)_ = §5 core/archival prompt cutover, §6 recall verbs + read-side confinement, §7 manifest, §8 `quick.json`, §12 artifacts; _remaining_ = §9 absorption promotion-review + per-agent write-lock, §10 drift staleness-scorer + usage collector, §6 headless prefetch, §4/§11 cold-start dashboard + CLI resume/session-id proposals, `learned.md`→`quick.json` migration | `approved` | [2026-06-13-single-agent-session-management-design.md](specs/2026-06-13-single-agent-session-management-design.md) | new (user pain: 单一入口频繁压缩) |
 
 ## How the loop consumes this
 
