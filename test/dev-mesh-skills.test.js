@@ -11,7 +11,10 @@ const devMesh = join(repoRoot, 'dev-mesh');
 const ROLES = ['maintainer', 'analyst', 'triager', 'coder', 'tester', 'reviewer', 'curator'];
 
 function frontmatterName(md) {
-  const m = md.match(/^---\n([\s\S]*?)\n---/);
+  // Normalize CRLF: Git can check these files out with \r\n on Windows (no
+  // .gitattributes), which would otherwise break the ^---\n frontmatter anchor.
+  const text = String(md).replace(/\r\n/g, '\n');
+  const m = text.match(/^---\n([\s\S]*?)\n---/);
   if (!m) return null;
   const n = m[1].match(/^name:\s*(.+)$/m);
   return n ? n[1].trim() : null;
