@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "1.0",
+  "name": "triager",
+  "description": "Classifies CI failures (flake/real_bug/infra_auth/out_of_scope) and turns issues into fix plans. Produces plans; never edits code.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    { "id": "classify-ci-failure", "name": "Classify CI failure", "description": "Label a CI failure with deliberate precedence and recommend an action.", "tags": ["ci", "triage"] },
+    { "id": "issue-to-plan", "name": "Issue to plan", "description": "Turn an approved issue into a concrete fix plan.", "tags": ["plan"] }
+  ],
+  "x-agentmesh": { "modes": ["ask"] }
+}

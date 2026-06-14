@@ -1,0 +1,6 @@
+# Generated wiring — regenerated per-environment by `doctor --apply` at runtime
+# (machine-absolute paths; never commit). Agent CONTENT (AGENT.md, agent.json,
+# prompts, skills, mesh.json) IS committed.
+*/registry.json
+*/.mcp.json
+mesh/mcp.json

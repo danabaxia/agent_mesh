@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "1.0",
+  "name": "curator",
+  "description": "Distills merged-PR outcomes into durable memory (quick.json facts, workflow patterns) via a review-gated promote PR. Writes only the memory root; never edits code.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    { "id": "distill-lesson", "name": "Distill lesson", "description": "Turn a merged outcome into a concise reusable lesson.", "tags": ["memory", "learning"] },
+    { "id": "promote-to-memory", "name": "Promote to memory", "description": "Stage approved lessons into quick.json / workflows via a review-gated PR.", "tags": ["memory", "promotion"] }
+  ],
+  "x-agentmesh": { "modes": ["ask", "do"] }
+}

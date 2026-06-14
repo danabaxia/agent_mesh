@@ -1,0 +1,17 @@
+{
+  "protocolVersion": "1.0",
+  "name": "docs",
+  "description": "A documentation agent that drafts release notes and docs. Owns prose templates but delegates shelf-code lookups to its library peer.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "release-note",
+      "name": "Release-note drafting",
+      "description": "Draft a release note for a book, fetching its shelf code from the library peer.",
+      "tags": ["docs", "release", "writing"]
+    }
+  ],
+  "x-agentmesh": { "modes": ["ask", "do"] }
+}

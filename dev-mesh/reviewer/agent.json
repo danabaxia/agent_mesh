@@ -1,0 +1,13 @@
+{
+  "protocolVersion": "1.0",
+  "name": "reviewer",
+  "description": "Reviews PR diffs against the project's security invariants and spec conformance; comments and approves/requests changes. Never edits or merges.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    { "id": "code-review", "name": "Code review", "description": "Review a diff for correctness and clarity.", "tags": ["review"] },
+    { "id": "security-review", "name": "Security review", "description": "Check the diff against the mesh's security invariants.", "tags": ["security", "invariants"] }
+  ],
+  "x-agentmesh": { "modes": ["ask"] }
+}

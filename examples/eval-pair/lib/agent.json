@@ -1,0 +1,23 @@
+{
+  "protocolVersion": "1.0",
+  "name": "lib",
+  "description": "A library agent that owns a book-catalog shelf-code record set and a string-utilities library. Answers catalog/shelf lookups and adds/changes string helpers in its own folder.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "shelf-lookup",
+      "name": "Shelf-code lookup",
+      "description": "Find a book in the catalog by title and report its canonical shelf code.",
+      "tags": ["library", "catalog", "shelf"]
+    },
+    {
+      "id": "string-utils",
+      "name": "String utilities",
+      "description": "Add or change slug/text-formatting helpers in the library's strings module.",
+      "tags": ["strings", "slug", "format"]
+    }
+  ],
+  "x-agentmesh": { "modes": ["ask", "do"] }
+}

@@ -1,0 +1,53 @@
+# Dev-mesh · Maintainer → Curator (curate) — Phase 0.
+# On a MERGED PR, distills the outcome into a reusable lesson and stages it into
+# agent memory via a review-gated `memory:promote` PR — never a silent write to main.
+#
+# SECURITY (§15 F4): same-repo guard so a merged fork PR can't drive a secret-bearing
+# run on untrusted refs.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6/§10/§15
+name: dev-mesh-curate
+
+on:
+  pull_request:
+    types: [closed]
+
+# Curator writes ONLY memory (its path-guarded root) and opens a promote PR.
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: dev-mesh-curate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  curate:
+    runs-on: ubuntu-latest
+    # Only merged PRs, and only same-repo (no secrets to fork refs).
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Drive Maintainer → Curator (distill → promote)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the **Curator** of the agent_mesh Dev-mesh. Read your role at
+            `dev-mesh/curator/AGENT.md` and skills distill-lesson + promote-to-memory.
+
+            PR #${{ github.event.pull_request.number }} just merged. Run `distill-lesson`:
+            extract ONE durable, reusable lesson (a `quick.json` fact, a
+            `workflows/<slug>.md` pattern, or a supersession of a stale lesson — cite the
+            PR). Then `promote-to-memory`: apply it to the memory store (your single
+            writable root only), respect the caps, and open a **memory:promote** PR for
+            human review. Move the source Issue to `done`.
+
+            Do NOT push memory to main directly and do NOT touch code — promotion is
+            review-gated by design.

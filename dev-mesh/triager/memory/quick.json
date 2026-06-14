@@ -1,0 +1,19 @@
+{
+  "ci-flake-rekick": {
+    "status": "active",
+    "valid_to": null,
+    "core": true,
+    "l0": "A flake → re-kick (max 2×); never if the diff touches the failing area.",
+    "l1": "Classifier precedence is infra > out-of-scope > flake > real_bug. Only call it a flake when the failure is known-intermittent or passes on re-run AND is unrelated to the change. If the diff touches the failing area it is a real_bug, not a flake.",
+    "value": "Misclassifying wastes money and thrashes the branch. See src/dev-mesh/classify.js. infra_auth (auth/secret/network, or claude died in <2s before any test ran) → escalate to a human, never 'fix'. out_of_scope (reproduces on base) → report, don't edit.",
+    "provenance": { "source": "self-hosting-dev-mesh spec §8", "ts": "2026-06-14" }
+  },
+  "container-signing-flake": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "change-detect.test.js failures in the sandbox are a known git-signing infra flake.",
+    "l1": "In the ephemeral container, git commit signing is unavailable, so change-detect's git-porcelain path fails ~4 subtests. This is environmental, not a regression — the suite is otherwise green.",
+    "value": "When triaging a red run, if the ONLY failure is change-detect.test.js with signing/porcelain errors, classify infra_auth (environment), not real_bug. Confirm the same passes in CI (ci.yml) where signing is configured.",
+    "provenance": { "source": "self-hosting-dev-mesh build notes", "ts": "2026-06-14" }
+  }
+}

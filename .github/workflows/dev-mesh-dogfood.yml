@@ -1,0 +1,78 @@
+# Dev-mesh · nightly dogfood (Phase 1 mesh-native) — Task 9.
+# Materializes the REAL Dev-mesh (doctor --apply) and drives the Maintainer
+# headlessly against a synthetic approved task end-to-end over serve-a2a, against a
+# REAL `claude`. This is the dogfooding milestone: it proves the society wires,
+# delegates, and confines for real.
+#
+# NON-GATING by construction: schedule + manual only (never push/pull_request), and
+# it artifacts run logs rather than merging anything. Like integration.yml, it lives
+# apart from the per-PR L0 gate (ci.yml) and never blocks a merge.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6 (Phase 1)
+name: dev-mesh-dogfood
+
+on:
+  schedule:
+    - cron: '30 7 * * *' # nightly (UTC), after the day's merges + integration run
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Synthetic approved task to drive end-to-end
+        required: false
+        type: string
+
+# Read-only repo: the dogfood drives the loop and captures logs; it does not push
+# code or open PRs (non-gating, observational).
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-mesh-dogfood
+  cancel-in-progress: false # never cancel a half-finished end-to-end run
+
+jobs:
+  dogfood:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Fail-fast on a missing secret (clear error beats a per-step timeout).
+      - name: Preflight — require the real-claude key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY is required for the dogfood run"; exit 1
+          fi
+      - name: Install the real claude CLI
+        run: npm i -g @anthropic-ai/claude-code
+      # §4.1: the WORKFLOW runs all shell. Materialize the real mesh, then prove it.
+      - name: Materialize the Dev-mesh (doctor --apply)
+        run: node ./bin/agent-mesh.js doctor dev-mesh --apply
+      - name: Hermetic preflight (society wires + selects memory)
+        run: |
+          node --test test/dev-mesh-agents.test.js test/dev-mesh-skills.test.js \
+                      test/dev-mesh-workflow.test.js test/dev-mesh-memory.test.js
+      - name: Drive the Maintainer end-to-end (real claude over serve-a2a)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Depth covers Maintainer → Triager → Coder → Tester (one onward hop each).
+          AGENT_MESH_DEPTH: '4'
+        run: |
+          TASK="${{ inputs.task || 'Dry-run the backlog pickup path on a synthetic approved task; confirm routing + confinement without merging.' }}"
+          echo "Driving Maintainer with synthetic approved task: $TASK"
+          # Phase 1: serve the Maintainer and drive it headlessly; delegation flows
+          # over serve-a2a/peer-bridge. The Coder's do-mode edits stay inside its
+          # path-guarded worktree (single writable root) — proven by the e2e net.
+          claude -p "You are the Maintainer of dev-mesh. Read dev-mesh/maintainer/AGENT.md. $TASK Do NOT push, merge, or mutate the repo — this is an observability dogfood." \
+            --output-format json > dogfood-run.json || echo "::warning::dogfood run exited non-zero (captured for triage)"
+      - name: Upload run logs (artifact, non-gating)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-mesh-dogfood-logs
+          path: |
+            dogfood-run.json
+            .agent-mesh/logs/**
+          if-no-files-found: ignore

@@ -1,0 +1,17 @@
+{
+  "protocolVersion": "1.0",
+  "name": "app",
+  "description": "A coordinator app. Routes catalog/shelf/string work to its library peer and release-note/documentation work to its docs peer.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "coordinate",
+      "name": "Coordinator",
+      "description": "Route a request to the correct peer (library vs documentation).",
+      "tags": ["app", "routing", "coordinate"]
+    }
+  ],
+  "x-agentmesh": { "modes": ["ask", "do"] }
+}

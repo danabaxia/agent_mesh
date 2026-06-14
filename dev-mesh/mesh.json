@@ -1,0 +1,62 @@
+{
+  "x-agentmesh-generated": true,
+  "meshVersion": "1",
+  "agents": [
+    {
+      "name": "maintainer",
+      "root": "./maintainer",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask"],
+      "peers": ["analyst", "triager", "coder", "reviewer", "curator"]
+    },
+    {
+      "name": "analyst",
+      "root": "./analyst",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask"],
+      "peers": []
+    },
+    {
+      "name": "triager",
+      "root": "./triager",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask"],
+      "peers": []
+    },
+    {
+      "name": "coder",
+      "root": "./coder",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask", "do"],
+      "peers": ["tester"]
+    },
+    {
+      "name": "tester",
+      "root": "./tester",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask"],
+      "peers": []
+    },
+    {
+      "name": "reviewer",
+      "root": "./reviewer",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask"],
+      "peers": []
+    },
+    {
+      "name": "curator",
+      "root": "./curator",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask", "do"],
+      "peers": []
+    }
+  ]
+}

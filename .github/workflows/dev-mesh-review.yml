@@ -1,0 +1,51 @@
+# Dev-mesh · Maintainer → Reviewer (review) — Phase 0.
+# Ask-only review of an open PR: correctness, tests, scope, and the security
+# invariants. Comments only — it never edits or merges.
+#
+# SECURITY (§15 F4): triggered by `pull_request` (the safe trigger — never the
+# secret-bearing "pwn request" variant) plus a job-level same-repo guard, so a fork
+# PR never runs with the base repo's secrets/token. Fork PRs get, at most, a
+# read-only review without secrets; repo contents stay read-only.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6/§15
+name: dev-mesh-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: dev-mesh-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # No secrets to forks: only same-repo PRs run this job.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Drive Maintainer → Reviewer (review the diff)
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the **Reviewer** of the agent_mesh Dev-mesh. Read your role at
+            `dev-mesh/reviewer/AGENT.md` and skills code-review + security-review.
+
+            Review PR #${{ github.event.pull_request.number }}: correctness, test coverage
+            (incl. the negative/safety case), minimal scope, and spec conformance. Then run
+            `security-review` against the PROJECT.md invariants — anti-spoof surface, no
+            Bash in `do`, single writable root + path-guard canonicalization, external
+            content treated as data, failure-is-data, and fork-PR safety in any workflow
+            changes. Post specific, actionable comments; request changes on any violation.
+
+            You COMMENT only. Do NOT edit files and do NOT merge — CI (ci.yml) is the
+            authoritative gate and a human holds the merge.
