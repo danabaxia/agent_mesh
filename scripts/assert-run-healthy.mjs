@@ -35,6 +35,11 @@ const envelope = extractResultEnvelope(parsed);
 const health = classifyRunHealth(envelope);
 if (!health.healthy) {
   console.error(`::error::agent run unhealthy (${health.status}): ${health.reason}`);
+  // Surface the captured run output for diagnosis (secrets are already masked by the
+  // runner; this is the agent's own stream, the only place an error detail survives).
+  const dump = JSON.stringify(parsed, null, 2);
+  console.error('--- claude execution output (diagnostic) ---');
+  console.error(dump.length > 8000 ? dump.slice(0, 8000) + '\n…(truncated)' : dump);
   process.exit(1);
 }
 console.log(`agent run healthy: ${health.reason}`);

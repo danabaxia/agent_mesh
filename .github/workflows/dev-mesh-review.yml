@@ -37,6 +37,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: true   # TEMP diagnostic: surface the hidden SDK error
           # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
           # action otherwise forces Opus 4.8, which THIS key cannot access (instant
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
