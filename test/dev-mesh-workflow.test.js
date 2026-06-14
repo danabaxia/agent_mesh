@@ -121,6 +121,25 @@ test('dogfood: scheduled + manual, NEVER per-PR (non-gating)', () => {
   assert.match(dogfood, /cancel-in-progress:\s*false/, 'a half-finished end-to-end run must not be cancelled');
 });
 
+// --- the health monitor ---
+const health = (() => {
+  const p = `${dir}dev-mesh-health.yml`;
+  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+})();
+
+test('health monitor: scheduled, judges the result envelope (not just the green job)', () => {
+  assert.ok(health, 'dev-mesh-health.yml missing');
+  assert.match(health, /schedule:/);
+  assert.match(health, /workflow_dispatch:/);
+  // It must run the health probe script (which classifies is_error/cost/turns) and
+  // the conformance check — not infer health from a job conclusion.
+  assert.match(health, /scripts\/dev-mesh-health\.mjs/, 'must run the health probe script');
+  assert.match(health, /dev-mesh-dogfood/, 'reads the dogfood canary');
+  // Least privilege: it observes + escalates, never writes repo contents.
+  assert.doesNotMatch(health, /contents:\s*write/, 'health monitor must not write repo contents');
+  assert.match(health, /if:\s*failure\(\)/, 'escalates only on real unhealth');
+});
+
 test('dogfood: real-claude, materializes the real mesh, read-only & non-merging', () => {
   assert.match(dogfood, /npm i -g @anthropic-ai\/claude-code/, 'installs the real claude');
   assert.match(dogfood, /if \[ -z "\$ANTHROPIC_API_KEY" \]/, 'fail-fast secret preflight');
