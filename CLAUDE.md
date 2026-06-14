@@ -14,6 +14,9 @@ node ./bin/agent-mesh.js --help               # usage + env var list
 AGENT_MESH_E2E=1 npm test                     # opt-in real-`claude` e2e (POSIX/macOS/Linux only — see note)
 node scripts/live-a2a-check.mjs               # WINDOWS real-`claude` A2A live check (initialize/ping + multi-turn resume)
 node scripts/demo-setup.mjs                   # materialize the App→Library demo into a disposable workspace
+node scripts/eval-pair-setup.mjs              # materialize the reusable eval PAIR (app driver + lib peer) — stdio A2A, doctor-wired
+node scripts/eval-trio-setup.mjs              # materialize the reusable eval TRIO (app + lib + docs) for peer-selection + two-hop
+AGENT_MESH_E2E=1 node --test test/eval-mesh-e2e.test.js  # opt-in real-`claude` trio e2e (peer-selection + two-hop; POSIX-only)
 node scripts/eval-a2a.mjs --list             # A2A behavior eval: scenario catalog
 node scripts/eval-a2a.mjs --trials 3         # full scorecard run (REAL `claude`, ~15-30 min)
 node scripts/eval-a2a.mjs --scenario 01-should-delegate --trials 1   # one cheap probe run

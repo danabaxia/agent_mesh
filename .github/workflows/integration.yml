@@ -61,6 +61,8 @@ jobs:
           claude --version
       - name: L1 — demo e2e (real claude delegates a real write across folders)
         run: AGENT_MESH_E2E=1 node --test test/demo-e2e.test.js
+      - name: L1 — mesh e2e (real claude peer-selection + two-hop over stdio A2A)
+        run: AGENT_MESH_E2E=1 node --test test/eval-mesh-e2e.test.js
 
   l2-behavior:
     name: L2 behavior eval scorecard (record-only)
