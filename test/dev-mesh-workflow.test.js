@@ -87,6 +87,16 @@ test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
   }
 });
 
+test('MODEL PIN: every workflow pins standard claude-opus-4-8 (not the gated [1m] variant)', () => {
+  // The action/CLI otherwise defaults to claude-opus-4-8[1m] (1M-context), which the
+  // API rejects instantly (is_error, $0) — the loop silently no-ops. Pinning the plain
+  // id is the fix; this guard keeps it from regressing. (dogfood checked separately.)
+  for (const n of NAMES) {
+    assert.match(wf[n], /--model claude-opus-4-8(?!\[)/, `${n}: must pin --model claude-opus-4-8`);
+    assert.doesNotMatch(wf[n], /claude-opus-4-8\[1m\]/, `${n}: must not request the gated [1m] variant`);
+  }
+});
+
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
   for (const n of NAMES) {
@@ -115,6 +125,7 @@ test('dogfood: real-claude, materializes the real mesh, read-only & non-merging'
   assert.match(dogfood, /npm i -g @anthropic-ai\/claude-code/, 'installs the real claude');
   assert.match(dogfood, /if \[ -z "\$ANTHROPIC_API_KEY" \]/, 'fail-fast secret preflight');
   assert.match(dogfood, /doctor dev-mesh --apply/, 'materializes the real Dev-mesh (Phase 1)');
+  assert.match(dogfood, /--model claude-opus-4-8(?!\[)/, 'dogfood pins the standard Opus 4.8, not the gated [1m] variant');
   // Observational: read-only repo, artifacts logs, never merges.
   assert.match(dogfood, /contents:\s*read/, 'dogfood must be read-only (no pushes)');
   assert.match(dogfood, /upload-artifact/, 'dogfood artifacts its run logs');
