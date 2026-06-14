@@ -65,22 +65,27 @@ async function readPid(pidFile) {
 test('spawnFile timeout kills the whole process tree, not just the direct child', async () => {
   const { parent, pidFile } = await writeTreeScript({ ignoreSigterm: false });
 
-  // Poll for the grandchild to RECORD its pid before relying on the kill, with a
-  // generous (~15s) deadline — a fixed short timeout raced the grandchild's
-  // startup on slow Windows CI runners (it was reaped before writing its pid, so
-  // the pidfile never appeared). Start spawnFile WITHOUT awaiting, wait for the
-  // pidfile to exist, then await the timeout-driven kill. The kill's graceful
-  // grace window keeps the grandchild alive long enough to record its pid even
-  // when the timeout fires first.
+  // Ordering matters: the grandchild must RECORD its pid before the timeout-driven
+  // kill reaps the tree, else the pidfile never appears and the assert below is
+  // unwinnable. A short (1.2s) timeout raced TWO cold Node starts (parent →
+  // grandchild) plus the pid write on loaded Windows CI runners — the tree was
+  // killed before the grandchild wrote its pid, so the test flaked (the old 15s
+  // pidfile wait only delayed the inevitable failure, since the tree was already
+  // dead). Fix: give the tree a generous budget to fully come up, CONFIRM it is
+  // up (pidfile present) well WITHIN that budget, and only then await the
+  // timeout-driven kill — which is the behavior this test actually verifies.
+  const KILL_TIMEOUT_MS = 6000;
   const pending = spawnFile(process.execPath, [parent], {
     env: { ...process.env, PID_FILE: pidFile },
-    timeoutMs: 1200,
+    timeoutMs: KILL_TIMEOUT_MS,
     detached: true
   });
 
-  const recorded = await waitFor(async () => (await readPid(pidFile)) !== null, 15000);
+  // The pidfile must appear before the timeout fires; the deadline is < the
+  // timeout so a confirmed pid means "tree fully up, kill has not run yet".
+  const recorded = await waitFor(async () => (await readPid(pidFile)) !== null, KILL_TIMEOUT_MS - 1000);
   const grandchildPid = await readPid(pidFile);
-  assert.equal(recorded, true, 'grandchild should have recorded its pid');
+  assert.equal(recorded, true, 'grandchild should have recorded its pid before the timeout kill');
   assert.ok(grandchildPid, 'grandchild should have recorded its pid');
 
   const result = await pending;
