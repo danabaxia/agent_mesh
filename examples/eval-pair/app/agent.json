@@ -1,0 +1,17 @@
+{
+  "protocolVersion": "1.0",
+  "name": "app",
+  "description": "An app that builds page URLs from titles. Delegates string/slug formatting and book-catalog/shelf-code lookups to its library peer.",
+  "version": "0.1.0",
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain", "application/json"],
+  "skills": [
+    {
+      "id": "page-url",
+      "name": "Page URL builder",
+      "description": "Build a canonical page URL from a human page title.",
+      "tags": ["app", "url", "routing"]
+    }
+  ],
+  "x-agentmesh": { "modes": ["ask", "do"] }
+}
