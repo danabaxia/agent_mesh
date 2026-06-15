@@ -1,4 +1,16 @@
 {
+  "bash-tool-wildcard": {
+    "status": "active",
+    "valid_to": null,
+    "core": true,
+    "l0": "allowedTools: use Bash(cmd:*) not Bash(cmd) — the bare form blocks all arguments.",
+    "l1": "`Bash(cmd)` matches ONLY the literal command with no args; every invocation WITH args (git checkout -b, gh pr create, npm test) is denied. The correct specifier is `Bash(cmd:*)`. This caused 54–62 turn / $0.98–$1.61 runs that appeared green but produced no PR or label change.",
+    "value": "Apply Bash(cmd:*) for do-workers (git/gh/npm/node) and any ask-worker needing gh. Lint should reject bare Bash(cmd). Runs with ≥5 permission_denials → classify as 'blocked' (RED), not green — classifyRunHealth in src/dev-mesh/health.js. PR #10 (2026-06-15) fixed this across all six dev-mesh workflows.",
+    "provenance": {
+      "source": "PR #10: fix(dev-mesh): Bash(cmd:*) so agents can act + gate flags 'ran but blocked'",
+      "ts": "2026-06-15"
+    }
+  },
   "gitattributes-lf-normalization": {
     "status": "active",
     "valid_to": null,
