@@ -18,5 +18,13 @@
     "l1": "Without .gitattributes, Windows Git can check out text files with CRLF, breaking regex anchors like /^---\\n/ in fixture-reading tests. Patching each test to strip \\r is a bandage — the inconsistency keeps producing new failures.",
     "value": "Add `* text=auto eol=lf` + binary pins (*.png *.jpg *.ico) to .gitattributes, then run `git add --renormalize .` to normalize existing tracked files with no content change. This removes a whole class of platform-only surprises at the source. Regression: every checkout now sees identical bytes on Linux, macOS, and Windows. Provenance: PR #11 (the Dev-mesh's first Coder-authored change, closing Issue #3).",
     "provenance": { "source": "PR #11 / Issue #3", "ts": "2026-06-15" }
+  },
+  "curator-actions-pr-bootstrap": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Curator memory:promote silently fails at PR creation until 'Allow GitHub Actions to create and approve pull requests' is enabled in repo Settings.",
+    "l1": "The Curator pushes the branch successfully but the gh pr create call errors with 403. No error is surfaced to the caller — the branch sits orphaned. The session must bridge manually (push branch + open PR via integration token). This is a one-time bootstrap gap, not a recurring issue, but it will bite every new repo that adds the dev-mesh without enabling the setting first.",
+    "value": "Before the first Curator invocation in a new repo, enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'. Without it, memory:promote is silently half-complete: branch exists, PR does not. To detect: check for branches named memory/* with no open PR. After enabling, future Curator runs open their own PRs with no manual step. Provenance: PR #13 (first memory:promote PR to merge; was bridged because this setting was off when PR #11 merged).",
+    "provenance": { "source": "PR #13", "ts": "2026-06-15" }
   }
 }
