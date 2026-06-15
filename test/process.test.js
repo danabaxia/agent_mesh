@@ -71,19 +71,22 @@ test('spawnFile timeout kills the whole process tree, not just the direct child'
   // grandchild) plus the pid write on loaded Windows CI runners — the tree was
   // killed before the grandchild wrote its pid, so the test flaked (the old 15s
   // pidfile wait only delayed the inevitable failure, since the tree was already
-  // dead). Fix: give the tree a generous budget to fully come up, CONFIRM it is
-  // up (pidfile present) well WITHIN that budget, and only then await the
-  // timeout-driven kill — which is the behavior this test actually verifies.
-  const KILL_TIMEOUT_MS = 6000;
+  // dead). Fix: poll for the pidfile with a generous startup budget, CONFIRM the
+  // tree is up, and only then await the timeout-driven kill — which is the
+  // behavior this test actually verifies.
+  //
+  // Keep STARTUP_BUDGET_MS and KILL_TIMEOUT_MS as separate named constants so
+  // the required ordering (startup < kill) stays explicit and can't silently
+  // break if either value is changed in isolation.
+  const STARTUP_BUDGET_MS = 5000; // generous: two cold Node starts on a loaded Windows runner
+  const KILL_TIMEOUT_MS = STARTUP_BUDGET_MS + 2000; // kill always fires AFTER the startup budget
   const pending = spawnFile(process.execPath, [parent], {
     env: { ...process.env, PID_FILE: pidFile },
     timeoutMs: KILL_TIMEOUT_MS,
     detached: true
   });
 
-  // The pidfile must appear before the timeout fires; the deadline is < the
-  // timeout so a confirmed pid means "tree fully up, kill has not run yet".
-  const recorded = await waitFor(async () => (await readPid(pidFile)) !== null, KILL_TIMEOUT_MS - 1000);
+  const recorded = await waitFor(async () => (await readPid(pidFile)) !== null, STARTUP_BUDGET_MS);
   const grandchildPid = await readPid(pidFile);
   assert.equal(recorded, true, 'grandchild should have recorded its pid before the timeout kill');
   assert.ok(grandchildPid, 'grandchild should have recorded its pid');
