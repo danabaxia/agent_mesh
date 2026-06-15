@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join } from 'node:path';
 import { resolveMeshRoot, resolveSelfName } from '../src/board/identity.js';
 
 test('resolveMeshRoot prefers CEILING, then dirname(MESH_ROOT), else null', () => {
