@@ -175,6 +175,81 @@ test('doctor: regenerates drifted managed registry.json with --apply', async () 
 });
 
 // ---------------------------------------------------------------------------
+// Test: regenerates managed registry.json when paths drift (mesh relocation)
+// ---------------------------------------------------------------------------
+
+test('doctor: regenerates managed registry when peer paths drift from manifest root', async () => {
+  const meshRoot = await mkdtemp(join(tmpdir(), 'doctor-drift-'));
+  await initMesh(meshRoot);
+  const agentRoot = await makeAgent(meshRoot, 'agent-a');
+  await makeAgent(meshRoot, 'agent-b');
+
+  const manifest = {
+    meshVersion: '0.1.0',
+    agents: [
+      {
+        name: 'agent-a',
+        root: './agent-a',
+        card: 'agent.json',
+        served: true,
+        enabledModes: ['ask'],
+        peers: ['agent-b']
+      },
+      {
+        name: 'agent-b',
+        root: './agent-b',
+        card: 'agent.json',
+        served: true,
+        enabledModes: ['ask'],
+        peers: []
+      }
+    ]
+  };
+  await writeManifest(meshRoot, manifest);
+
+  // Simulate stale wiring from a previous absolute path (mesh relocated).
+  // Peer names are correct but all embedded paths point to the old location.
+  const staleRegistry = {
+    'x-agentmesh-generated': true,
+    peers: {
+      'agent-b': {
+        root: '/old/path/mesh/agent-b',
+        command: 'node',
+        args: ['/old/path/bin/agent-mesh.js', 'serve-a2a', '/old/path/mesh/agent-b'],
+        cwd: '/old/path/mesh/agent-b',
+        env: {
+          AGENT_MESH_ENABLED_MODES: 'ask',
+          AGENT_MESH_MESH_ROOT: '/old/path/mesh/mesh',
+          AGENT_MESH_MESH_CEILING: '/old/path/mesh'
+        }
+      }
+    }
+  };
+  const registryPath = join(agentRoot, 'registry.json');
+  await writeFile(registryPath, JSON.stringify(staleRegistry, null, 2) + '\n', 'utf8');
+
+  // Dry-run should detect the drift
+  const dryResult = await doctor(meshRoot);
+  assert.ok(
+    dryResult.fixed.some(f => /\[dry-run\]/.test(f) && /agent-a/i.test(f) && /registry/i.test(f)),
+    `dry-run must flag path drift. fixed=${JSON.stringify(dryResult.fixed)}`
+  );
+
+  // Apply should regenerate with the current mesh root
+  const result = await doctor(meshRoot, { apply: true });
+  const afterContent = JSON.parse(await readFile(registryPath, 'utf8'));
+
+  assert.ok(afterContent['x-agentmesh-generated'] === true, 'marker must remain after regen');
+  const peer = afterContent.peers['agent-b'];
+  assert.ok(peer, 'peer agent-b must be present');
+  // The regenerated paths must reference the current meshRoot, not the old one
+  assert.ok(peer.root.startsWith(meshRoot), `peer root must start with current meshRoot (got ${peer.root})`);
+  assert.ok(peer.env.AGENT_MESH_MESH_CEILING === meshRoot, `AGENT_MESH_MESH_CEILING must equal current meshRoot`);
+
+  assert.ok(result.fixed.some(f => /agent-a/i.test(f) && /registry/i.test(f)), 'fixed list must mention regen');
+});
+
+// ---------------------------------------------------------------------------
 // Test: proposes (not clobbers) .mcp.json missing a present tool
 // ---------------------------------------------------------------------------
 

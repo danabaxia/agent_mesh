@@ -287,6 +287,35 @@ test('delegateToPeer refusal (mode_disabled) writes a single a2a done:rejected r
   assert.equal(done.to, 'library');
 });
 
+test('delegateToPeer with no mesh env → caller_identity_unresolved with diagnostic hint', async () => {
+  const root = await agentRootWith(MARKED);
+  const bridge = createBridge({ root, env: {}, createClient: fakeClientFactory().factory });
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'caller_identity_unresolved');
+  // Message must include actionable hint and path context
+  assert.ok(/doctor/i.test(res.summary), `summary should mention doctor: ${res.summary}`);
+  assert.ok(/AGENT_MESH_MESH_CEILING.*unset/i.test(res.summary) || /unset/i.test(res.summary),
+    `summary should mention missing env: ${res.summary}`);
+});
+
+test('delegateToPeer with stale AGENT_MESH_MESH_CEILING → caller_identity_unresolved with path hint', async () => {
+  // Registry has correct agent-b peer; mesh env points to a non-existent old path.
+  // resolveCallerName will fail to match → refusal with the path in the hint.
+  const root = await agentRootWith(MARKED);
+  const staleMeshRoot = '/old/stale/path';
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MESH_CEILING: staleMeshRoot },
+    createClient: fakeClientFactory().factory
+  });
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'caller_identity_unresolved');
+  assert.ok(res.summary.includes(staleMeshRoot), `summary must include meshRoot: ${res.summary}`);
+  assert.ok(res.summary.includes(root), `summary must include agentRoot: ${res.summary}`);
+});
+
 test('delegateToPeer logs started + done:error when the peer send throws (post-dispatch failure)', async () => {
   const { root, meshRoot } = await meshAgentRootWith(MARKED);
   const throwingClient = async () => ({

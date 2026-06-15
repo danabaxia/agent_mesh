@@ -165,5 +165,16 @@
       "source": "PR #50: fix(dev-mesh): remove superseded honesty-gate-blocked-advisory from curator quick.json",
       "ts": "2026-06-15"
     }
+  },
+  "drift-check-content-not-names": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Registry drift check must compare full content not just names — stale paths pass name-match and bypass regeneration.",
+    "l1": "PR #49 fix: `doctor.js` compared only peer names when checking if a managed registry was stale. Relocating a mesh left all embedded absolute paths wrong while names still matched → no regeneration triggered → `delegate_to_peer` failed with opaque `caller_identity_unresolved`. The refusal in `peer-bridge.js` now includes the `meshRoot` and `agentRoot` paths it tried, plus a `run agent-mesh doctor` hint. Root: generated artifacts capture absolute paths at generation time; name-only equality misses path/env/arg drift entirely.",
+    "value": "When writing drift/staleness detectors for generated artifacts that embed absolute paths: (1) compare full serialized content of each peer object (paths, env vars, args), not just identifiers. (2) Normalize both sides (e.g. sort keys) before comparison so field-order differences don't produce false positives. (3) Apply to any generated file — registry.json, mcp.json, wiring — where paths are captured at generation time and can drift on relocation (mesh moved, copied, or re-initialized under a different absolute path). (4) Pair any identity-resolution failure with a diagnostic that includes the paths tried and a repair hint (`agent-mesh doctor`). Quick test: seed a registry with correct names but stale absolute paths, verify dry-run flags it, verify apply regenerates it. Provenance: PR #49 (2026-06-15), fixing Issue #47.",
+    "provenance": {
+      "source": "PR #49: fix: detect registry path drift on relocation; improve caller_identity_unresolved diagnostic",
+      "ts": "2026-06-15"
+    }
   }
 }
