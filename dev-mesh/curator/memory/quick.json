@@ -1,4 +1,16 @@
 {
+  "multi-bot-shared-file-conflicts": {
+    "status": "active",
+    "valid_to": null,
+    "core": true,
+    "l0": "Multiple bots writing memory PRs simultaneously → merge conflicts on shared files (e.g. quick.json) — fix once with an auto-resolve workflow, not per-PR.",
+    "l1": "PR #12 was blocked when two memory PRs both touched quick.json at the same time. The systemic fix (PR #16) is dev-mesh-mergefix.yml: on every main update, detect DIRTY same-repo PRs → merge main → auto-resolve (quick.json: union both sides' keys; code: minimal combined result; unresolvable: abort + comment) → commit [mergefix] → push. Safety: ≤2 [mergefix] commits per branch (branch-only count, excluding merged history), no force-push, no auto-merge, same-repo only. GITHUB_TOKEN pushes don't re-trigger the workflow so there is no loop.",
+    "value": "When the dev-mesh gains new agents that write to shared memory files, conflicts are expected and self-heal via mergefix without manual intervention. For quick.json, key-union resolution ensures no lesson is silently dropped. The human merge gate is preserved. Track the [mergefix] commit count per branch (≤2) as the bounded-safety invariant.",
+    "provenance": {
+      "source": "PR #16: feat(dev-mesh): mergefix — auto-resolve PRs that conflict with main",
+      "ts": "2026-06-15"
+    }
+  },
   "bash-tool-wildcard": {
     "status": "active",
     "valid_to": null,
