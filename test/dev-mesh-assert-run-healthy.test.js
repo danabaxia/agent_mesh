@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,4 +89,28 @@ test('gate: a missing execution file is fatal (exit 1)', () => {
   }
   assert.equal(code, 1);
   assert.match(stderr, /no claude execution output/);
+});
+
+// Convention lint (the Reviewer's #26 hardening note): the light-vs-do-mode boundary
+// lives only in per-workflow YAML, so a future role could silently drift — a do-mode
+// pusher wrongly given --advisory-blocked would LOSE its honest RED on a real misconfig.
+// Encode the rule as a test: a workflow is a do-mode pusher IFF it grants Bash(git:*)
+// (the git-push signature); --advisory-blocked must be present IFF it is NOT a pusher.
+test('convention: assert-run-healthy.mjs --advisory-blocked iff the role lacks Bash(git:*)', () => {
+  const wfDir = fileURLToPath(new URL('../.github/workflows', import.meta.url));
+  const files = readdirSync(wfDir).filter((f) => f.startsWith('dev-mesh-') && f.endsWith('.yml'));
+  let checked = 0;
+  for (const f of files) {
+    const wf = readFileSync(join(wfDir, f), 'utf8');
+    if (!/assert-run-healthy\.mjs/.test(wf)) continue; // dogfood/health call other scripts
+    checked++;
+    const isPusher = /Bash\(git:\*\)/.test(wf);
+    const hasFlag = /assert-run-healthy\.mjs\s+--advisory-blocked/.test(wf);
+    if (isPusher) {
+      assert.equal(hasFlag, false, `${f}: do-mode pusher must NOT use --advisory-blocked (it must hard-fail on blocked)`);
+    } else {
+      assert.equal(hasFlag, true, `${f}: light role must use --advisory-blocked (else its review check false-fails)`);
+    }
+  }
+  assert.ok(checked >= 8, `expected the 8 gated dev-mesh workflows, saw ${checked}`);
 });
