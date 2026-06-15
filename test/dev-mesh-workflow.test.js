@@ -118,6 +118,25 @@ test('AUTH HARDENING: every workflow sanitizes the OAuth token (strip stray newl
   assert.match(dogfood, /tr -d '\[:space:\]'/, 'dogfood must sanitize the OAuth token');
 });
 
+test('TOOL GRANTS: least privilege — only do-workers can push/build; all can comment', () => {
+  // claude-code-action's default denies push/gh/test, so each agent must be granted
+  // the tools its role needs — but no more. do-workers (backlog, curate) push code &
+  // run tests; ask/analyst roles read + comment only (lower surface on agents that
+  // ingest untrusted PR/issue content).
+  const DO_WORKERS = new Set(['backlog', 'curate']);
+  for (const n of NAMES) {
+    assert.match(wf[n], /--allowedTools/, `${n}: must declare an explicit tool allowlist`);
+    assert.match(wf[n], /Bash\(gh\)/, `${n}: needs gh for comments/labels/PRs`);
+    if (DO_WORKERS.has(n)) {
+      assert.match(wf[n], /Bash\(git\)/, `${n}: do-worker needs git to push`);
+      assert.match(wf[n], /Bash\(npm\)|Bash\(node\)/, `${n}: do-worker runs the suite`);
+    } else {
+      assert.doesNotMatch(wf[n], /Bash\(git\)/, `${n}: ask/analyst role must not push code`);
+      assert.doesNotMatch(wf[n], /Bash\(npm\)|Bash\(node\)/, `${n}: ask/analyst role doesn't run builds`);
+    }
+  }
+});
+
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
   for (const n of NAMES) {

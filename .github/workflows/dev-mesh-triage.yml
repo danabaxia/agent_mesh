@@ -52,6 +52,7 @@ jobs:
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
+            --allowedTools "Read,Grep,Glob,Bash(gh)"
           prompt: |
             You are the **Triager** of the agent_mesh Dev-mesh. Read your role at
             `dev-mesh/triager/AGENT.md` and skill `classify-ci-failure`. The classifier

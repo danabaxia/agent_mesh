@@ -49,6 +49,7 @@ jobs:
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(gh)"
           prompt: |
             You are the **Analyst** of the agent_mesh Dev-mesh. First read your role
             definition at `dev-mesh/analyst/AGENT.md` and your skills under
