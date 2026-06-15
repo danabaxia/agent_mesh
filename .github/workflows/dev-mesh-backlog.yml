@@ -30,11 +30,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          CLEAN="$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')"
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: Drive Maintainer → Coder → Tester
         uses: anthropics/claude-code-action@v1
         id: claude
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
           # action otherwise forces Opus 4.8, which THIS key cannot access (instant

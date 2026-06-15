@@ -108,6 +108,16 @@ test('HONESTY GATE: every agent workflow fails on an errored/no-op model run', (
   }
 });
 
+test('AUTH HARDENING: every workflow sanitizes the OAuth token (strip stray newline)', () => {
+  // A trailing newline in the secret makes the auth header invalid ("Header has
+  // invalid value"). Every workflow must strip whitespace before use.
+  for (const n of NAMES) {
+    assert.match(wf[n], /tr -d '\[:space:\]'/, `${n}: must sanitize the OAuth token`);
+    assert.match(wf[n], /::add-mask::/, `${n}: must re-mask the cleaned token`);
+  }
+  assert.match(dogfood, /tr -d '\[:space:\]'/, 'dogfood must sanitize the OAuth token');
+});
+
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
   for (const n of NAMES) {
@@ -153,7 +163,7 @@ test('health monitor: scheduled, judges the result envelope (not just the green 
 
 test('dogfood: real-claude, materializes the real mesh, read-only & non-merging', () => {
   assert.match(dogfood, /npm i -g @anthropic-ai\/claude-code/, 'installs the real claude');
-  assert.match(dogfood, /if \[ -z "\$CLAUDE_CODE_OAUTH_TOKEN" \]/, 'fail-fast secret preflight');
+  assert.match(dogfood, /if \[ -z "\$CLEAN" \]/, 'fail-fast secret preflight (on the sanitized token)');
   assert.match(dogfood, /doctor dev-mesh --apply/, 'materializes the real Dev-mesh (Phase 1)');
   assert.match(dogfood, /vars\.DEV_MESH_MODEL/, 'dogfood uses the DEV_MESH_MODEL repo variable');
   assert.doesNotMatch(dogfood, /claude-opus-4-8/, 'dogfood must not force Opus (key has no access)');
