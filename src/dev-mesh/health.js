@@ -34,7 +34,14 @@ export function classifyRunHealth(envelope) {
   // "Ran but blocked": the model worked many turns yet a wall of permission denials
   // means it couldn't actually act (push/PR/comment) — looks green, produces nothing.
   // (e.g. tool grants missing or mis-specified — the 2026-06-15 Bash(git) vs git:* bug.)
-  const denials = Number(envelope.permission_denials_count ?? 0);
+  // The envelope reports denials in TWO observed forms: `permission_denials_count`
+  // (a number — seen in real backlog run envelopes: 28, 25, 0) and `permission_denials`
+  // (an array — seen in show_full_output envelopes). Handle both so the gate can't die
+  // on a schema variant.
+  const denials = Number(
+    envelope.permission_denials_count
+      ?? (Array.isArray(envelope.permission_denials) ? envelope.permission_denials.length : 0),
+  );
   if (denials >= 5) {
     return { healthy: false, status: 'blocked', reason: `ran but was blocked — ${denials} permission denials (missing/incorrect tool grants?)` };
   }
