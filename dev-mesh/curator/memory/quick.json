@@ -22,7 +22,7 @@
   "curator-actions-pr-bootstrap": {
     "status": "active",
     "valid_to": null,
-    "l0": "Curator memory:promote silently fails at PR creation until 'Allow GitHub Actions to create and approve pull requests' is enabled in repo Settings.",
+    "l0": "memory:promote needs 'Allow Actions to create PRs' in Settings — otherwise gh pr create silently 403s.",
     "l1": "The Curator pushes the branch successfully but the gh pr create call errors with 403. No error is surfaced to the caller — the branch sits orphaned. The session must bridge manually (push branch + open PR via integration token). This is a one-time bootstrap gap, not a recurring issue, but it will bite every new repo that adds the dev-mesh without enabling the setting first.",
     "value": "Before the first Curator invocation in a new repo, enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'. Without it, memory:promote is silently half-complete: branch exists, PR does not. To detect: check for branches named memory/* with no open PR. After enabling, future Curator runs open their own PRs with no manual step. Provenance: PR #13 (first memory:promote PR to merge; was bridged because this setting was off when PR #11 merged).",
     "provenance": { "source": "PR #13", "ts": "2026-06-15" }
@@ -30,9 +30,17 @@
   "honesty-gate-blocked-advisory": {
     "status": "active",
     "valid_to": null,
-    "l0": "Honesty gate: `blocked` (≥5 permission denials from an ask-role agent) must be advisory (exit 0 + ::warning::), not fatal — ask-agents are intentionally constrained and will naturally probe ungranted tools.",
+    "l0": "Honesty gate: `blocked` exits 0 (advisory) — ask agents hit denial threshold normally; don't let this block CI.",
     "l1": "The ask-role Reviewer is granted only `Read,Grep,Glob,Bash(gh:*)`. During a review it naturally tries `ls`/`cat`/`git diff` — these pile past the 5-denial threshold and produce `blocked`. Before PR #25, `assert-run-healthy.mjs` treated `blocked` as fatal (exit 1), making every PR's advisory `review` check red even though the review ran and posted real comments. The pure classifier in `src/dev-mesh/health.js` correctly keeps `blocked` as unhealthy for aggregate scoring — only the gate's job-result mapping needed to change.",
     "value": "In `assert-run-healthy.mjs` (and any honesty gate downstream), use this exit policy: `healthy` → 0; `blocked` → emit `::warning::` + exit 0; `errored`/`noop`/`unknown`/missing-file → exit 1. Keep the pure classifier unchanged — it still counts `blocked` as unhealthy for scheduled health scoring. This split lets advisory workflows show yellow without turning the merge-blocking gate red. Provenance: PR #25 (2026-06-15).",
     "provenance": { "source": "PR #25: fix(dev-mesh): make honesty gate's 'blocked' status advisory, not fatal", "ts": "2026-06-15" }
+  },
+  "actions-recursion-guard-schedule": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Actions recursion guard: GITHUB_TOKEN PRs never trigger pull_request events — use a cron schedule to auto-merge them.",
+    "l1": "When a workflow creates a PR using GITHUB_TOKEN, GitHub's recursion guard blocks all pull_request events on that PR — so a 'merge when checks pass on pull_request: [opened]' trigger never fires. Solution: a scheduled workflow (e.g., every 15 min on cron) that polls for open PRs matching a label+same-repo filter, runs a light validator, and squash-merges. No PAT and no extra repo setting needed beyond merge capability. Structural guards (restrict changed paths) must run inside the scheduled job, not as branch protection, since the PR's check suite may be empty.",
+    "value": "Pattern for auto-merging GITHUB_TOKEN-opened PRs in GitHub Actions:\n1. Label the bot PR at creation (e.g., 'memory:promote').\n2. Create a scheduled workflow (cron: '*/15 * * * *') — NOT a pull_request trigger.\n3. In the job: query open PRs with the label + same-repo filter (gh pr list --label memory:promote --json number,headRefName,isCrossRepository).\n4. Structural guard: verify every changed file is under the expected safe directory (e.g., dev-mesh/*/memory/) — reject any that touch code.\n5. Light validation: run a domain-specific validator (not the full test suite — heavy CI would be overkill and delay merges).\n6. Squash-merge on pass.\nMatching bookend in ci.yml: add paths-ignore for the safe directory so memory-only PRs skip the heavy matrix (unprotected main means no stranded required check). Applied in dev-mesh-memory-automerge.yml. Provenance: PR #21 (2026-06-15).",
+    "provenance": { "source": "PR #21: feat(dev-mesh): fully automate memory:promote (light check + auto-merge, skip heavy CI)", "ts": "2026-06-15" }
   }
 }
