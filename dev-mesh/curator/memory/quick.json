@@ -28,11 +28,20 @@
     "provenance": { "source": "PR #13", "ts": "2026-06-15" }
   },
   "honesty-gate-blocked-advisory": {
+    "status": "superseded",
+    "valid_to": "2026-06-15",
+    "superseded_by": "honesty-gate-role-scoped",
+    "l0": "SUPERSEDED by PR #26 — the all-roles advisory default was too broad. See honesty-gate-role-scoped.",
+    "l1": "PR #25 made `blocked` globally advisory (exit 0). PR #26 reverted this: `blocked` is fatal again by default for do-workers; only light/ask roles get `--advisory-blocked` explicitly. The lesson was directionally correct about ask-roles but incorrectly extended the advisory behavior to do-workers, which need the strict default to catch real tool-grant misconfigurations.",
+    "value": "Retired 2026-06-15. Use honesty-gate-role-scoped instead.",
+    "provenance": { "source": "PR #25 (superseded by PR #26)", "ts": "2026-06-15" }
+  },
+  "honesty-gate-role-scoped": {
     "status": "active",
     "valid_to": null,
-    "l0": "Honesty gate: `blocked` (≥5 permission denials from an ask-role agent) must be advisory (exit 0 + ::warning::), not fatal — ask-agents are intentionally constrained and will naturally probe ungranted tools.",
-    "l1": "The ask-role Reviewer is granted only `Read,Grep,Glob,Bash(gh:*)`. During a review it naturally tries `ls`/`cat`/`git diff` — these pile past the 5-denial threshold and produce `blocked`. Before PR #25, `assert-run-healthy.mjs` treated `blocked` as fatal (exit 1), making every PR's advisory `review` check red even though the review ran and posted real comments. The pure classifier in `src/dev-mesh/health.js` correctly keeps `blocked` as unhealthy for aggregate scoring — only the gate's job-result mapping needed to change.",
-    "value": "In `assert-run-healthy.mjs` (and any honesty gate downstream), use this exit policy: `healthy` → 0; `blocked` → emit `::warning::` + exit 0; `errored`/`noop`/`unknown`/missing-file → exit 1. Keep the pure classifier unchanged — it still counts `blocked` as unhealthy for scheduled health scoring. This split lets advisory workflows show yellow without turning the merge-blocking gate red. Provenance: PR #25 (2026-06-15).",
-    "provenance": { "source": "PR #25: fix(dev-mesh): make honesty gate's 'blocked' status advisory, not fatal", "ts": "2026-06-15" }
+    "l0": "Shared gate scripts serving mixed-permission roles need per-caller opt-in flags: `blocked` is fatal for do-workers, advisory for ask-workers — never a single global default.",
+    "l1": "PR #25 made `blocked` (≥5 denials) globally advisory — too broad. For do-workers (autofix, mergefix, backlog, curate) granted `Edit,Write,Bash(git:*)`, ≥5 denials almost always signals a real misconfigured tool grant (e.g. `Bash(git)` vs `Bash(git:*)` — the exact bug the gate exists to catch). PR #26 reverted the global default and added `--advisory-blocked`: a flag that downgrades `blocked` to warning+exit-0, passed ONLY from light/ask callers (review, triage, intake, research) where probe-denials are expected noise. The pure classifier in `src/dev-mesh/health.js` is unchanged — it still counts `blocked` as unhealthy for aggregate health scoring.",
+    "value": "When writing a gate script shared by both do-workers and ask-workers: (1) keep `blocked` → exit 1 as the strict default; (2) add an explicit opt-in flag (`--advisory-blocked`) that downgrades to `::warning::` + exit 0; (3) pass the flag ONLY from ask/light-role callers where denials are expected (review, triage, intake, research); (4) do-workers (autofix, mergefix, backlog, curate) pass nothing and stay strict. Never make advisory the global default — do-workers need the gate red when their tool grants are broken. Provenance: PR #26 (2026-06-15), supersedes honesty-gate-blocked-advisory.",
+    "provenance": { "source": "PR #26: fix(dev-mesh): scope honesty gate's blocked-advisory to light roles only", "ts": "2026-06-15" }
   }
 }
