@@ -1,8 +1,8 @@
 # Dev-mesh · mergefix — Coder resolves a PR that can't merge (conflicts with main).
 # When main moves (or on a schedule), find an open same-repo PR whose mergeStateStatus
 # is DIRTY (conflicting) and have the Coder: merge main → resolve conflicts → run the
-# suite green → commit ([mergefix]) → push. One PR per run; ≤2 [mergefix] commits per
-# branch; never force-pushes; never merges the PR (human gate).
+# suite green → commit ([mergefix]) → push. One PR per run; <=2 [mergefix] commits per
+# branch (counted on the BRANCH only, not all history); never force-pushes; never merges.
 #
 # No loop: GITHUB_TOKEN pushes don't re-trigger workflows. Conflicts in memory
 # quick.json (a keyed JSON object) are unioned; code conflicts get a minimal correct
@@ -46,12 +46,27 @@ jobs:
           echo "number=$(echo "$pr" | jq -r .number)" >> "$GITHUB_OUTPUT"
           echo "head=$(echo "$pr" | jq -r .headRefName)" >> "$GITHUB_OUTPUT"
           echo "picked PR #$(echo "$pr" | jq -r .number) ($(echo "$pr" | jq -r .headRefName))"
-      - uses: actions/setup-node@v4
+      - name: Mergefix budget (deterministic — <=2 [mergefix] commits on the BRANCH)
         if: steps.pick.outputs.none != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git fetch origin main "${{ steps.pick.outputs.head }}" -q
+          # Count [mergefix] commits on the PR branch ONLY (origin/main..branch), so prior
+          # [mergefix] commits already merged into main never lock future PRs out.
+          count=$(git log --oneline --grep='\[mergefix\]' "origin/main..origin/${{ steps.pick.outputs.head }}" | wc -l | tr -d ' ')
+          echo "branch [mergefix] commits: $count"
+          if [ "$count" -ge 2 ]; then
+            gh pr comment ${{ steps.pick.outputs.number }} \
+              --body "🤖 mergefix budget exhausted ($count ≥ 2 \`[mergefix]\` commits on the branch) — needs a human."
+            echo "BUDGET_EXHAUSTED=true" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
         with:
           node-version: 20
       - name: Sanitize OAuth token (strip stray whitespace/newlines)
-        if: steps.pick.outputs.none != 'true'
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
         env:
           RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
@@ -59,7 +74,7 @@ jobs:
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: Drive Coder (resolve the conflict with main)
-        if: steps.pick.outputs.none != 'true'
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
         uses: anthropics/claude-code-action@v1
         id: claude
         with:
@@ -74,23 +89,18 @@ jobs:
             it CONFLICTS with `main`. You are the **Coder** resolving it. In THIS GitHub Actions
             context you run git/npm/node yourself (this is not the no-shell mesh role).
 
-            STEP 1 — budget: `git fetch origin` then
-            `git log --grep "\[mergefix\]" --oneline "origin/${{ steps.pick.outputs.head }}"` — if there
-            are already **2 or more** `[mergefix]` commits, comment on the PR that the auto-resolve
-            budget is exhausted (needs a human) and STOP.
-
-            STEP 2 — resolve: check out the PR branch
-            (`git checkout "${{ steps.pick.outputs.head }}" && git reset --hard "origin/${{ steps.pick.outputs.head }}"`),
-            then `git merge origin/main`. Resolve EVERY conflict:
-              - `**/memory/quick.json` (a keyed JSON object) → UNION both sides' keys (keep all
-                lessons), keep it valid JSON within the caps.
-              - code / tests → the minimal correct COMBINED result (honour both intents).
-            If a conflict can't be resolved safely, `git merge --abort`, comment what's blocking,
-            and STOP.
-
-            STEP 3 — verify + push: run `node run-all-tests.mjs` until green; commit the merge
-            with a `[mergefix]` message; `git push origin HEAD:${{ steps.pick.outputs.head }}`
-            (no `--force`). Comment a one-line summary. Do NOT merge the PR — a human merges.
+            Resolve it:
+              1. `git checkout "${{ steps.pick.outputs.head }}" && git reset --hard "origin/${{ steps.pick.outputs.head }}"`, then
+                 `git merge origin/main`.
+              2. Resolve EVERY conflict:
+                 - `**/memory/quick.json` (a keyed JSON object) → UNION both sides' keys (keep all
+                   lessons), valid JSON within the caps.
+                 - code / tests → the minimal correct COMBINED result (honour both intents).
+                 If a conflict can't be resolved safely → `git merge --abort`, comment what's
+                 blocking, and STOP.
+              3. Run `node run-all-tests.mjs` until green; commit the merge with a `[mergefix]`
+                 message; push with `git push origin HEAD:${{ steps.pick.outputs.head }}` (never
+                 force-push). Comment a one-line summary. Do NOT merge the PR — a human merges.
       - name: Verify the agent actually worked (green != healthy)
         if: always() && steps.claude.outcome != 'skipped'
         env:
