@@ -55,6 +55,13 @@ test('SECURITY F4: no secrets to fork PRs (no pull_request_target anywhere)', ()
       `${n}: must gate on same-repo head so fork PRs don't get secrets`,
     );
   }
+  // autofix uses a different (valid) fence: check_run.pull_requests[] is empty for fork
+  // PRs, so its `if` accessing [0] naturally skips forks. Assert the mechanism is present.
+  assert.match(
+    wf.autofix,
+    /pull_requests\[0\]/,
+    'autofix: if must reference pull_requests[0] (empty for fork check runs = no write-creds leak)',
+  );
 });
 
 test('SECURITY: ask-roles run least-privilege (review never writes repo contents)', () => {
@@ -148,8 +155,10 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
 });
 
 test('each workflow drives its own role via dev-mesh/<role>', () => {
-  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator', autofix: 'coder' };
-  for (const n of NAMES) {
+  // autofix is the one exception: it's a combined Triager+Coder CI-fix role described
+  // INLINE in the prompt (it deliberately does NOT read the no-shell Coder AGENT.md).
+  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
+  for (const n of Object.keys(role)) {
     assert.match(wf[n], new RegExp(`dev-mesh/${role[n]}`), `${n}: should reference dev-mesh/${role[n]}`);
   }
 });
