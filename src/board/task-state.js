@@ -36,6 +36,7 @@ export function canAdvance(task, callerName) {
 // canAdvance() first; this keeps the lifecycle rule and the identity rule
 // independently testable.
 export function applyTransition(task, { to, by, at, result }) {
+  if (!task || typeof task !== 'object') return { ok: false, error: 'no_task' };
   if (!isValidTransition(task.state, to)) {
     return { ok: false, error: 'invalid_transition' };
   }

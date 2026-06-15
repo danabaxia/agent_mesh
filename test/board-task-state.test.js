@@ -57,3 +57,13 @@ test('applyTransition rejects an invalid transition as data (never throws)', () 
   assert.equal(next.ok, false);
   assert.equal(next.error, 'invalid_transition');
 });
+
+test('applyTransition returns error (never throws) on a null task', () => {
+  assert.doesNotThrow(() => applyTransition(null, { to: 'acknowledged', by: 'b', at: '' }));
+  assert.deepEqual(applyTransition(null, { to: 'acknowledged', by: 'b', at: '' }), { ok: false, error: 'no_task' });
+});
+
+test('canAdvance guards null task and empty caller', () => {
+  assert.equal(canAdvance(null, 'agentB').error, 'no_task');
+  assert.equal(canAdvance({ to: 'agentB' }, '').error, 'no_caller');
+});
