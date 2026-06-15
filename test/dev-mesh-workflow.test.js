@@ -109,6 +109,16 @@ test('autofix budget is scoped to the PR commits (base..HEAD), not all history',
   assert.doesNotMatch(wf.autofix, /git log --oneline --grep='\\\[autofix\\\]'\s*\|/, 'no unbounded git log for the budget');
 });
 
+test('autofix: author-controlled branch ref enters via env, never interpolated into prompt/push', () => {
+  // Reviewer #15: ${{ head.ref }} in the prompt/push is a prompt/shell injection vector.
+  // It must be captured into $PR_BRANCH via an env: block and used as a shell var only.
+  assert.match(wf.autofix, /PR_BRANCH=/, 'must capture the ref into $PR_BRANCH');
+  assert.match(wf.autofix, /HEAD:\$PR_BRANCH/, 'push must use the $PR_BRANCH env var');
+  assert.doesNotMatch(wf.autofix, /push origin HEAD:\$\{\{/, 'push must not template-interpolate the ref');
+  // fork fence must be in the job if: && chain (not just anywhere in the file).
+  assert.match(wf.autofix, /pull_requests\[0\] &&/, 'fork guard must be in the job if: && chain');
+});
+
 test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
   // The action otherwise forces Opus 4.8, which the deploy key can't access (instant
   // is_error/$0 — the loop silently no-ops). The model is a repo variable so it can be

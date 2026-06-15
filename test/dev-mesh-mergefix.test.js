@@ -36,6 +36,17 @@ test('mergefix: do-worker tools (any-args), honesty gate present', () => {
   assert.match(wf, /assert-run-healthy\.mjs/, 'must run the per-run honesty gate');
 });
 
+test('mergefix: branch ref via env (no shell/prompt injection) + fail-fast on empty token', () => {
+  // Reviewer #16: ${{ steps.pick.outputs.head }} interpolated into run:/prompt is a
+  // shell/prompt injection vector. It must arrive via env (HEAD_REF) and be used as
+  // $HEAD_REF / $PR_BRANCH only.
+  assert.match(wf, /HEAD_REF:\s*\$\{\{ steps\.pick\.outputs\.head \}\}/, 'ref captured via env block');
+  assert.match(wf, /origin\/main\.\.origin\/\$HEAD_REF/, 'budget range uses the $HEAD_REF var, not interpolation');
+  assert.match(wf, /HEAD:"?\$PR_BRANCH/, 'push uses $PR_BRANCH');
+  assert.doesNotMatch(wf, /origin\/\$\{\{ steps\.pick\.outputs\.head/, 'no template-interpolated ref in shell');
+  assert.match(wf, /if \[ -z "\$CLEAN" \]/, 'fail-fast when the OAuth token is empty');
+});
+
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {
   assert.match(wf, /\[mergefix\]/, 'commits are tagged [mergefix] for the budget count');
   assert.doesNotMatch(wf, /--force\b/, 'must never force-push');

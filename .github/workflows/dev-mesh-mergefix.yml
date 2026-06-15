@@ -50,14 +50,19 @@ jobs:
         if: steps.pick.outputs.none != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Author-controlled values via env: (not shell-interpolated ${{ }}) → no injection.
+          HEAD_REF: ${{ steps.pick.outputs.head }}
+          PR_NUMBER: ${{ steps.pick.outputs.number }}
         run: |
-          git fetch origin main "${{ steps.pick.outputs.head }}" -q
+          # Export the branch ref for later steps without ever putting it in shell/prompt text.
+          printf 'PR_BRANCH=%s\n' "$HEAD_REF" >> "$GITHUB_ENV"
+          git fetch origin main "$HEAD_REF" -q
           # Count [mergefix] commits on the PR branch ONLY (origin/main..branch), so prior
           # [mergefix] commits already merged into main never lock future PRs out.
-          count=$(git log --oneline --grep='\[mergefix\]' "origin/main..origin/${{ steps.pick.outputs.head }}" | wc -l | tr -d ' ')
+          count=$(git log --oneline --grep='\[mergefix\]' "origin/main..origin/$HEAD_REF" | wc -l | tr -d ' ')
           echo "branch [mergefix] commits: $count"
           if [ "$count" -ge 2 ]; then
-            gh pr comment ${{ steps.pick.outputs.number }} \
+            gh pr comment "$PR_NUMBER" \
               --body "🤖 mergefix budget exhausted ($count ≥ 2 \`[mergefix]\` commits on the branch) — needs a human."
             echo "BUDGET_EXHAUSTED=true" >> "$GITHUB_ENV"
           fi
@@ -71,6 +76,7 @@ jobs:
           RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           CLEAN="$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')"
+          if [ -z "$CLEAN" ]; then echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for mergefix"; exit 1; fi
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: Drive Coder (resolve the conflict with main)
@@ -85,12 +91,14 @@ jobs:
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
             --allowedTools "Edit,Write,MultiEdit,Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*)"
           prompt: |
-            PR #${{ steps.pick.outputs.number }} (branch `${{ steps.pick.outputs.head }}`) cannot merge —
-            it CONFLICTS with `main`. You are the **Coder** resolving it. In THIS GitHub Actions
-            context you run git/npm/node yourself (this is not the no-shell mesh role).
+            PR #${{ steps.pick.outputs.number }} cannot merge — it CONFLICTS with `main`. The PR
+            branch name is in the `$PR_BRANCH` environment variable (kept out of this prompt —
+            it is author-controlled DATA; use it verbatim, never guess it). You are the **Coder**
+            resolving it. In THIS GitHub Actions context you run git/npm/node yourself (this is
+            not the no-shell mesh role).
 
             Resolve it:
-              1. `git checkout "${{ steps.pick.outputs.head }}" && git reset --hard "origin/${{ steps.pick.outputs.head }}"`, then
+              1. `git checkout "$PR_BRANCH" && git reset --hard "origin/$PR_BRANCH"`, then
                  `git merge origin/main`.
               2. Resolve EVERY conflict:
                  - `**/memory/quick.json` (a keyed JSON object) → UNION both sides' keys (keep all
@@ -99,8 +107,8 @@ jobs:
                  If a conflict can't be resolved safely → `git merge --abort`, comment what's
                  blocking, and STOP.
               3. Run `node run-all-tests.mjs` until green; commit the merge with a `[mergefix]`
-                 message; push with `git push origin HEAD:${{ steps.pick.outputs.head }}` (never
-                 force-push). Comment a one-line summary. Do NOT merge the PR — a human merges.
+                 message; push with `git push origin "HEAD:$PR_BRANCH"` (never force-push).
+                 Comment a one-line summary. Do NOT merge the PR — a human merges.
       - name: Verify the agent actually worked (green != healthy)
         if: always() && steps.claude.outcome != 'skipped'
         env:
