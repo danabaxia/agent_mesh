@@ -25,17 +25,17 @@
   "curator-actions-pr-bootstrap": {
     "status": "active",
     "valid_to": null,
-    "l0": "memory:promote branch lands but no PR until repo Settings enables 'Allow Actions to create PRs'.",
-    "l1": "The Curator pushes the branch successfully but `gh pr create` errors with 403. No error is surfaced to the caller — the branch sits orphaned. The session must bridge manually (push branch + open PR via integration token). This is a one-time bootstrap gap, not a recurring issue, but it will bite every new repo that adds the dev-mesh without enabling the setting first.",
-    "value": "Before the first Curator invocation in a new repo, enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'. Without it, memory:promote is silently half-complete: branch exists, PR does not. To detect: check for branches named memory/* with no open PR. After enabling, future Curator runs open their own PRs with no manual step. Provenance: PR #13 (first memory:promote PR to merge; was bridged because this setting was off when PR #11 merged).",
+    "l0": "Actions opening PRs needs BOTH pull-requests:write YAML AND the repo 'Allow Actions to create PRs' toggle.",
+    "l1": "The YAML `permissions: pull-requests: write` is necessary but NOT sufficient — the repo setting (Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests') must also be ON. Without it a workflow pushes the branch but `gh pr create` fails with 403, no error surfaced — the branch sits orphaned with no PR. A one-time bootstrap gap that bites every new repo on first deploy.",
+    "value": "Before the first Curator / PR-opening run in a new repo, enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests' (the YAML pull-requests:write permission alone is not enough). Symptom of the missing toggle: branches (memory/* or any feature branch) exist in remote with no open PR. Detect by listing branches with no associated PR. Once enabled, future Curator runs open their own PRs with no manual bridge.",
     "provenance": {
-      "source": "PR #13",
+      "source": "PR #12 + #13 — first memory:promote PRs, manually bridged because the repo 'Allow Actions to create PRs' toggle was off at deployment",
       "ts": "2026-06-15"
     }
   },
   "honesty-gate-blocked-advisory": {
     "status": "superseded",
-    "valid_to": "2026-06-15",
+    "valid_to": "2026-06-15T00:00:00.000Z",
     "superseded_by": "honesty-gate-role-scoped",
     "l0": "SUPERSEDED by PR #26 — the all-roles advisory default was too broad. See honesty-gate-role-scoped.",
     "l1": "PR #25 made `blocked` globally advisory (exit 0). PR #26 reverted this: `blocked` is fatal again by default for do-workers; only light/ask roles get `--advisory-blocked` explicitly. The lesson was directionally correct about ask-roles but incorrectly extended the advisory behavior to do-workers, which need the strict default to catch real tool-grant misconfigurations.",
@@ -115,7 +115,7 @@
     "status": "active",
     "valid_to": null,
     "l0": "Shared gate scripts for mixed roles need per-caller flags: blocked is fatal for do-workers, advisory for ask-roles.",
-    "l1": "PR #25 made `blocked` (≥5 denials) globally advisory — too broad. For do-workers (autofix, mergefix, backlog, curate) granted `Edit,Write,Bash(git:*)`, ≥5 denials almost always signals a real misconfigured tool grant (e.g. `Bash(git)` vs `Bash(git:*)` — the exact bug the gate exists to catch). PR #26 reverted the global default and added `--advisory-blocked`: a flag that downgrades `blocked` to warning+exit-0, passed ONLY from light/ask callers (review, triage, intake, research) where probe-denials are expected noise. The pure classifier in `src/dev-mesh/health.js` is unchanged — it still…",
+    "l1": "PR #25 made `blocked` (≥5 denials) globally advisory — too broad. For do-workers (autofix, mergefix, backlog, curate) granted Edit,Write,Bash(git:*), ≥5 denials almost always signals a real misconfigured tool grant (e.g. Bash(git) vs Bash(git:*) — the exact bug the gate exists to catch). PR #26 reverted the global default and added --advisory-blocked, passed ONLY from light/ask callers (review, triage, intake, research) where probe-denials are expected noise. The pure classifier in src/dev-mesh/health.js is unchanged — only the gate's exit policy is per-caller.",
     "value": "When writing a gate script shared by both do-workers and ask-workers: (1) keep `blocked` → exit 1 as the strict default; (2) add an explicit opt-in flag (`--advisory-blocked`) that downgrades to `::warning::` + exit 0; (3) pass the flag ONLY from ask/light-role callers where denials are expected (review, triage, intake, research); (4) do-workers (autofix, mergefix, backlog, curate) pass nothing and stay strict. Never make advisory the global default — do-workers need the gate red when their tool grants are broken. Provenance: PR #26 (2026-06-15), supersedes honesty-gate-blocked-advisory.",
     "provenance": {
       "source": "PR #26: fix(dev-mesh): scope honesty gate's blocked-advisory to light roles only",
@@ -141,17 +141,6 @@
     "value": "Two-step pattern: (1) fix runtime gate behavior + document in quick.json; (2) immediately open a follow-up ticket/PR to add a lint rule or test that encodes the new exit-code semantics statically. Apply whenever any gate's status→exit-code mapping changes. Provenance: PR #25 (runtime fix) + PR #27 (lesson promoted) + PR #28 (lint follow-up), 2026-06-15.",
     "provenance": {
       "source": "PR #27: memory — distill PR #25 honesty-gate blocked-advisory lesson",
-      "ts": "2026-06-15"
-    }
-  },
-  "actions-pr-open-repo-setting": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "gh pr create from Actions needs both pull-requests:write YAML AND the repo 'Allow Actions to create PRs' toggle.",
-    "l1": "The YAML `permissions: pull-requests: write` is necessary but not sufficient. The GitHub repository setting (Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests') must also be ON. Without it, a workflow can push branches but `gh pr create` silently fails — the PR is never opened. The first memory:promote PR (#12) was manually bridged by a human session because this setting was missing at initial dev-mesh deployment.",
-    "value": "When deploying a new dev-mesh instance (or any Actions workflow that opens PRs), verify the repo setting before the first run. Symptom of missing setting: branch exists in remote, but no PR appears. Fix: Settings → Actions → General → enable 'Allow GitHub Actions to create and approve pull requests'. The dev-mesh-curate.yml workflow already carries the correct YAML permissions — the repo toggle is the only remaining gate.",
-    "provenance": {
-      "source": "PR #12 (2026-06-15) — first memory:promote, manually bridged because repo setting was off",
       "ts": "2026-06-15"
     }
   },
