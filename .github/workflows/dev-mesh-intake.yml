@@ -20,7 +20,7 @@ permissions:
 
 concurrency:
   group: dev-mesh-intake-${{ github.event.issue.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true # dedupe: opening an issue *with* a label fires opened+labeled
 
 jobs:
   intake:
