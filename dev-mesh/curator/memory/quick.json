@@ -34,5 +34,13 @@
     "l1": "The ask-role Reviewer is granted only `Read,Grep,Glob,Bash(gh:*)`. During a review it naturally tries `ls`/`cat`/`git diff` — these pile past the 5-denial threshold and produce `blocked`. Before PR #25, `assert-run-healthy.mjs` treated `blocked` as fatal (exit 1), making every PR's advisory `review` check red even though the review ran and posted real comments. The pure classifier in `src/dev-mesh/health.js` correctly keeps `blocked` as unhealthy for aggregate scoring — only the gate's job-result mapping needed to change.",
     "value": "In `assert-run-healthy.mjs` (and any honesty gate downstream), use this exit policy: `healthy` → 0; `blocked` → emit `::warning::` + exit 0; `errored`/`noop`/`unknown`/missing-file → exit 1. Keep the pure classifier unchanged — it still counts `blocked` as unhealthy for scheduled health scoring. This split lets advisory workflows show yellow without turning the merge-blocking gate red. Provenance: PR #25 (2026-06-15).",
     "provenance": { "source": "PR #25: fix(dev-mesh): make honesty gate's 'blocked' status advisory, not fatal", "ts": "2026-06-15" }
+  },
+  "fix-then-lint-pattern": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Gate policy runtime fix is step 1 of 2 — always open a lint/test follow-up to statically enforce the new convention; documentation alone drifts.",
+    "l1": "PR #25 changed `blocked` from fatal→advisory in the honesty gate and updated docs/quick.json. But without a static check, a future edit to assert-run-healthy.mjs can silently revert the exit-code semantics. PR #28 was opened as the lint follow-up: verify ask-role agents' blocked exit policy matches their declared tool grants. The runtime fix without the lint step is incomplete.",
+    "value": "Two-step pattern: (1) fix runtime gate behavior + document in quick.json; (2) immediately open a follow-up ticket/PR to add a lint rule or test that encodes the new exit-code semantics statically. Apply whenever any gate's status→exit-code mapping changes. Provenance: PR #25 (runtime fix) + PR #27 (lesson promoted) + PR #28 (lint follow-up), 2026-06-15.",
+    "provenance": { "source": "PR #27: memory — distill PR #25 honesty-gate blocked-advisory lesson", "ts": "2026-06-15" }
   }
 }
