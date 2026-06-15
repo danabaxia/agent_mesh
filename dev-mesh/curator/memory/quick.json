@@ -33,18 +33,6 @@
       "ts": "2026-06-15"
     }
   },
-  "honesty-gate-blocked-advisory": {
-    "status": "superseded",
-    "valid_to": "2026-06-15T00:00:00.000Z",
-    "superseded_by": "honesty-gate-role-scoped",
-    "l0": "SUPERSEDED by PR #26 — the all-roles advisory default was too broad. See honesty-gate-role-scoped.",
-    "l1": "PR #25 made `blocked` globally advisory (exit 0). PR #26 reverted this: `blocked` is fatal again by default for do-workers; only light/ask roles get `--advisory-blocked` explicitly. The lesson was directionally correct about ask-roles but incorrectly extended the advisory behavior to do-workers, which need the strict default to catch real tool-grant misconfigurations.",
-    "value": "Retired 2026-06-15. Use honesty-gate-role-scoped instead.",
-    "provenance": {
-      "source": "PR #25 (superseded by PR #26)",
-      "ts": "2026-06-15"
-    }
-  },
   "yaml-flag-drift-structural-lint": {
     "status": "active",
     "valid_to": null,
