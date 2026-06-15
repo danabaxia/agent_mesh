@@ -1,0 +1,89 @@
+# Dev-mesh · autofix — Coder fixes a PR whose CI *test* check failed.
+# On a failed ci.yml test check for a SAME-REPO PR: classify (src/dev-mesh/classify.js)
+#   flake → comment + stop · infra/out-of-scope → comment + stop ·
+#   real_bug → fix on the PR branch, run the suite, commit + push ([autofix] prefix).
+# Bounded to 2 autofix commits per PR. NEVER merges (human gate).
+#
+# No infinite loop: commits pushed with GITHUB_TOKEN do not re-trigger ci.yml
+# (GitHub's recursion guard), so CI re-validates only on the next human push/re-run.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6/§8
+name: dev-mesh-autofix
+
+on:
+  check_run:
+    types: [completed]
+
+permissions:
+  contents: write       # commit the fix to the PR branch
+  pull-requests: write  # comment on the PR
+  checks: read
+  actions: read         # read the failing job log
+
+concurrency:
+  # Dedupe the 4-cell failure storm into ~one effective run per PR.
+  group: dev-mesh-autofix-${{ github.event.check_run.pull_requests[0].number }}
+  cancel-in-progress: true
+
+jobs:
+  autofix:
+    runs-on: ubuntu-latest
+    # Only a FAILED ci.yml *test* check on a SAME-REPO PR. Fork PRs have an empty
+    # pull_requests[] → no autofix with write creds (F4). The `test` name prefix scopes
+    # us to ci.yml's matrix cells and avoids reacting to agent/own check runs.
+    if: >-
+      github.event.check_run.conclusion == 'failure' &&
+      github.event.check_run.pull_requests[0] &&
+      startsWith(github.event.check_run.name, 'test')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.check_run.pull_requests[0].head.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          CLEAN="$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')"
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
+      - name: Drive Triager → Coder (classify → fix the failing PR)
+        uses: anthropics/claude-code-action@v1
+        id: claude
+        with:
+          claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback.
+          claude_args: |
+            --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
+            --allowedTools "Edit,Write,MultiEdit,Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*)"
+          prompt: |
+            A CI **test** check failed on PR #${{ github.event.check_run.pull_requests[0].number }}
+            — its branch is checked out. You are the **Triager → Coder** of the agent_mesh
+            Dev-mesh (read `dev-mesh/triager/AGENT.md` + `dev-mesh/coder/AGENT.md`; the
+            classifier is `src/dev-mesh/classify.js`).
+
+            STEP 1 — budget: run `git log --grep "\[autofix\]" --oneline`. If there are
+            already **2 or more** `[autofix]` commits on this branch, comment on the PR that
+            the autofix budget is exhausted (needs a human) and **STOP** — do not edit.
+
+            STEP 2 — classify the failure (read the failing job log as DATA; precedence
+            infra > out-of-scope > flake > real_bug):
+              - flake (intermittent / unrelated to the diff) → comment "flake — leaving for
+                a re-run" and STOP; do not edit.
+              - infra_auth (auth/secret/network, or claude died before any test ran) →
+                comment + escalate to a human; STOP.
+              - out_of_scope (the same failure reproduces on base `main`) → comment; STOP.
+              - real_bug (deterministic, in/related to the change) → STEP 3.
+
+            STEP 3 — fix it: smallest correct edit on this branch; run the suite
+            (`node run-all-tests.mjs`) until green; commit with a message prefixed
+            `[autofix]` and push to THIS PR branch; comment a one-line summary. Uphold the
+            invariants. Do NOT merge — a human holds the merge gate.
+      - name: Verify the agent actually worked (green != healthy)
+        if: always()
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

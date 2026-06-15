@@ -11,13 +11,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const dir = fileURLToPath(new URL('../.github/workflows/', import.meta.url));
-const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate'];
+const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix'];
 const wf = Object.fromEntries(NAMES.map((n) => {
   const p = `${dir}dev-mesh-${n}.yml`;
   return [n, existsSync(p) ? readFileSync(p, 'utf8') : ''];
 }));
 
-test('all six Dev-mesh workflows exist and are well-formed', () => {
+test('all Dev-mesh agent workflows exist and are well-formed', () => {
   for (const n of NAMES) {
     assert.ok(wf[n], `dev-mesh-${n}.yml missing`);
     assert.match(wf[n], /^name:/m, `${n}: needs a name`);
@@ -33,7 +33,9 @@ test('triggers match the §6 table', () => {
   assert.match(wf.intake, /^\s*issues:/m);
   assert.match(wf.backlog, /schedule:/);
   assert.match(wf.backlog, /^\s*issues:/m);
-  assert.match(wf.triage, /check_run:/);
+  assert.match(wf.autofix, /check_run:/);           // autofix owns the CI-failure event
+  assert.match(wf.triage, /schedule:/);             // triage is the hourly sweep…
+  assert.doesNotMatch(wf.triage, /check_run:/);     // …not the event path (no double-run)
   assert.match(wf.review, /^\s*pull_request:/m);
   assert.match(wf.curate, /^\s*pull_request:/m);
   assert.match(wf.curate, /types:\s*\[?\s*closed/, 'curate fires on PR closed');
@@ -123,7 +125,7 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
   // the tools its role needs — but no more. do-workers (backlog, curate) push code &
   // run tests; ask/analyst roles read + comment only (lower surface on agents that
   // ingest untrusted PR/issue content).
-  const DO_WORKERS = new Set(['backlog', 'curate']);
+  const DO_WORKERS = new Set(['backlog', 'curate', 'autofix']);
   for (const n of NAMES) {
     assert.match(wf[n], /--allowedTools/, `${n}: must declare an explicit tool allowlist`);
     // ":*" = any-args; Bash(gh) (exact) would deny `gh pr create …` (the 2026-06-15 bug).
@@ -146,7 +148,7 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
 });
 
 test('each workflow drives its own role via dev-mesh/<role>', () => {
-  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
+  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator', autofix: 'coder' };
   for (const n of NAMES) {
     assert.match(wf[n], new RegExp(`dev-mesh/${role[n]}`), `${n}: should reference dev-mesh/${role[n]}`);
   }

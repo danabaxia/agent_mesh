@@ -1,18 +1,17 @@
-# Dev-mesh · Maintainer → Triager (triage) — Phase 0.
-# Classifies a red CI check before anyone acts (flake / real_bug / infra_auth /
-# out_of_scope), then takes the deliberate action for that class. The concurrency
-# group serializes triage per check so re-kicks don't stack.
+# Dev-mesh · Maintainer → Triager (triage) — scheduled sweep.
+# Hourly: classify any lingering red checks (flake / real_bug / infra_auth /
+# out_of_scope) and comment/escalate. The per-PR CI-failure EVENT path (classify →
+# fix → commit) is owned by dev-mesh-autofix.yml; triage stays an ask-role sweep so
+# we don't double-run an agent on every check_run.
 # Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6/§8
 name: dev-mesh-triage
 
 on:
-  check_run:
-    types: [completed]
   schedule:
     - cron: '15 * * * *' # hourly sweep for unresolved red checks
 
 # Triager is ask: read the repo + logs, label/comment, re-kick. It does not push
-# fixes (that is the Coder's job via the backlog flow) — no contents: write.
+# fixes (that is autofix/Coder's job) — no contents: write.
 permissions:
   contents: read
   issues: write
@@ -21,14 +20,12 @@ permissions:
   checks: read
 
 concurrency:
-  group: dev-mesh-triage-${{ github.event.check_run.id || 'poll' }}
+  group: dev-mesh-triage-poll
   cancel-in-progress: false
 
 jobs:
   triage:
     runs-on: ubuntu-latest
-    # Only failures are worth classifying.
-    if: github.event_name == 'schedule' || github.event.check_run.conclusion == 'failure'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
