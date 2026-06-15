@@ -155,5 +155,16 @@
       "source": "PR #16: feat(dev-mesh): mergefix — auto-resolve PRs that conflict with main",
       "ts": "2026-06-15"
     }
+  },
+  "test-dynamic-discovery-over-lists": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Enumerate test subjects dynamically (glob/readdir) — hardcoded role lists silently miss newly added entries.",
+    "l1": "PR #40 closed a structural gap: `dev-mesh-memory.test.js` validated quick.json for `['coder', 'triager']` only, missing curator. Curator's over-cap entries passed CI silently for multiple PRs before being caught. Fix: `readdirSync` + `existsSync` to enumerate roles dynamically; guard with `assert.ok(length > 0)` to prevent vacuous pass if the glob returns nothing.",
+    "value": "Pattern for any test over parallel-structured files (per-role, per-agent, per-module): (1) Discover: readdirSync + existsSync to enumerate directories that have the target file — no hardcoded list. (2) Guard: assert discovered.length >= EXPECTED_MIN so an empty result doesn't silently vacuously pass. (3) Validate each discovered entry in a loop. Applies whenever the subject set can grow over time (roles, agents, modules, plugins). Provenance: PR #40 / Issue #39 (2026-06-15).",
+    "provenance": {
+      "source": "PR #40: test(dev-mesh): validate all roles' quick.json in the hermetic suite (#39)",
+      "ts": "2026-06-15"
+    }
   }
 }
