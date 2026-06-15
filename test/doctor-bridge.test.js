@@ -60,6 +60,14 @@ test('doctor --apply creates .mcp.json with the peer-bridge entry for a peered a
   // doctor wrote rather than the raw mkdtemp path. No-op on Linux.
   const canonRoot = await realpath(meshRoot);
   assert.equal(entry.args[2], join(canonRoot, 'a'));
+  // The bridge needs the reserved mesh env to resolve its own caller name from
+  // the manifest (resolveCallerName reads CEILING/ROOT). A plain claude session
+  // in the agent folder has ONLY this entry, so doctor must stamp it here or the
+  // bridge refuses every delegation with caller_identity_unresolved.
+  assert.deepEqual(entry.env, {
+    AGENT_MESH_MESH_ROOT: join(canonRoot, 'mesh'),
+    AGENT_MESH_MESH_CEILING: canonRoot
+  });
 });
 
 test('doctor --apply MERGES into an authored .mcp.json, preserving existing servers', async () => {
