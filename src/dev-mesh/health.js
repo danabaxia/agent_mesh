@@ -31,6 +31,13 @@ export function classifyRunHealth(envelope) {
   if (turns === 0) {
     return { healthy: false, status: 'noop', reason: 'green but did no work (0 turns) — nothing ran' };
   }
+  // "Ran but blocked": the model worked many turns yet a wall of permission denials
+  // means it couldn't actually act (push/PR/comment) — looks green, produces nothing.
+  // (e.g. tool grants missing or mis-specified — the 2026-06-15 Bash(git) vs git:* bug.)
+  const denials = Number(envelope.permission_denials_count ?? 0);
+  if (denials >= 5) {
+    return { healthy: false, status: 'blocked', reason: `ran but was blocked — ${denials} permission denials (missing/incorrect tool grants?)` };
+  }
   const billed = cost > 0 ? `$${cost.toFixed(4)}` : '$0 (subscription)';
   return { healthy: true, status: 'ok', reason: `ok (${turns} turns, ${billed})` };
 }

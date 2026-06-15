@@ -42,6 +42,18 @@ test('classifyRunHealth: a real working run is healthy (API-billed)', () => {
   assert.equal(h.status, 'ok');
 });
 
+test('classifyRunHealth: ran-but-blocked (many permission denials) is unhealthy', () => {
+  // The 2026-06-15 case: 62 turns, $1.61, is_error:false, but 25 denials and no PR.
+  const h = classifyRunHealth({ is_error: false, num_turns: 62, total_cost_usd: 1.6, permission_denials_count: 25 });
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'blocked');
+});
+
+test('classifyRunHealth: a couple incidental denials are still healthy', () => {
+  const h = classifyRunHealth({ is_error: false, num_turns: 8, total_cost_usd: 0.2, permission_denials_count: 1 });
+  assert.equal(h.healthy, true);
+});
+
 test('classifyRunHealth: subscription run ($0 but real turns) is healthy, not a false no-op', () => {
   // OAuth/subscription auth always reports $0 — must NOT be flagged unhealthy.
   const h = classifyRunHealth({ is_error: false, num_turns: 3, total_cost_usd: 0 });

@@ -51,7 +51,7 @@ jobs:
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
-            --allowedTools "Edit,Write,MultiEdit,Read,Grep,Glob,Bash(git),Bash(gh),Bash(npm),Bash(node)"
+            --allowedTools "Edit,Write,MultiEdit,Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*)"
           prompt: |
             You are the **Curator** of the agent_mesh Dev-mesh. Read your role at
             `dev-mesh/curator/AGENT.md` and skills distill-lesson + promote-to-memory.
