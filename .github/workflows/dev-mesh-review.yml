@@ -44,13 +44,12 @@ jobs:
         with:
           claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          show_full_output: true   # TEMP diagnostic: see why the reviewer runs long
           # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
           # action otherwise forces Opus 4.8, which THIS key cannot access (instant
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
-            --allowedTools "Edit,Write,MultiEdit,Read,Grep,Glob,Bash(git),Bash(gh),Bash(npm),Bash(node)"
+            --allowedTools "Read,Grep,Glob,Bash(gh)"
           prompt: |
             You are the **Reviewer** of the agent_mesh Dev-mesh. Read your role at
             `dev-mesh/reviewer/AGENT.md` and skills code-review + security-review.

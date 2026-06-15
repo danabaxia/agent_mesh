@@ -118,14 +118,22 @@ test('AUTH HARDENING: every workflow sanitizes the OAuth token (strip stray newl
   assert.match(dogfood, /tr -d '\[:space:\]'/, 'dogfood must sanitize the OAuth token');
 });
 
-test('TOOL GRANTS: every agent can act (git/gh/test tools allowed; default denies them)', () => {
-  // claude-code-action's default permits edits + read-only git + built-in comments,
-  // but DENIES git push / gh / test runners — which blocked the Coder (28 denials,
-  // no PR). Each workflow must allow the tools its role needs to actually act.
+test('TOOL GRANTS: least privilege — only do-workers can push/build; all can comment', () => {
+  // claude-code-action's default denies push/gh/test, so each agent must be granted
+  // the tools its role needs — but no more. do-workers (backlog, curate) push code &
+  // run tests; ask/analyst roles read + comment only (lower surface on agents that
+  // ingest untrusted PR/issue content).
+  const DO_WORKERS = new Set(['backlog', 'curate']);
   for (const n of NAMES) {
-    assert.match(wf[n], /--allowedTools/, `${n}: must grant tools (default denies push/gh/test)`);
-    assert.match(wf[n], /Bash\(gh\)/, `${n}: needs gh for PRs/comments/labels`);
-    assert.match(wf[n], /Bash\(git\)/, `${n}: needs git for branch/commit/push`);
+    assert.match(wf[n], /--allowedTools/, `${n}: must declare an explicit tool allowlist`);
+    assert.match(wf[n], /Bash\(gh\)/, `${n}: needs gh for comments/labels/PRs`);
+    if (DO_WORKERS.has(n)) {
+      assert.match(wf[n], /Bash\(git\)/, `${n}: do-worker needs git to push`);
+      assert.match(wf[n], /Bash\(npm\)|Bash\(node\)/, `${n}: do-worker runs the suite`);
+    } else {
+      assert.doesNotMatch(wf[n], /Bash\(git\)/, `${n}: ask/analyst role must not push code`);
+      assert.doesNotMatch(wf[n], /Bash\(npm\)|Bash\(node\)/, `${n}: ask/analyst role doesn't run builds`);
+    }
   }
 });
 
