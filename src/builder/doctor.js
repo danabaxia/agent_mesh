@@ -169,9 +169,16 @@ async function fixRegistry(agent, manifest, meshRoot, apply, fixed, flagged) {
     });
     const expected = expectedRegistries[agent.name];
     if (expected) {
-      const actualPeerNames = Object.keys(agent.registryJson.peers || {}).sort();
-      const expectedPeerNames = Object.keys(expected.peers || {}).sort();
-      if (JSON.stringify(actualPeerNames) !== JSON.stringify(expectedPeerNames)) {
+      // Compare full peer content (names AND embedded paths) so that path drift
+      // caused by mesh relocation also triggers regeneration, not just peer-set changes.
+      const actualPeers = agent.registryJson.peers || {};
+      const expectedPeers = expected.peers || {};
+      const actualPeerNames = Object.keys(actualPeers).sort();
+      const expectedPeerNames = Object.keys(expectedPeers).sort();
+      if (
+        JSON.stringify(actualPeerNames) !== JSON.stringify(expectedPeerNames) ||
+        actualPeerNames.some(n => JSON.stringify(actualPeers[n]) !== JSON.stringify(expectedPeers[n]))
+      ) {
         needsRegen = true;
       }
     }
