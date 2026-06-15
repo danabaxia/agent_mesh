@@ -41,21 +41,25 @@ jobs:
           if [ -z "$prs" ]; then echo "no open memory:promote PRs"; exit 0; fi
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
-          git fetch origin main -q
           for pr in $prs; do
             echo "::group::PR #$pr"
             files=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')
             # Structural guard: every changed file must be a memory quick.json OR a memory
             # *.md doc (the Curator's pattern files — inert DATA, never executed). NOT merely
             # "under memory/": a file like dev-mesh/x/memory/evil.js must still go to a human
-            # (it would escape the quick.json validation below — Reviewer #21). Anything that
-            # isn't quick.json or *.md → human review.
-            if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/(quick\.json|.+\.md)$'; then
+            # (it would escape the quick.json validation below — Reviewer #21). The *.md branch
+            # is ([^/]+/)?[^/]+\.md — a flat doc or one subdir (workflows/*.md), NOT arbitrary
+            # nesting (in ERE '.' matches '/', so '.+\.md' would admit a/b/c/evil.md). Anything
+            # that isn't quick.json or such an *.md → human review.
+            if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/(quick\.json|([^/]+/)?[^/]+\.md)$'; then
               echo "#$pr has non-memory-data changes — leaving for human review"; echo "::endgroup::"; continue
             fi
             if ! gh pr checkout "$pr" >/dev/null 2>&1; then
               echo "#$pr checkout failed (maybe conflicting — mergefix will handle)"; echo "::endgroup::"; continue
             fi
+            # Fetch main INSIDE the loop: if an earlier iteration merged a PR, this picks up
+            # that squash commit so this PR's merge simulation is against current main.
+            git fetch origin main -q
             # Validate the MERGE RESULT, not the stale branch HEAD. A PR branched before a
             # fix to quick.json (e.g. an over-cap l0 trim) still carries the old invalid file
             # on its HEAD, yet merges cleanly — validating HEAD would wrongly refuse it forever
@@ -65,6 +69,9 @@ jobs:
               echo "#$pr conflicts with main — mergefix will handle"; git merge --abort || true
               git checkout - >/dev/null 2>&1 || true; echo "::endgroup::"; continue
             fi
+            # ls-files lists ALL tracked quick.json (every role), not just this PR's changed
+            # files — so an .md-only PR still validates the resulting quick.json(s). If none
+            # exist, the validator is called with no args and exits 1 (safe: blocks the merge).
             qjs=$(git ls-files 'dev-mesh/*/memory/quick.json')
             if node scripts/validate-quick-memory.mjs $qjs; then
               if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch; then

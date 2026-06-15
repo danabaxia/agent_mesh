@@ -21,14 +21,29 @@ test('memory-automerge: scheduled sweep (not pull_request — dodges the GITHUB_
   assert.doesNotMatch(wf, /^\s*pull_request:/m, 'must NOT use pull_request (would not fire for GITHUB_TOKEN-opened PRs)');
 });
 
-test('memory-automerge: label-scoped, same-repo, memory-DATA-only guard before any merge', () => {
+test('memory-automerge: label-scoped, same-repo before any merge', () => {
   assert.match(wf, /--label memory:promote/, 'only memory:promote PRs');
   assert.match(wf, /isCrossRepository==false/, 'same-repo only (no fork auto-merge)');
-  // The guard accepts ONLY a memory quick.json or a memory *.md doc (inert data) — never a
-  // bare "under memory/" (Reviewer #21: that would let dev-mesh/x/memory/evil.js auto-merge).
-  // Assert both alternatives are present and the pattern is anchored ($) so code is excluded.
-  assert.match(wf, /quick\\\.json\|/, 'guard alternation must include quick.json');
-  assert.match(wf, /\\\.md\)\$/, 'guard alternation must include *.md and anchor with $ (no code)');
+});
+
+test('memory-automerge: guard accepts only memory quick.json / *.md, rejects code & deep nesting', () => {
+  // Extract the actual ERE used by `grep -vqE '...'` and exercise it as a RegExp, so a
+  // mutation (e.g. [^/]+ → .+, dropping the anchor) is caught by BEHAVIOUR, not substring
+  // presence. The guard is the security boundary (Reviewer #21): only inert memory DATA
+  // (quick.json or a flat/one-subdir *.md doc) may auto-merge — never executable files.
+  const m = wf.match(/grep -vqE '([^']+)'/);
+  assert.ok(m, 'guard must use grep -vqE with a quoted ERE');
+  const re = new RegExp(m[1]); // this ERE is JS-RegExp compatible
+  const ok = (p) => assert.ok(re.test(p), `guard should ACCEPT ${p}`);
+  const no = (p) => assert.ok(!re.test(p), `guard should REJECT ${p}`);
+  ok('dev-mesh/curator/memory/quick.json');
+  ok('dev-mesh/curator/memory/lesson.md');           // flat doc
+  ok('dev-mesh/curator/memory/workflows/cycle.md');  // one subdir
+  no('dev-mesh/curator/memory/a/b/c/deep.md');        // arbitrary nesting
+  no('dev-mesh/curator/memory/evil.js');              // executable
+  no('dev-mesh/curator/memory/quick.json.js');        // not a real quick.json
+  no('dev-mesh/curator/evil.md');                     // outside memory/
+  no('dev-mesh/curator/memory/sub/evil.json');        // a second .json that escapes validation
 });
 
 test('memory-automerge: validates the MERGE RESULT (merges main first), then squash-merges', () => {
