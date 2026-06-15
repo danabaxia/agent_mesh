@@ -87,6 +87,10 @@ test('APPROVAL GATE: backlog only builds approved work; intake never builds code
 });
 
 test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
+  // NB: for ask-roles (review/triage) this is also STRUCTURAL — contents:read makes
+  // `gh pr merge` fail at the API. For do-workers (backlog/curate/autofix) it's
+  // behavioural: Bash(gh:*) permits merge at the tool layer, so the prompt must also
+  // forbid it (autofix carries an explicit "FORBIDDEN: never run gh pr merge").
   for (const n of NAMES) {
     assert.doesNotMatch(
       wf[n],
@@ -94,6 +98,15 @@ test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
       `${n}: auto-merge is forbidden (human holds the merge gate)`,
     );
   }
+  // autofix is a do-worker acting autonomously on PR branches → assert the explicit fence.
+  assert.match(wf.autofix, /FORBIDDEN: never merge or close the PR/, 'autofix must explicitly forbid self-merging');
+});
+
+test('autofix budget is scoped to the PR commits (base..HEAD), not all history', () => {
+  // Reviewer #15 blocker: an unbounded `git log --grep` counts [autofix] commits merged
+  // into main and locks every future PR out. The count must be range-bounded.
+  assert.match(wf.autofix, /base\.\.HEAD/, 'autofix budget must count [autofix] within base..HEAD');
+  assert.doesNotMatch(wf.autofix, /git log --oneline --grep='\\\[autofix\\\]'\s*\|/, 'no unbounded git log for the budget');
 });
 
 test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
