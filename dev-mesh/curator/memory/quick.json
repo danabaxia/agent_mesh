@@ -154,5 +154,16 @@
       "source": "PR #40: test(dev-mesh): validate all roles' quick.json in the hermetic suite (#39)",
       "ts": "2026-06-15"
     }
+  },
+  "quick-json-supersede-delete": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Delete superseded quick.json entries: valid_to set breaks isLive() CI gate when dynamic role discovery runs.",
+    "l1": "PR #40 changed dev-mesh-memory.test.js to discover roles dynamically — previously only coder/triager were validated. Once curator was included, isLive() caught honesty-gate-blocked-advisory (status:'superseded', valid_to set) that had sat since PR #26. Fix (PR #50): delete the entry outright — the seed file must contain only live entries (status:'active', valid_to:null). The replacement (honesty-gate-role-scoped) was already active. Superseded entries are never injected and break the CI gate.",
+    "value": "Supersession is a two-step operation: (1) add the replacement entry (status:'active', valid_to:null); (2) DELETE the old entry from quick.json in the same PR. Do NOT leave it as status:'superseded' with valid_to set — isLive() in dev-mesh-memory.test.js requires every persisted entry to be live. The 'mark it and leave it' pattern compiles silently until dynamic role discovery expands coverage (as PR #40 did), at which point the stale entry causes an immediate CI failure. The replacement's provenance captures historical context; no information is lost by deleting. Pattern: distill replacement → write replacement entry → delete old key → open memory:promote PR. Provenance: PR #50 (2026-06-15), closing Issue #48.",
+    "provenance": {
+      "source": "PR #50: fix(dev-mesh): remove superseded honesty-gate-blocked-advisory from curator quick.json",
+      "ts": "2026-06-15"
+    }
   }
 }
