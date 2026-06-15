@@ -33,7 +33,15 @@ try {
 
 const envelope = extractResultEnvelope(parsed);
 const health = classifyRunHealth(envelope);
-if (!health.healthy) {
+
+// 'blocked' (>= denial threshold) is ADVISORY, not fatal. An ask-role agent (e.g. the
+// Reviewer, granted only Read/Grep/Glob/Bash(gh:*)) naturally probes ungranted shell
+// commands (ls/cat/git diff) while still posting a real review — that racks up denials
+// without meaning the run failed. Surfacing it as a job error turned the advisory review
+// check RED on every PR. Hard-fail only on a run that errored, did nothing, or is
+// unreadable (errored/noop/unknown); warn on 'blocked' and pass.
+const FATAL = new Set(['errored', 'noop', 'unknown']);
+if (!health.healthy && FATAL.has(health.status)) {
   console.error(`::error::agent run unhealthy (${health.status}): ${health.reason}`);
   // Surface the captured run output for diagnosis (secrets are already masked by the
   // runner; this is the agent's own stream, the only place an error detail survives).
@@ -42,4 +50,8 @@ if (!health.healthy) {
   console.error(dump.length > 8000 ? dump.slice(0, 8000) + '\n…(truncated)' : dump);
   process.exit(1);
 }
-console.log(`agent run healthy: ${health.reason}`);
+if (!health.healthy) {
+  console.warn(`::warning::agent run advisory (${health.status}): ${health.reason}`);
+} else {
+  console.log(`agent run healthy: ${health.reason}`);
+}
