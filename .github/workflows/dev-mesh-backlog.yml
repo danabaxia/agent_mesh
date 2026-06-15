@@ -11,8 +11,9 @@ on:
   schedule:
     - cron: '*/30 * * * *' # poll every 30 min for approved ∧ unclaimed
 
-# The workflow (not the model) holds write: it commits the Coder's edits and opens
-# the PR. The model never gets push tokens directly.
+# Phase 0: the claude-code-action agent (full Claude Code tools) claims, implements
+# on a branch, runs the suite, and opens the PR using the job's github_token. It
+# never merges — a human holds the merge gate (auto-merge off).
 permissions:
   contents: write
   issues: write
@@ -30,11 +31,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          CLEAN="$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')"
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: Drive Maintainer → Coder → Tester
         uses: anthropics/claude-code-action@v1
         id: claude
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
           # action otherwise forces Opus 4.8, which THIS key cannot access (instant
@@ -53,18 +61,16 @@ jobs:
             For one ready task (FIFO): CLAIM it atomically — assign yourself (the assignee
             is the lock) and move the label `approved → in-progress` — then act as the
             **Coder** (`dev-mesh/coder/AGENT.md`, skills patch-planning + test-strategy):
-            make the smallest correct edit; uphold the invariants (no Bash in do, single
-            writable root, anti-spoof surface). Then act as the **Tester** to interpret
-            the suite output. Iterate within a bounded retry budget; if you can't reach
-            green, stop and report on the Issue.
-      # §4.1: the WORKFLOW runs all shell — the suite that verifies the change.
-      - name: Verify (workflow-run suite)
-        run: node run-all-tests.mjs
-      - name: Open PR for review (no auto-merge — a human merges)
-        if: success()
-        run: |
-          echo "Coder's branch is verified; open a PR via the GitHub MCP and move the"
-          echo "Issue to pr:in-review. Merge stays human-held (auto-merge is off)."
+            implement on a NEW branch named `dev-mesh/issue-<number>`; make the smallest
+            correct edit; uphold the invariants (no Bash in do, single writable root,
+            anti-spoof surface). Run the suite (`node run-all-tests.mjs`) and iterate to
+            green within a bounded retry budget; if you can't reach green, stop and report
+            on the Issue (leave it `in-progress`).
+
+            When green: commit, push the branch, and **open a pull request** that links the
+            Issue (`Closes #<number>`), then move the label `in-progress → pr:in-review`.
+            Do NOT merge — a human holds the merge gate (auto-merge is off). CI (`ci.yml`)
+            on your PR is the authoritative test gate.
       - name: Verify the agent actually worked (green != healthy)
         if: always()
         env:

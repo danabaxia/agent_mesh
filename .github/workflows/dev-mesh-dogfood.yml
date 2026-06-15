@@ -37,14 +37,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # Fail-fast on a missing secret (clear error beats a per-step timeout).
-      - name: Preflight — require the real-claude key
+      # Fail-fast on a missing secret + sanitize it (a stray newline makes the auth
+      # header invalid). Export the cleaned token for the steps below.
+      - name: Preflight — require & sanitize the OAuth token
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+          CLEAN="$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')"
+          if [ -z "$CLEAN" ]; then
             echo "::error::CLAUDE_CODE_OAUTH_TOKEN is required for the dogfood run"; exit 1
           fi
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: Install the real claude CLI
         run: npm i -g @anthropic-ai/claude-code
       # §4.1: the WORKFLOW runs all shell. Materialize the real mesh, then prove it.
@@ -56,7 +60,7 @@ jobs:
                       test/dev-mesh-workflow.test.js test/dev-mesh-memory.test.js
       - name: Drive the Maintainer end-to-end (real claude over serve-a2a)
         env:
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # CLAUDE_CODE_OAUTH_TOKEN comes (sanitized) from the preflight via GITHUB_ENV.
           # Depth covers Maintainer → Triager → Coder → Tester (one onward hop each).
           AGENT_MESH_DEPTH: '4'
         run: |
