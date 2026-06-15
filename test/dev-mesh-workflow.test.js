@@ -118,6 +118,17 @@ test('AUTH HARDENING: every workflow sanitizes the OAuth token (strip stray newl
   assert.match(dogfood, /tr -d '\[:space:\]'/, 'dogfood must sanitize the OAuth token');
 });
 
+test('TOOL GRANTS: every agent can act (git/gh/test tools allowed; default denies them)', () => {
+  // claude-code-action's default permits edits + read-only git + built-in comments,
+  // but DENIES git push / gh / test runners — which blocked the Coder (28 denials,
+  // no PR). Each workflow must allow the tools its role needs to actually act.
+  for (const n of NAMES) {
+    assert.match(wf[n], /--allowedTools/, `${n}: must grant tools (default denies push/gh/test)`);
+    assert.match(wf[n], /Bash\(gh\)/, `${n}: needs gh for PRs/comments/labels`);
+    assert.match(wf[n], /Bash\(git\)/, `${n}: needs git for branch/commit/push`);
+  }
+});
+
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
   for (const n of NAMES) {
