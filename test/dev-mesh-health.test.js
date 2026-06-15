@@ -68,6 +68,17 @@ test('classifyRunHealth: denials reported as an array (show_full_output form) al
   assert.equal(h.status, 'blocked');
 });
 
+test('classifyRunHealth: explicit zero count stays healthy (?? passes 0, not falsy-bypassed)', () => {
+  const h = classifyRunHealth({ is_error: false, num_turns: 5, total_cost_usd: 0.1, permission_denials_count: 0 });
+  assert.equal(h.healthy, true);
+});
+
+test('classifyRunHealth: count wins over array when both present', () => {
+  // count=2 (healthy) takes precedence even though the array has 10 (would be blocked).
+  const h = classifyRunHealth({ is_error: false, num_turns: 8, total_cost_usd: 0.2, permission_denials_count: 2, permission_denials: new Array(10).fill({}) });
+  assert.equal(h.healthy, true);
+});
+
 test('classifyRunHealth: subscription run ($0 but real turns) is healthy, not a false no-op', () => {
   // OAuth/subscription auth always reports $0 — must NOT be flagged unhealthy.
   const h = classifyRunHealth({ is_error: false, num_turns: 3, total_cost_usd: 0 });

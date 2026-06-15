@@ -132,6 +132,9 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
     // the API). Claude Code's grammar can't scope sub-commands, so gh:* is unavoidable.
     assert.match(wf[n], /Bash\(gh:\*\)/, `${n}: needs gh (any args) for comments/labels/PRs`);
     assert.doesNotMatch(wf[n], /Bash\((?:git|gh|npm|node)\)/, `${n}: bare Bash(cmd) denies args — use Bash(cmd:*)`);
+    // NB: Bash(npm:*) also permits `npm install <arbitrary-pkg>` and Bash(node:*)
+    // arbitrary JS — same caveat as gh:*. Mitigation: ephemeral runner (no persistent
+    // side effects) + the github_token's contents scope bounds any repo-side change.
     if (DO_WORKERS.has(n)) {
       assert.match(wf[n], /Bash\(git:\*\)/, `${n}: do-worker needs git (any args) to push`);
       assert.match(wf[n], /Bash\(npm:\*\)|Bash\(node:\*\)/, `${n}: do-worker runs the suite`);
