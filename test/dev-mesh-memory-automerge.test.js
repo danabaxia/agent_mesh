@@ -41,6 +41,7 @@ test('memory-automerge: guard accepts only memory quick.json / *.md, rejects cod
   ok('dev-mesh/curator/memory/workflows/cycle.md');  // one subdir
   no('dev-mesh/curator/memory/a/b/c/deep.md');        // arbitrary nesting
   no('dev-mesh/curator/memory/evil.js');              // executable
+  no('dev-mesh/curator/memory/workflows/evil.js');    // named subdir, non-.md extension
   no('dev-mesh/curator/memory/quick.json.js');        // not a real quick.json
   no('dev-mesh/curator/evil.md');                     // outside memory/
   no('dev-mesh/curator/memory/sub/evil.json');        // a second .json that escapes validation
