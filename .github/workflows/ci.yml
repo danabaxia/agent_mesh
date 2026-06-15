@@ -22,6 +22,12 @@ on:
     branches: [main, 'v*-development']
   pull_request:
     branches: [main, 'v*-development']
+    # memory:promote PRs only touch dev-mesh/<role>/memory/quick.json (DATA, not code);
+    # they get a light validateQuickMemory check + auto-merge in dev-mesh-memory-automerge.yml
+    # instead of the full ubuntu+windows × node matrix. (main is unprotected, so skipping
+    # here can't strand a required check.)
+    paths-ignore:
+      - 'dev-mesh/*/memory/**'
   workflow_dispatch:
 
 concurrency:

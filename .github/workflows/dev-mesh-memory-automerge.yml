@@ -1,0 +1,68 @@
+# Dev-mesh · memory auto-merge — the ONE sanctioned auto-merge in the mesh.
+# memory:promote PRs only touch dev-mesh/<role>/memory/quick.json (DATA the agents
+# recall, never executed). Per operator decision they skip the heavy CI matrix
+# (see ci.yml paths-ignore) and merge automatically after a light validation:
+#   guard: labelled memory:promote AND every changed file under dev-mesh/*/memory/
+#   validate: quick.json parses + passes validateQuickMemory caps/shape
+#   merge: gh pr merge --squash
+# This is a DELIBERATE, scoped exception to the no-auto-merge invariant (PROJECT.md):
+# it cannot merge code (memory-only guard), only the Curator's distilled lessons.
+name: dev-mesh-memory-automerge
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dev-mesh-memory-automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    # Only same-repo memory:promote PRs (forks never auto-merge).
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'memory:promote')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Guard — every changed file must be under dev-mesh/*/memory/
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          files=$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')
+          echo "changed files:"; echo "$files"
+          # memory-only iff NO changed file falls outside a dev-mesh/<role>/memory/ dir.
+          if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/'; then
+            echo "::notice::not a memory-only PR — leaving for human review"; echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate quick.json (parses + caps/shape) — the light check that replaces CI
+        if: steps.guard.outputs.ok == 'true'
+        run: |
+          node --input-type=module -e '
+            import { readFileSync } from "node:fs";
+            import { execSync } from "node:child_process";
+            import { validateQuickMemory } from "./src/quick-memory.js";
+            const files = execSync("git ls-files dev-mesh/*/memory/quick.json").toString().trim().split("\n").filter(Boolean);
+            if (!files.length) { console.error("no quick.json found"); process.exit(1); }
+            for (const f of files) { validateQuickMemory(JSON.parse(readFileSync(f, "utf8"))); console.log("valid:", f); }
+          '
+      - name: Auto-merge (squash) — the only sanctioned auto-merge (memory data only)
+        if: steps.guard.outputs.ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --delete-branch
