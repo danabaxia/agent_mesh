@@ -34,5 +34,13 @@
     "l1": "The ask-role Reviewer is granted only `Read,Grep,Glob,Bash(gh:*)`. During a review it naturally tries `ls`/`cat`/`git diff` — these pile past the 5-denial threshold and produce `blocked`. Before PR #25, `assert-run-healthy.mjs` treated `blocked` as fatal (exit 1), making every PR's advisory `review` check red even though the review ran and posted real comments. The pure classifier in `src/dev-mesh/health.js` correctly keeps `blocked` as unhealthy for aggregate scoring — only the gate's job-result mapping needed to change.",
     "value": "In `assert-run-healthy.mjs` (and any honesty gate downstream), use this exit policy: `healthy` → 0; `blocked` → emit `::warning::` + exit 0; `errored`/`noop`/`unknown`/missing-file → exit 1. Keep the pure classifier unchanged — it still counts `blocked` as unhealthy for scheduled health scoring. This split lets advisory workflows show yellow without turning the merge-blocking gate red. Provenance: PR #25 (2026-06-15).",
     "provenance": { "source": "PR #25: fix(dev-mesh): make honesty gate's 'blocked' status advisory, not fatal", "ts": "2026-06-15" }
+  },
+  "event-driven-polling-backstop": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Event-driven CI automation must be paired with a scheduled polling backstop — GitHub webhook delivery is not guaranteed.",
+    "l1": "`dev-mesh-autofix.yml` fires on `check_run` events but a missed/undelivered webhook leaves a red PR untouched. PR #24 added `dev-mesh-ci-sweep.yml` (every 30 min) as the polling backstop. Both share a per-branch `[autofix]` budget cap (≤ 2 commits, counted via `git log --grep`) so they can't double-spend on the same branch. Offset cron (`25,55 * * * *`) avoids thundering-herd with the other sweeps.",
+    "value": "Whenever you wire a `check_run`/`pull_request`/`push` event-driven workflow, add a scheduled twin at ≤30-min intervals. Let them share a named commit-message marker as the budget token (e.g., `[autofix]`) and grep `base..HEAD` to count spend. Use offset cron minutes so concurrency groups don't all wake at :00. Branch name must flow through `env:` (never shell-interpolated) — injection-safe. Provenance: PR #24 (2026-06-15).",
+    "provenance": { "source": "PR #24: feat(dev-mesh): ci-sweep — scheduled reader for failing-CI PRs (backstop to autofix)", "ts": "2026-06-15" }
   }
 }
