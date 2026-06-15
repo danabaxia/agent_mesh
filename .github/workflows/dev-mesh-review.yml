@@ -67,4 +67,6 @@ jobs:
         if: always()
         env:
           CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: node scripts/assert-run-healthy.mjs
+        # --advisory-blocked: this is a light comment/ask role (no git/general
+        # shell granted), so probing a denied command is benign noise, not a failure.
+        run: node scripts/assert-run-healthy.mjs --advisory-blocked
