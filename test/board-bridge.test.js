@@ -85,3 +85,11 @@ test('list_my_tasks returns only tasks addressed to the caller', async () => {
   assert.equal(res.tasks.length, 1);
   assert.equal(res.tasks[0].title, 'mine');
 });
+
+test('board verbs refuse with no_mesh when env has no mesh root', async () => {
+  const { rootA } = await meshFixture();
+  const bridge = createBridge({ root: rootA, env: {} });
+  assert.equal((await bridge.createTaskForPeer({ peer: 'agentB', title: 't', objective: 'o', requirements: 'r' })).error_code, 'no_mesh');
+  assert.equal((await bridge.listMyTasks()).error_code, 'no_mesh');
+  assert.equal((await bridge.updateMyTask({ task_id: 'x', state: 'acknowledged' })).error_code, 'no_mesh');
+});
