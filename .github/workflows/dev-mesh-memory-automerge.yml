@@ -39,18 +39,31 @@ jobs:
           prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label memory:promote \
                   --json number,isCrossRepository --jq '.[] | select(.isCrossRepository==false) | .number')
           if [ -z "$prs" ]; then echo "no open memory:promote PRs"; exit 0; fi
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git fetch origin main -q
           for pr in $prs; do
             echo "::group::PR #$pr"
             files=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')
-            # Structural guard: every changed file must be EXACTLY a memory quick.json
-            # (not merely "under memory/"). Otherwise a file like dev-mesh/x/memory/evil.js
-            # would pass the guard yet escape the quick.json-only validation below and
-            # auto-merge unchecked (Reviewer #21). Anything else → human review.
-            if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/quick\.json$'; then
-              echo "#$pr has non-quick.json changes — leaving for human review"; echo "::endgroup::"; continue
+            # Structural guard: every changed file must be a memory quick.json OR a memory
+            # *.md doc (the Curator's pattern files — inert DATA, never executed). NOT merely
+            # "under memory/": a file like dev-mesh/x/memory/evil.js must still go to a human
+            # (it would escape the quick.json validation below — Reviewer #21). Anything that
+            # isn't quick.json or *.md → human review.
+            if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/(quick\.json|.+\.md)$'; then
+              echo "#$pr has non-memory-data changes — leaving for human review"; echo "::endgroup::"; continue
             fi
             if ! gh pr checkout "$pr" >/dev/null 2>&1; then
               echo "#$pr checkout failed (maybe conflicting — mergefix will handle)"; echo "::endgroup::"; continue
+            fi
+            # Validate the MERGE RESULT, not the stale branch HEAD. A PR branched before a
+            # fix to quick.json (e.g. an over-cap l0 trim) still carries the old invalid file
+            # on its HEAD, yet merges cleanly — validating HEAD would wrongly refuse it forever
+            # (mergefix only touches DIRTY PRs, so nothing would ever refresh it). Merge main
+            # in first; a real conflict → leave it for mergefix.
+            if ! git merge origin/main --no-edit -q; then
+              echo "#$pr conflicts with main — mergefix will handle"; git merge --abort || true
+              git checkout - >/dev/null 2>&1 || true; echo "::endgroup::"; continue
             fi
             qjs=$(git ls-files 'dev-mesh/*/memory/quick.json')
             if node scripts/validate-quick-memory.mjs $qjs; then
@@ -61,7 +74,7 @@ jobs:
               fi
             else
               gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" \
-                --body "🤖 memory auto-merge skipped: quick.json failed validateQuickMemory — needs a human."
+                --body "🤖 memory auto-merge skipped: quick.json failed validateQuickMemory even after merging main — needs a human."
             fi
             git checkout - >/dev/null 2>&1 || true
             echo "::endgroup::"

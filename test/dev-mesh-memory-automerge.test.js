@@ -21,15 +21,22 @@ test('memory-automerge: scheduled sweep (not pull_request — dodges the GITHUB_
   assert.doesNotMatch(wf, /^\s*pull_request:/m, 'must NOT use pull_request (would not fire for GITHUB_TOKEN-opened PRs)');
 });
 
-test('memory-automerge: label-scoped, same-repo, memory-only guard before any merge', () => {
+test('memory-automerge: label-scoped, same-repo, memory-DATA-only guard before any merge', () => {
   assert.match(wf, /--label memory:promote/, 'only memory:promote PRs');
   assert.match(wf, /isCrossRepository==false/, 'same-repo only (no fork auto-merge)');
-  // The guard must pin to quick.json EXACTLY (Reviewer #21): "under memory/" alone would
-  // let an unchecked dev-mesh/x/memory/evil.js auto-merge (validation only covers quick.json).
-  assert.match(wf, /memory\/quick\\\.json\$/, 'guard must require every changed file to be a memory quick.json');
+  // The guard accepts ONLY a memory quick.json or a memory *.md doc (inert data) — never a
+  // bare "under memory/" (Reviewer #21: that would let dev-mesh/x/memory/evil.js auto-merge).
+  // Assert both alternatives are present and the pattern is anchored ($) so code is excluded.
+  assert.match(wf, /quick\\\.json\|/, 'guard alternation must include quick.json');
+  assert.match(wf, /\\\.md\)\$/, 'guard alternation must include *.md and anchor with $ (no code)');
 });
 
-test('memory-automerge: validates quick.json, then squash-merges', () => {
+test('memory-automerge: validates the MERGE RESULT (merges main first), then squash-merges', () => {
+  // A PR branched before a quick.json fix carries the stale invalid file on HEAD yet merges
+  // cleanly; validating HEAD would deadlock it (mergefix only touches DIRTY PRs). Merge main
+  // in first and validate the result so such stale-but-clean branches self-heal.
+  assert.match(wf, /git merge origin\/main/, 'must merge main before validating (self-heal stale-clean branches)');
+  assert.match(wf, /git merge --abort/, 'a real conflict must abort and defer to mergefix');
   assert.match(wf, /validate-quick-memory\.mjs/, 'must run the light validation before merge');
   assert.match(wf, /gh pr merge .* --squash/, 'memory data merges via squash');
   assert.ok(existsSync(scriptPath), 'scripts/validate-quick-memory.mjs must exist');
