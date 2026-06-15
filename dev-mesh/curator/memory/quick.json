@@ -27,6 +27,17 @@
     "value": "Before the first Curator invocation in a new repo, enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'. Without it, memory:promote is silently half-complete: branch exists, PR does not. To detect: check for branches named memory/* with no open PR. After enabling, future Curator runs open their own PRs with no manual step. Provenance: PR #13 (first memory:promote PR to merge; was bridged because this setting was off when PR #11 merged).",
     "provenance": { "source": "PR #13", "ts": "2026-06-15" }
   },
+  "github-recursion-guard-poll": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GitHub blocks pull_request_review re-triggers from GITHUB_TOKEN → use a cron poll, not an event, to close the review-respond loop.",
+    "l1": "When a workflow posts a review via GITHUB_TOKEN, GitHub's recursion guard prevents that same review from firing the pull_request_review event for another run. An event-driven review-responder would never see its own peers' reviews. The only robust trigger is a scheduled poller (e.g. every 30 min) that queries for PRs in CHANGES_REQUESTED state.",
+    "value": "Wire review-respond as a scheduled job (cron), not a pull_request_review event listener. Have the Coder read review threads via `gh pr view --json reviews` as untrusted DATA, fix actionable points with minimal edits, commit [review-fix], push — never self-merge. Cap [review-fix] commits per branch (≤2) to bound runaway loops. Completes the self-sustaining mesh loop: idea → build → review → (CHANGES_REQUESTED) → auto-fix → … → human merge. Provenance: PR #23 (2026-06-15).",
+    "provenance": {
+      "source": "PR #23: feat(dev-mesh): review-respond — autonomously read & act on review feedback (scheduled)",
+      "ts": "2026-06-15"
+    }
+  },
   "honesty-gate-blocked-advisory": {
     "status": "active",
     "valid_to": null,
