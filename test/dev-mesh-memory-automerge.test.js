@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const wfPath = fileURLToPath(new URL('../.github/workflows/dev-mesh-memory-automerge.yml', import.meta.url));
 const ciPath = fileURLToPath(new URL('../.github/workflows/ci.yml', import.meta.url));
@@ -56,6 +57,14 @@ test('memory-automerge: validates the MERGE RESULT (merges main first), then squ
   assert.match(wf, /validate-quick-memory\.mjs/, 'must run the light validation before merge');
   assert.match(wf, /gh pr merge .* --squash/, 'memory data merges via squash');
   assert.ok(existsSync(scriptPath), 'scripts/validate-quick-memory.mjs must exist');
+});
+
+test('validate-quick-memory.mjs exits 1 with no args (blocks .md-only PRs with no quick.json)', () => {
+  // The workflow validates `git ls-files quick.json`; for an .md-only PR in a tree with no
+  // tracked quick.json, that expands to nothing and the validator is called with no args.
+  // The workflow comment relies on this exiting non-zero to BLOCK the merge — pin it.
+  const r = spawnSync(process.execPath, [scriptPath], { encoding: 'utf8' });
+  assert.strictEqual(r.status, 1, 'no-args must exit 1 (safe: blocks the merge)');
 });
 
 test('ci.yml skips the heavy matrix for memory-only PRs', () => {

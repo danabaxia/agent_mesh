@@ -66,7 +66,8 @@ jobs:
             # (mergefix only touches DIRTY PRs, so nothing would ever refresh it). Merge main
             # in first; a real conflict → leave it for mergefix.
             if ! git merge origin/main --no-edit -q; then
-              echo "#$pr conflicts with main — mergefix will handle"; git merge --abort || true
+              echo "#$pr conflicts with main — mergefix will handle"
+              git merge --abort 2>&1 || echo "merge --abort failed; git state may be inconsistent"
               git checkout - >/dev/null 2>&1 || true; echo "::endgroup::"; continue
             fi
             # ls-files lists ALL tracked quick.json (every role), not just this PR's changed
@@ -74,6 +75,11 @@ jobs:
             # exist, the validator is called with no args and exits 1 (safe: blocks the merge).
             qjs=$(git ls-files 'dev-mesh/*/memory/quick.json')
             if node scripts/validate-quick-memory.mjs $qjs; then
+              # NB: gh squash-merges the PR HEAD onto main server-side, not our local merge
+              # commit — so this is validated against an APPROXIMATION of the final state. The
+              # concurrency group serialises sweeps and the per-loop fetch accounts for prior
+              # merges, so the only residual gap is a dispatch racing a scheduled fire; a cap
+              # overshoot there is a formatting issue the next sweep re-flags, not a security one.
               if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch; then
                 echo "merged memory PR #$pr"
               else
