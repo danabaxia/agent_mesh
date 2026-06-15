@@ -11,13 +11,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const dir = fileURLToPath(new URL('../.github/workflows/', import.meta.url));
-const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate'];
+const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix'];
 const wf = Object.fromEntries(NAMES.map((n) => {
   const p = `${dir}dev-mesh-${n}.yml`;
   return [n, existsSync(p) ? readFileSync(p, 'utf8') : ''];
 }));
 
-test('all six Dev-mesh workflows exist and are well-formed', () => {
+test('all Dev-mesh agent workflows exist and are well-formed', () => {
   for (const n of NAMES) {
     assert.ok(wf[n], `dev-mesh-${n}.yml missing`);
     assert.match(wf[n], /^name:/m, `${n}: needs a name`);
@@ -33,7 +33,9 @@ test('triggers match the §6 table', () => {
   assert.match(wf.intake, /^\s*issues:/m);
   assert.match(wf.backlog, /schedule:/);
   assert.match(wf.backlog, /^\s*issues:/m);
-  assert.match(wf.triage, /check_run:/);
+  assert.match(wf.autofix, /check_run:/);           // autofix owns the CI-failure event
+  assert.match(wf.triage, /schedule:/);             // triage is the hourly sweep…
+  assert.doesNotMatch(wf.triage, /check_run:/);     // …not the event path (no double-run)
   assert.match(wf.review, /^\s*pull_request:/m);
   assert.match(wf.curate, /^\s*pull_request:/m);
   assert.match(wf.curate, /types:\s*\[?\s*closed/, 'curate fires on PR closed');
@@ -53,6 +55,13 @@ test('SECURITY F4: no secrets to fork PRs (no pull_request_target anywhere)', ()
       `${n}: must gate on same-repo head so fork PRs don't get secrets`,
     );
   }
+  // autofix uses a different (valid) fence: check_run.pull_requests[] is empty for fork
+  // PRs, so its `if` accessing [0] naturally skips forks. Assert the mechanism is present.
+  assert.match(
+    wf.autofix,
+    /pull_requests\[0\]/,
+    'autofix: if must reference pull_requests[0] (empty for fork check runs = no write-creds leak)',
+  );
 });
 
 test('SECURITY: ask-roles run least-privilege (review never writes repo contents)', () => {
@@ -78,6 +87,10 @@ test('APPROVAL GATE: backlog only builds approved work; intake never builds code
 });
 
 test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
+  // NB: for ask-roles (review/triage) this is also STRUCTURAL — contents:read makes
+  // `gh pr merge` fail at the API. For do-workers (backlog/curate/autofix) it's
+  // behavioural: Bash(gh:*) permits merge at the tool layer, so the prompt must also
+  // forbid it (autofix carries an explicit "FORBIDDEN: never run gh pr merge").
   for (const n of NAMES) {
     assert.doesNotMatch(
       wf[n],
@@ -85,6 +98,33 @@ test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
       `${n}: auto-merge is forbidden (human holds the merge gate)`,
     );
   }
+  // autofix is a do-worker acting autonomously on PR branches → assert the explicit fence.
+  assert.match(wf.autofix, /FORBIDDEN: never merge or close the PR/, 'autofix must explicitly forbid self-merging');
+});
+
+test('autofix budget is scoped to the PR commits (base..HEAD), not all history', () => {
+  // Reviewer #15 blocker: an unbounded `git log --grep` counts [autofix] commits merged
+  // into main and locks every future PR out. The count must be range-bounded.
+  assert.match(wf.autofix, /base\.\.HEAD/, 'autofix budget must count [autofix] within base..HEAD');
+  assert.doesNotMatch(wf.autofix, /git log --oneline --grep='\\\[autofix\\\]'\s*\|/, 'no unbounded git log for the budget');
+});
+
+test('autofix: author-controlled branch ref enters via env, never interpolated into prompt/push', () => {
+  // Reviewer #15: ${{ head.ref }} in the prompt/push is a prompt/shell injection vector.
+  // It must be captured into $PR_BRANCH via an env: block and used as a shell var only.
+  assert.match(wf.autofix, /PR_BRANCH=/, 'must capture the ref into $PR_BRANCH');
+  assert.match(wf.autofix, /HEAD:\$PR_BRANCH/, 'push must use the $PR_BRANCH env var');
+  assert.doesNotMatch(wf.autofix, /push origin HEAD:\$\{\{/, 'push must not template-interpolate the ref');
+  // Reviewer #22 R1: the push pin alone wouldn't catch the ref being re-added to the
+  // prompt for "context". head.ref is safe ONLY in the env: capture step — assert it
+  // appears exactly once in the whole file (that one env: line), so any reappearance in
+  // the prompt/run blocks fails here.
+  assert.equal((wf.autofix.match(/head\.ref/g) || []).length, 1,
+    'head.ref must appear exactly once (the env: capture) — never in the prompt/run blocks');
+  // fork fence must be in the job if: && chain (not just anywhere in the file).
+  assert.match(wf.autofix, /pull_requests\[0\] &&/, 'fork guard must be in the job if: && chain');
+  // Reviewer #22 R3: fail-fast on an empty OAuth token (parity with mergefix/dogfood).
+  assert.match(wf.autofix, /if \[ -z "\$CLEAN" \]/, 'autofix must fail-fast on a missing OAuth token');
 });
 
 test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
@@ -123,7 +163,7 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
   // the tools its role needs — but no more. do-workers (backlog, curate) push code &
   // run tests; ask/analyst roles read + comment only (lower surface on agents that
   // ingest untrusted PR/issue content).
-  const DO_WORKERS = new Set(['backlog', 'curate']);
+  const DO_WORKERS = new Set(['backlog', 'curate', 'autofix']);
   for (const n of NAMES) {
     assert.match(wf[n], /--allowedTools/, `${n}: must declare an explicit tool allowlist`);
     // ":*" = any-args; Bash(gh) (exact) would deny `gh pr create …` (the 2026-06-15 bug).
@@ -132,6 +172,9 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
     // the API). Claude Code's grammar can't scope sub-commands, so gh:* is unavoidable.
     assert.match(wf[n], /Bash\(gh:\*\)/, `${n}: needs gh (any args) for comments/labels/PRs`);
     assert.doesNotMatch(wf[n], /Bash\((?:git|gh|npm|node)\)/, `${n}: bare Bash(cmd) denies args — use Bash(cmd:*)`);
+    // NB: Bash(npm:*) also permits `npm install <arbitrary-pkg>` and Bash(node:*)
+    // arbitrary JS — same caveat as gh:*. Mitigation: ephemeral runner (no persistent
+    // side effects) + the github_token's contents scope bounds any repo-side change.
     if (DO_WORKERS.has(n)) {
       assert.match(wf[n], /Bash\(git:\*\)/, `${n}: do-worker needs git (any args) to push`);
       assert.match(wf[n], /Bash\(npm:\*\)|Bash\(node:\*\)/, `${n}: do-worker runs the suite`);
@@ -143,8 +186,10 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
 });
 
 test('each workflow drives its own role via dev-mesh/<role>', () => {
+  // autofix is the one exception: it's a combined Triager+Coder CI-fix role described
+  // INLINE in the prompt (it deliberately does NOT read the no-shell Coder AGENT.md).
   const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
-  for (const n of NAMES) {
+  for (const n of Object.keys(role)) {
     assert.match(wf[n], new RegExp(`dev-mesh/${role[n]}`), `${n}: should reference dev-mesh/${role[n]}`);
   }
 });

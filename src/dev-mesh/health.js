@@ -13,8 +13,12 @@
  * Classify a single Claude result envelope (from claude-code-action's
  * claude-execution-output.json, or `claude -p --output-format json`).
  * Returns { healthy, status, reason }.
- *   status ∈ 'ok' | 'errored' | 'noop' | 'unknown'
+ *   status ∈ 'ok' | 'errored' | 'noop' | 'blocked' | 'unknown'
  */
+// Real "blocked" runs had 25–28 denials; 5 = clearly misconfigured (well below that),
+// while tolerating a couple of incidental denials from an agent probing a tool.
+export const BLOCKED_DENIALS_THRESHOLD = 5;
+
 export function classifyRunHealth(envelope) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     return { healthy: false, status: 'unknown', reason: 'no result envelope to inspect' };
@@ -42,7 +46,7 @@ export function classifyRunHealth(envelope) {
     envelope.permission_denials_count
       ?? (Array.isArray(envelope.permission_denials) ? envelope.permission_denials.length : 0),
   );
-  if (denials >= 5) {
+  if (denials >= BLOCKED_DENIALS_THRESHOLD) {
     return { healthy: false, status: 'blocked', reason: `ran but was blocked — ${denials} permission denials (missing/incorrect tool grants?)` };
   }
   const billed = cost > 0 ? `$${cost.toFixed(4)}` : '$0 (subscription)';

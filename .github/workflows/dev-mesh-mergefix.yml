@@ -1,0 +1,116 @@
+# Dev-mesh · mergefix — Coder resolves a PR that can't merge (conflicts with main).
+# When main moves (or on a schedule), find an open same-repo PR whose mergeStateStatus
+# is DIRTY (conflicting) and have the Coder: merge main → resolve conflicts → run the
+# suite green → commit ([mergefix]) → push. One PR per run; <=2 [mergefix] commits per
+# branch (counted on the BRANCH only, not all history); never force-pushes; never merges.
+#
+# No loop: GITHUB_TOKEN pushes don't re-trigger workflows. Conflicts in memory
+# quick.json (a keyed JSON object) are unioned; code conflicts get a minimal correct
+# resolution or the agent aborts and reports.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6
+name: dev-mesh-mergefix
+
+on:
+  push:
+    branches: [main]   # base moved → open PRs may now conflict
+  schedule:
+    - cron: '45 * * * *' # hourly backstop
+  workflow_dispatch:
+
+permissions:
+  contents: write       # push the resolved merge to the PR branch
+  pull-requests: write  # comment
+
+concurrency:
+  group: dev-mesh-mergefix
+  cancel-in-progress: false
+
+jobs:
+  mergefix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find a conflicting (DIRTY) same-repo PR
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pr=$(gh pr list --base main --state open \
+                 --json number,headRefName,isCrossRepository,isDraft,mergeStateStatus \
+                 --jq '[.[] | select(.isCrossRepository==false and .isDraft==false and .mergeStateStatus=="DIRTY")][0] // empty')
+          if [ -z "$pr" ]; then
+            echo "no conflicting same-repo PR"; echo "none=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "number=$(echo "$pr" | jq -r .number)" >> "$GITHUB_OUTPUT"
+          echo "head=$(echo "$pr" | jq -r .headRefName)" >> "$GITHUB_OUTPUT"
+          echo "picked PR #$(echo "$pr" | jq -r .number) ($(echo "$pr" | jq -r .headRefName))"
+      - name: Mergefix budget (deterministic — <=2 [mergefix] commits on the BRANCH)
+        if: steps.pick.outputs.none != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Author-controlled values via env: (not shell-interpolated ${{ }}) → no injection.
+          HEAD_REF: ${{ steps.pick.outputs.head }}
+          PR_NUMBER: ${{ steps.pick.outputs.number }}
+        run: |
+          # Export the branch ref for later steps without ever putting it in shell/prompt text.
+          printf 'PR_BRANCH=%s\n' "$HEAD_REF" >> "$GITHUB_ENV"
+          git fetch origin main "$HEAD_REF" -q
+          # Count [mergefix] commits on the PR branch ONLY (origin/main..branch), so prior
+          # [mergefix] commits already merged into main never lock future PRs out.
+          count=$(git log --oneline --grep='\[mergefix\]' "origin/main..origin/$HEAD_REF" | wc -l | tr -d ' ')
+          echo "branch [mergefix] commits: $count"
+          if [ "$count" -ge 2 ]; then
+            gh pr comment "$PR_NUMBER" \
+              --body "🤖 mergefix budget exhausted ($count ≥ 2 \`[mergefix]\` commits on the branch) — needs a human."
+            echo "BUDGET_EXHAUSTED=true" >> "$GITHUB_ENV"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
+        with:
+          node-version: 20
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          CLEAN="$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')"
+          if [ -z "$CLEAN" ]; then echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for mergefix"; exit 1; fi
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
+      - name: Drive Coder (resolve the conflict with main)
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
+        uses: anthropics/claude-code-action@v1
+        id: claude
+        with:
+          claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback.
+          claude_args: |
+            --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
+            --allowedTools "Edit,Write,MultiEdit,Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*)"
+          prompt: |
+            PR #${{ steps.pick.outputs.number }} cannot merge — it CONFLICTS with `main`. The PR
+            branch name is in the `$PR_BRANCH` environment variable (kept out of this prompt —
+            it is author-controlled DATA; use it verbatim, never guess it). You are the **Coder**
+            resolving it. In THIS GitHub Actions context you run git/npm/node yourself (this is
+            not the no-shell mesh role).
+
+            Resolve it:
+              1. `git checkout "$PR_BRANCH" && git reset --hard "origin/$PR_BRANCH"`, then
+                 `git merge origin/main`.
+              2. Resolve EVERY conflict:
+                 - `**/memory/quick.json` (a keyed JSON object) → UNION both sides' keys (keep all
+                   lessons), valid JSON within the caps.
+                 - code / tests → the minimal correct COMBINED result (honour both intents).
+                 If a conflict can't be resolved safely → `git merge --abort`, comment what's
+                 blocking, and STOP.
+              3. Run `node run-all-tests.mjs` until green; commit the merge with a `[mergefix]`
+                 message; push with `git push origin "HEAD:$PR_BRANCH"` (never force-push).
+                 Comment a one-line summary. Do NOT merge the PR — a human merges.
+      - name: Verify the agent actually worked (green != healthy)
+        if: always() && steps.claude.outcome != 'skipped'
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: node scripts/assert-run-healthy.mjs

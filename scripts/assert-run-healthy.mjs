@@ -9,12 +9,21 @@
 //
 // Path resolution: explicit arg → $CLAUDE_EXECUTION_FILE (the action's
 // execution_file output) → $RUNNER_TEMP/claude-execution-output.json (observed path).
+//
+// Flag --advisory-blocked: scope the 'blocked' (>= denial threshold) → advisory rule
+// to ONLY the light comment/ask roles (review/triage/intake/research) that aren't
+// granted git/general shell, so probing a denied command is expected noise there.
+// Without the flag (the default — every do-mode pusher: autofix/mergefix/backlog/
+// curate) 'blocked' stays FATAL: for those, >= 5 denials means a real misconfigured
+// tool grant (the original 2026-06-15 Bash(git) vs git:* bug the gate exists to catch).
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyRunHealth, extractResultEnvelope } from '../src/dev-mesh/health.js';
 
+const args = process.argv.slice(2);
+const advisoryBlocked = args.includes('--advisory-blocked');
 const path =
-  process.argv[2] ||
+  args.find((a) => !a.startsWith('--')) ||
   process.env.CLAUDE_EXECUTION_FILE ||
   join(process.env.RUNNER_TEMP || '/tmp', 'claude-execution-output.json');
 
@@ -33,7 +42,16 @@ try {
 
 const envelope = extractResultEnvelope(parsed);
 const health = classifyRunHealth(envelope);
-if (!health.healthy) {
+
+// errored/noop/unknown are always fatal (a run that errored, did nothing, or wrote
+// unreadable output). 'blocked' (>= denial threshold) is fatal ONLY in the strict
+// default; with --advisory-blocked it's downgraded to a warning for the light comment/
+// ask roles, where an agent granted just Read/Grep/Glob/Bash(gh:*) naturally probes
+// ungranted shell (ls/cat/git diff) while still doing real work — those denials don't
+// mean the run failed, and the hard-fail turned the advisory review check RED on every PR.
+const FATAL = new Set(['errored', 'noop', 'unknown']);
+if (!advisoryBlocked) FATAL.add('blocked');
+if (!health.healthy && FATAL.has(health.status)) {
   console.error(`::error::agent run unhealthy (${health.status}): ${health.reason}`);
   // Surface the captured run output for diagnosis (secrets are already masked by the
   // runner; this is the agent's own stream, the only place an error detail survives).
@@ -42,4 +60,8 @@ if (!health.healthy) {
   console.error(dump.length > 8000 ? dump.slice(0, 8000) + '\n…(truncated)' : dump);
   process.exit(1);
 }
-console.log(`agent run healthy: ${health.reason}`);
+if (!health.healthy) {
+  console.warn(`::warning::agent run advisory (${health.status}): ${health.reason}`);
+} else {
+  console.log(`agent run healthy: ${health.reason}`);
+}

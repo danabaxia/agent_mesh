@@ -171,7 +171,8 @@ drives the relevant agent headlessly; agents delegate onward over `serve-a2a`.
 | `dev-mesh-research.yml` | `workflow_dispatch` + `schedule` (cadence) | Analyst (research OSS landscape → absorb → propose draft specs) |
 | `dev-mesh-intake.yml` | `issues` (opened/commented), label changes | Analyst (discuss, draft spec, manage labels) |
 | `dev-mesh-backlog.yml` | `schedule` + `issues` labeled `approved` | Maintainer → Coder (claim ready task, build) |
-| `dev-mesh-triage.yml` | `check_run` (failure), `schedule` | Maintainer → Triager → (Coder) |
+| `dev-mesh-autofix.yml` | `check_run` (test failure) on a same-repo PR | Triager + Coder (classify → fix the failing PR, commit; ≤2/PR, never merge) |
+| `dev-mesh-triage.yml` | `schedule` (hourly sweep) | Maintainer → Triager (classify/escalate lingering reds) |
 | `dev-mesh-review.yml` | `pull_request` (opened/synchronize) | Maintainer → Reviewer |
 | `dev-mesh-curate.yml` | `pull_request` (closed & merged) | Maintainer → Curator |
 

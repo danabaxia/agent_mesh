@@ -1,0 +1,68 @@
+# Dev-mesh · memory auto-merge — the ONE sanctioned auto-merge in the mesh.
+# A SCHEDULED sweep (not pull_request): GitHub's recursion guard means a memory:promote
+# PR opened by the Curator with GITHUB_TOKEN would NOT fire a pull_request workflow, so a
+# `schedule` trigger is the robust way to pick them up. For each open same-repo
+# memory:promote PR it: guards that EVERY changed file is under dev-mesh/<role>/memory/
+# (so it can NEVER merge code), validates quick.json (caps/shape), then squash-merges.
+#
+# Deliberate, tightly-scoped exception to the no-auto-merge invariant (PROJECT.md):
+# memory DATA only (the Curator's distilled lessons, recalled as DATA, never executed).
+name: dev-mesh-memory-automerge
+
+on:
+  schedule:
+    - cron: '*/15 * * * *' # sweep every 15 min
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dev-mesh-memory-automerge
+  cancel-in-progress: false
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Auto-merge valid memory:promote PRs (memory data only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          prs=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --label memory:promote \
+                  --json number,isCrossRepository --jq '.[] | select(.isCrossRepository==false) | .number')
+          if [ -z "$prs" ]; then echo "no open memory:promote PRs"; exit 0; fi
+          for pr in $prs; do
+            echo "::group::PR #$pr"
+            files=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')
+            # Structural guard: every changed file must be EXACTLY a memory quick.json
+            # (not merely "under memory/"). Otherwise a file like dev-mesh/x/memory/evil.js
+            # would pass the guard yet escape the quick.json-only validation below and
+            # auto-merge unchecked (Reviewer #21). Anything else → human review.
+            if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/quick\.json$'; then
+              echo "#$pr has non-quick.json changes — leaving for human review"; echo "::endgroup::"; continue
+            fi
+            if ! gh pr checkout "$pr" >/dev/null 2>&1; then
+              echo "#$pr checkout failed (maybe conflicting — mergefix will handle)"; echo "::endgroup::"; continue
+            fi
+            qjs=$(git ls-files 'dev-mesh/*/memory/quick.json')
+            if node scripts/validate-quick-memory.mjs $qjs; then
+              if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch; then
+                echo "merged memory PR #$pr"
+              else
+                echo "#$pr not mergeable yet (conflict?) — mergefix/next sweep will retry"
+              fi
+            else
+              gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" \
+                --body "🤖 memory auto-merge skipped: quick.json failed validateQuickMemory — needs a human."
+            fi
+            git checkout - >/dev/null 2>&1 || true
+            echo "::endgroup::"
+          done
