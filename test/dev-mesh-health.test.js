@@ -42,6 +42,32 @@ test('classifyRunHealth: a real working run is healthy (API-billed)', () => {
   assert.equal(h.status, 'ok');
 });
 
+test('classifyRunHealth: ran-but-blocked (many permission denials) is unhealthy', () => {
+  // The 2026-06-15 case: 62 turns, $1.61, is_error:false, but 25 denials and no PR.
+  const h = classifyRunHealth({ is_error: false, num_turns: 62, total_cost_usd: 1.6, permission_denials_count: 25 });
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'blocked');
+});
+
+test('classifyRunHealth: a couple incidental denials are still healthy', () => {
+  const h = classifyRunHealth({ is_error: false, num_turns: 8, total_cost_usd: 0.2, permission_denials_count: 1 });
+  assert.equal(h.healthy, true);
+});
+
+test('classifyRunHealth: threshold boundary — 4 denials healthy, 5 blocked', () => {
+  const four = classifyRunHealth({ is_error: false, num_turns: 10, total_cost_usd: 0.3, permission_denials_count: 4 });
+  assert.equal(four.healthy, true);
+  const five = classifyRunHealth({ is_error: false, num_turns: 10, total_cost_usd: 0.3, permission_denials_count: 5 });
+  assert.equal(five.healthy, false);
+  assert.equal(five.status, 'blocked');
+});
+
+test('classifyRunHealth: denials reported as an array (show_full_output form) also trip the gate', () => {
+  const h = classifyRunHealth({ is_error: false, num_turns: 12, total_cost_usd: 0.4, permission_denials: new Array(7).fill({}) });
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'blocked');
+});
+
 test('classifyRunHealth: subscription run ($0 but real turns) is healthy, not a false no-op', () => {
   // OAuth/subscription auth always reports $0 — must NOT be flagged unhealthy.
   const h = classifyRunHealth({ is_error: false, num_turns: 3, total_cost_usd: 0 });
@@ -79,4 +105,9 @@ test('renderHealthReport: emits a Markdown table and flags section', () => {
   assert.match(md, /Dev-mesh health: 🔴 unhealthy/);
   assert.match(md, /\| dogfood \| 🔴 errored \|/);
   assert.match(md, /coder \.mcp\.json missing peer bridge/);
+});
+
+test('renderHealthReport: a blocked probe renders its row', () => {
+  const a = assessMesh({ runs: [{ name: 'backlog', envelope: { is_error: false, num_turns: 62, total_cost_usd: 1.6, permission_denials_count: 25 } }] });
+  assert.match(renderHealthReport(a), /\| backlog \| 🔴 blocked \|/);
 });

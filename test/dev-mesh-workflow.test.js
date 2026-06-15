@@ -126,13 +126,18 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
   const DO_WORKERS = new Set(['backlog', 'curate']);
   for (const n of NAMES) {
     assert.match(wf[n], /--allowedTools/, `${n}: must declare an explicit tool allowlist`);
-    assert.match(wf[n], /Bash\(gh\)/, `${n}: needs gh for comments/labels/PRs`);
+    // ":*" = any-args; Bash(gh) (exact) would deny `gh pr create …` (the 2026-06-15 bug).
+    // NB: Bash(gh:*) also permits `gh pr close/merge` at the TOOL layer — the per-workflow
+    // github_token is the real fence (ask-roles are contents:read, so merge/push fail at
+    // the API). Claude Code's grammar can't scope sub-commands, so gh:* is unavoidable.
+    assert.match(wf[n], /Bash\(gh:\*\)/, `${n}: needs gh (any args) for comments/labels/PRs`);
+    assert.doesNotMatch(wf[n], /Bash\((?:git|gh|npm|node)\)/, `${n}: bare Bash(cmd) denies args — use Bash(cmd:*)`);
     if (DO_WORKERS.has(n)) {
-      assert.match(wf[n], /Bash\(git\)/, `${n}: do-worker needs git to push`);
-      assert.match(wf[n], /Bash\(npm\)|Bash\(node\)/, `${n}: do-worker runs the suite`);
+      assert.match(wf[n], /Bash\(git:\*\)/, `${n}: do-worker needs git (any args) to push`);
+      assert.match(wf[n], /Bash\(npm:\*\)|Bash\(node:\*\)/, `${n}: do-worker runs the suite`);
     } else {
-      assert.doesNotMatch(wf[n], /Bash\(git\)/, `${n}: ask/analyst role must not push code`);
-      assert.doesNotMatch(wf[n], /Bash\(npm\)|Bash\(node\)/, `${n}: ask/analyst role doesn't run builds`);
+      assert.doesNotMatch(wf[n], /Bash\(git:/, `${n}: ask/analyst role must not push code`);
+      assert.doesNotMatch(wf[n], /Bash\(npm:|Bash\(node:/, `${n}: ask/analyst role doesn't run builds`);
     }
   }
 });
