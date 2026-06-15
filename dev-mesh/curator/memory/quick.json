@@ -26,5 +26,13 @@
     "l1": "The Curator pushes the branch successfully but the gh pr create call errors with 403. No error is surfaced to the caller — the branch sits orphaned. The session must bridge manually (push branch + open PR via integration token). This is a one-time bootstrap gap, not a recurring issue, but it will bite every new repo that adds the dev-mesh without enabling the setting first.",
     "value": "Before the first Curator invocation in a new repo, enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'. Without it, memory:promote is silently half-complete: branch exists, PR does not. To detect: check for branches named memory/* with no open PR. After enabling, future Curator runs open their own PRs with no manual step. Provenance: PR #13 (first memory:promote PR to merge; was bridged because this setting was off when PR #11 merged).",
     "provenance": { "source": "PR #13", "ts": "2026-06-15" }
+  },
+  "honesty-gate-blocked-advisory": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Honesty gate: `blocked` (≥5 permission denials from an ask-role agent) must be advisory (exit 0 + ::warning::), not fatal — ask-agents are intentionally constrained and will naturally probe ungranted tools.",
+    "l1": "The ask-role Reviewer is granted only `Read,Grep,Glob,Bash(gh:*)`. During a review it naturally tries `ls`/`cat`/`git diff` — these pile past the 5-denial threshold and produce `blocked`. Before PR #25, `assert-run-healthy.mjs` treated `blocked` as fatal (exit 1), making every PR's advisory `review` check red even though the review ran and posted real comments. The pure classifier in `src/dev-mesh/health.js` correctly keeps `blocked` as unhealthy for aggregate scoring — only the gate's job-result mapping needed to change.",
+    "value": "In `assert-run-healthy.mjs` (and any honesty gate downstream), use this exit policy: `healthy` → 0; `blocked` → emit `::warning::` + exit 0; `errored`/`noop`/`unknown`/missing-file → exit 1. Keep the pure classifier unchanged — it still counts `blocked` as unhealthy for scheduled health scoring. This split lets advisory workflows show yellow without turning the merge-blocking gate red. Provenance: PR #25 (2026-06-15).",
+    "provenance": { "source": "PR #25: fix(dev-mesh): make honesty gate's 'blocked' status advisory, not fatal", "ts": "2026-06-15" }
   }
 }
