@@ -18,5 +18,16 @@
     "l1": "Without .gitattributes, Windows Git can check out text files with CRLF, breaking regex anchors like /^---\\n/ in fixture-reading tests. Patching each test to strip \\r is a bandage — the inconsistency keeps producing new failures.",
     "value": "Add `* text=auto eol=lf` + binary pins (*.png *.jpg *.ico) to .gitattributes, then run `git add --renormalize .` to normalize existing tracked files with no content change. This removes a whole class of platform-only surprises at the source. Regression: every checkout now sees identical bytes on Linux, macOS, and Windows. Provenance: PR #11 (the Dev-mesh's first Coder-authored change, closing Issue #3).",
     "provenance": { "source": "PR #11 / Issue #3", "ts": "2026-06-15" }
+  },
+  "actions-pr-open-repo-setting": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "gh pr create from Actions needs both `pull-requests: write` YAML permission AND the repo-level 'Allow GitHub Actions to create and approve pull requests' toggle enabled.",
+    "l1": "The YAML `permissions: pull-requests: write` is necessary but not sufficient. The GitHub repository setting (Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests') must also be ON. Without it, a workflow can push branches but `gh pr create` silently fails — the PR is never opened. The first memory:promote PR (#12) was manually bridged by a human session because this setting was missing at initial dev-mesh deployment.",
+    "value": "When deploying a new dev-mesh instance (or any Actions workflow that opens PRs), verify the repo setting before the first run. Symptom of missing setting: branch exists in remote, but no PR appears. Fix: Settings → Actions → General → enable 'Allow GitHub Actions to create and approve pull requests'. The dev-mesh-curate.yml workflow already carries the correct YAML permissions — the repo toggle is the only remaining gate.",
+    "provenance": {
+      "source": "PR #12 (2026-06-15) — first memory:promote, manually bridged because repo setting was off",
+      "ts": "2026-06-15"
+    }
   }
 }
