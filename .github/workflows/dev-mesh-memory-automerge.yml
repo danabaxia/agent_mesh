@@ -42,9 +42,12 @@ jobs:
           for pr in $prs; do
             echo "::group::PR #$pr"
             files=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json files --jq '.files[].path')
-            # Structural guard: refuse if ANY changed file is outside dev-mesh/<role>/memory/.
-            if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/'; then
-              echo "#$pr touches non-memory files — leaving for human review"; echo "::endgroup::"; continue
+            # Structural guard: every changed file must be EXACTLY a memory quick.json
+            # (not merely "under memory/"). Otherwise a file like dev-mesh/x/memory/evil.js
+            # would pass the guard yet escape the quick.json-only validation below and
+            # auto-merge unchecked (Reviewer #21). Anything else → human review.
+            if [ -z "$files" ] || echo "$files" | grep -vqE '^dev-mesh/[^/]+/memory/quick\.json$'; then
+              echo "#$pr has non-quick.json changes — leaving for human review"; echo "::endgroup::"; continue
             fi
             if ! gh pr checkout "$pr" >/dev/null 2>&1; then
               echo "#$pr checkout failed (maybe conflicting — mergefix will handle)"; echo "::endgroup::"; continue

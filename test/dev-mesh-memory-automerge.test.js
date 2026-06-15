@@ -24,7 +24,9 @@ test('memory-automerge: scheduled sweep (not pull_request — dodges the GITHUB_
 test('memory-automerge: label-scoped, same-repo, memory-only guard before any merge', () => {
   assert.match(wf, /--label memory:promote/, 'only memory:promote PRs');
   assert.match(wf, /isCrossRepository==false/, 'same-repo only (no fork auto-merge)');
-  assert.match(wf, /grep -vqE '\^dev-mesh\/\[\^\/\]\+\/memory\//, 'structural guard: refuse any non-memory changed file');
+  // The guard must pin to quick.json EXACTLY (Reviewer #21): "under memory/" alone would
+  // let an unchecked dev-mesh/x/memory/evil.js auto-merge (validation only covers quick.json).
+  assert.match(wf, /memory\/quick\\\.json\$/, 'guard must require every changed file to be a memory quick.json');
 });
 
 test('memory-automerge: validates quick.json, then squash-merges', () => {
