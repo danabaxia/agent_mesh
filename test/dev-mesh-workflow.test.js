@@ -115,8 +115,16 @@ test('autofix: author-controlled branch ref enters via env, never interpolated i
   assert.match(wf.autofix, /PR_BRANCH=/, 'must capture the ref into $PR_BRANCH');
   assert.match(wf.autofix, /HEAD:\$PR_BRANCH/, 'push must use the $PR_BRANCH env var');
   assert.doesNotMatch(wf.autofix, /push origin HEAD:\$\{\{/, 'push must not template-interpolate the ref');
+  // Reviewer #22 R1: the push pin alone wouldn't catch the ref being re-added to the
+  // prompt for "context". head.ref is safe ONLY in the env: capture step — assert it
+  // appears exactly once in the whole file (that one env: line), so any reappearance in
+  // the prompt/run blocks fails here.
+  assert.equal((wf.autofix.match(/head\.ref/g) || []).length, 1,
+    'head.ref must appear exactly once (the env: capture) — never in the prompt/run blocks');
   // fork fence must be in the job if: && chain (not just anywhere in the file).
   assert.match(wf.autofix, /pull_requests\[0\] &&/, 'fork guard must be in the job if: && chain');
+  // Reviewer #22 R3: fail-fast on an empty OAuth token (parity with mergefix/dogfood).
+  assert.match(wf.autofix, /if \[ -z "\$CLEAN" \]/, 'autofix must fail-fast on a missing OAuth token');
 });
 
 test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
