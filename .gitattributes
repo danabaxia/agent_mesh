@@ -1,0 +1,14 @@
+# Normalize all text files to LF on checkout (prevents Windows CRLF surprises in CI)
+* text=auto eol=lf
+
+# Explicit binary markers
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
