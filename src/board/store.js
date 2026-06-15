@@ -1,8 +1,9 @@
 // src/board/store.js — thin fs shell for the mesh task board.
 // One JSON file per task at <meshRoot>/mesh/board/tasks/<id>.json. Writes are
 // atomic (temp + rename) so a reader (hook / verb) never sees a torn file.
-import { mkdir, readFile, readdir, writeFile, rename } from 'node:fs/promises';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { atomicWriteFile } from '../atomic-write.js';
 import { STATES } from './task-state.js';
 
 export function boardDir(meshRoot) {
@@ -36,10 +37,8 @@ export async function nextTaskId(meshRoot, from, to) {
   return `${prefix}${String(max + 1).padStart(3, '0')}`;
 }
 
-async function atomicWriteJson(path, obj) {
-  const tmp = `${path}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(obj, null, 2) + '\n', { mode: 0o644 });
-  await rename(tmp, path);
+function atomicWriteJson(path, obj) {
+  return atomicWriteFile(path, JSON.stringify(obj, null, 2) + '\n', { mode: 0o644 });
 }
 
 export async function createTask(meshRoot, { from, to, title, objective, context = '', requirements, pointers = '', at }) {

@@ -69,4 +69,6 @@ test('markSeenByFrom flips the flag once', async () => {
   const t = await createTask(mesh, { from: 'a', to: 'b', title: 't', objective: 'o', requirements: 'r', at: '2026-06-15T00:00:00.000Z' });
   await markSeenByFrom(mesh, t.id);
   assert.equal((await readTask(mesh, t.id)).seen_by_from, true);
+  await markSeenByFrom(mesh, t.id);
+  assert.equal((await readTask(mesh, t.id)).seen_by_from, true);
 });
