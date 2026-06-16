@@ -12,7 +12,7 @@ test('syncBoardNotifyHook installs a SessionStart exec-form hook, preserving aut
     JSON.stringify({ env: { FOO: 'bar' }, hooks: {} }), 'utf8');
 
   const fixed = [], flagged = [];
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, fixed, flagged);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, true, true, fixed, flagged);
 
   const doc = JSON.parse(await readFile(join(agentRoot, '.claude', 'settings.json'), 'utf8'));
   assert.equal(doc.env.FOO, 'bar');
@@ -26,16 +26,16 @@ test('syncBoardNotifyHook installs a SessionStart exec-form hook, preserving aut
 test('syncBoardNotifyHook is idempotent (second run is a no-op)', async () => {
   const agentRoot = await mkdtemp(join(tmpdir(), 'board-doctor-'));
   const fixed = [];
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, fixed, []);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, true, true, fixed, []);
   const fixed2 = [];
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, fixed2, []);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, true, true, fixed2, []);
   assert.deepEqual(fixed2, []);
 });
 
 test('syncBoardNotifyHook removes the hook when the agent has no peers', async () => {
   const agentRoot = await mkdtemp(join(tmpdir(), 'board-doctor-'));
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, [], []);
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: [] }, true, [], []);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, true, true, [], []);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, false, true, [], []);
   const doc = JSON.parse(await readFile(join(agentRoot, '.claude', 'settings.json'), 'utf8'));
   assert.equal((doc.hooks?.SessionStart ?? []).length, 0);
 });
@@ -47,11 +47,11 @@ test('syncBoardNotifyHook preserves an author SessionStart hook while adding/rem
   await writeFile(join(agentRoot, '.claude', 'settings.json'),
     JSON.stringify({ hooks: { SessionStart: [authorHook] } }), 'utf8');
   // add ours
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, [], []);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, true, true, [], []);
   let doc = JSON.parse(await readFile(join(agentRoot, '.claude', 'settings.json'), 'utf8'));
   assert.equal(doc.hooks.SessionStart.length, 2);
-  // remove ours (no peers) — author hook survives
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: [] }, true, [], []);
+  // remove ours (no longer participates) — author hook survives
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, false, true, [], []);
   doc = JSON.parse(await readFile(join(agentRoot, '.claude', 'settings.json'), 'utf8'));
   assert.equal(doc.hooks.SessionStart.length, 1);
   assert.equal(doc.hooks.SessionStart[0].hooks[0].command, 'echo');
@@ -61,9 +61,9 @@ test('syncBoardNotifyHook is idempotent starting from a pre-existing settings fi
   const agentRoot = await mkdtemp(join(tmpdir(), 'board-doctor-'));
   await mkdir(join(agentRoot, '.claude'), { recursive: true });
   await writeFile(join(agentRoot, '.claude', 'settings.json'), JSON.stringify({ env: { A: '1' } }), 'utf8');
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, [], []);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, true, true, [], []);
   const fixed2 = [];
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, fixed2, []);
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, true, true, fixed2, []);
   assert.deepEqual(fixed2, []);
 });
 
@@ -72,8 +72,8 @@ test('syncBoardNotifyHook does not mistake an author hook whose later arg ends i
   await mkdir(join(agentRoot, '.claude'), { recursive: true });
   const authorHook = { matcher: '*', hooks: [{ type: 'command', command: process.execPath, args: ['--script', 'hooks/board-notify.js'] }] };
   await writeFile(join(agentRoot, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [authorHook] } }), 'utf8');
-  // remove ours (no peers): the author hook (board-notify.js only in args[1]) must SURVIVE
-  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: [] }, true, [], []);
+  // remove ours (no longer participates): the author hook (board-notify.js only in args[1]) must SURVIVE
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot }, false, true, [], []);
   const doc = JSON.parse(await readFile(join(agentRoot, '.claude', 'settings.json'), 'utf8'));
   assert.equal(doc.hooks.SessionStart.length, 1);
   assert.deepEqual(doc.hooks.SessionStart[0].hooks[0].args, ['--script', 'hooks/board-notify.js']);
