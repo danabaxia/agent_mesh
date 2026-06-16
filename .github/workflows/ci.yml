@@ -38,7 +38,8 @@ jobs:
     # memory:promote PRs only touch dev-mesh/<role>/memory/quick.json (DATA): skip the heavy
     # ubuntu+windows × node matrix for them — they get the lightweight validate-memory job
     # below + auto-merge via dev-mesh-memory-automerge.yml. (Replaces the old paths-ignore,
-    # which would also have suppressed validate-memory.)
+    # which would also have suppressed validate-memory.) Safe against fork abuse: only a
+    # collaborator (triage+) can apply the memory:promote label, so a fork can't self-skip CI.
     if: github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'memory:promote')
     outputs:
       include: ${{ steps.pick.outputs.include }}
@@ -86,6 +87,9 @@ jobs:
           node-version: 20
       - name: Validate quick.json files
         run: |
-          files=$(ls dev-mesh/*/memory/quick.json 2>/dev/null || true)
-          [ -z "$files" ] && exit 0
-          node scripts/validate-quick-memory.mjs $files
+          # bash array (not `ls` + word-splitting): role dirs with a space/glob char can't
+          # split into wrong args. If the glob matches nothing, files[0] is the literal
+          # pattern (which doesn't exist) → exit 0.
+          files=(dev-mesh/*/memory/quick.json)
+          [[ -e "${files[0]}" ]] || exit 0
+          node scripts/validate-quick-memory.mjs "${files[@]}"

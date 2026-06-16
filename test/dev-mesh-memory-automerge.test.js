@@ -4,7 +4,9 @@
 // tightly scoped: memory-data only, same-repo, validated — it can NEVER merge code.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -65,6 +67,21 @@ test('validate-quick-memory.mjs exits 1 with no args (blocks .md-only PRs with n
   // The workflow comment relies on this exiting non-zero to BLOCK the merge — pin it.
   const r = spawnSync(process.execPath, [scriptPath], { encoding: 'utf8' });
   assert.strictEqual(r.status, 1, 'no-args must exit 1 (safe: blocks the merge)');
+});
+
+test('validate-quick-memory.mjs exits 1 for an over-cap l0 entry (CI gate fails closed)', () => {
+  // The task-critical path: a real over-cap l0 must make the validator exit non-zero so the
+  // ci.yml validate-memory step (and the auto-merge gate) register it as a failure — #41/#59.
+  const dir = mkdtempSync(join(tmpdir(), 'qm-overcap-'));
+  const file = join(dir, 'quick.json');
+  writeFileSync(file, JSON.stringify({ k: { status: 'active', valid_to: null, l0: 'x'.repeat(121) } }));
+  try {
+    const r = spawnSync(process.execPath, [scriptPath, file], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 1, 'over-cap l0 (121 > 120) must exit 1');
+    assert.match(r.stderr, /exceeds 120 chars/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('ci.yml skips the heavy matrix for memory-only PRs, but still runs validate-memory', () => {
