@@ -22,12 +22,6 @@ on:
     branches: [main, 'v*-development']
   pull_request:
     branches: [main, 'v*-development']
-    # memory:promote PRs only touch dev-mesh/<role>/memory/quick.json (DATA, not code);
-    # they get a light validateQuickMemory check + auto-merge in dev-mesh-memory-automerge.yml
-    # instead of the full ubuntu+windows × node matrix. (main is unprotected, so skipping
-    # here can't strand a required check.)
-    paths-ignore:
-      - 'dev-mesh/*/memory/**'
   workflow_dispatch:
 
 concurrency:
@@ -41,6 +35,12 @@ jobs:
   matrix:
     name: pick matrix
     runs-on: ubuntu-latest
+    # memory:promote PRs only touch dev-mesh/<role>/memory/quick.json (DATA): skip the heavy
+    # ubuntu+windows × node matrix for them — they get the lightweight validate-memory job
+    # below + auto-merge via dev-mesh-memory-automerge.yml. (Replaces the old paths-ignore,
+    # which would also have suppressed validate-memory.) Safe against fork abuse: only a
+    # collaborator (triage+) can apply the memory:promote label, so a fork can't self-skip CI.
+    if: github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'memory:promote')
     outputs:
       include: ${{ steps.pick.outputs.include }}
     steps:
@@ -57,6 +57,9 @@ jobs:
 
   test:
     needs: matrix
+    # Skip when the matrix job was skipped (memory:promote PRs); otherwise this job would
+    # try to fan out an empty matrix.
+    if: needs.matrix.result == 'success'
     name: test (${{ matrix.os }}, node ${{ matrix.node }})
     strategy:
       fail-fast: false
@@ -70,3 +73,25 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - run: node run-all-tests.mjs
+
+  # Lightweight gate that runs on EVERY push/PR (incl. memory:promote PRs, which skip the
+  # matrix above): fails when any dev-mesh/<role>/memory/quick.json violates the field
+  # caps/shape, so an over-cap l0 is caught at write time — not later when the validator
+  # ships. Issue #41.
+  validate-memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3   # trivially fast (parse small JSON); ceiling so a hung runner can't hold the PR
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate quick.json files
+        shell: bash
+        run: |
+          # bash array (not `ls` + word-splitting): role dirs with a space/glob char can't
+          # split into wrong args. If the glob matches nothing, files[0] is the literal
+          # pattern (which doesn't exist) → exit 0.
+          files=(dev-mesh/*/memory/quick.json)
+          [[ -e "${files[0]}" ]] || exit 0
+          node scripts/validate-quick-memory.mjs "${files[@]}"

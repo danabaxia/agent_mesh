@@ -144,6 +144,17 @@
       "ts": "2026-06-15"
     }
   },
+  "memory-cap-validate-at-write": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Validate quick.json caps at write time (Curator workflow), not only at auto-merge — over-cap l0s deadlock the pipeline.",
+    "l1": "PR #44 consolidated 9 stalled memory:promote PRs into one valid quick.json. Root cause: three PRs carried l0 fields >120 chars that the auto-merge validator correctly refused. Mergefix resolves merge conflicts but not validation failures, so those PRs were permanently stuck and the remaining PRs piled up behind them. Recovery required a manual consolidation PR that deduped and trimmed all pending entries. Prevention at write time is always cleaner than post-hoc recovery.",
+    "value": "(1) Add `node scripts/validate-quick-memory.mjs dev-mesh/curator/memory/quick.json` to the Curator workflow (dev-mesh-curate.yml) AFTER the Curator commits the quick.json update but BEFORE `git push` — fail early rather than create an un-mergeable PR. The script already exists; it just is not called from the write side. (2) Recovery from a deadlock (N conflicting + invalid PRs): list open memory/* branches, read each PR's quick.json diff, dedup + trim all entries to fit caps, fold into one manual consolidation PR, close the stale PRs with a reference to the consolidation PR. (3) Mergefix handles merge CONFLICTS (key-union) but cannot fix validation FAILURES — write-time prevention is the only robust guard against pipeline deadlock. Provenance: PR #44 (2026-06-15).",
+    "provenance": {
+      "source": "PR #44: memory(curator): consolidate the stalled memory:promote backlog into one valid quick.json",
+      "ts": "2026-06-15"
+    }
+  },
   "test-dynamic-discovery-over-lists": {
     "status": "active",
     "valid_to": null,
@@ -196,6 +207,17 @@
     "value": "Pattern: any workflow with on: push: that calls claude-code-action must gate the claude step with github.event_name != push. The push trigger remains useful for fast discovery (find a conflicting PR, detect a failing check) but must not drive the Action — if it reaches the Action the run fails with Unsupported event type: push and aborts entirely.\n\nConcrete steps:\n1. Add && github.event_name != push to the Drive Coder step if: expression.\n2. Confirm Verify step has if: always() && steps.claude.outcome != skipped so it also skips cleanly.\n3. Add a hermetic lint assertion that the if: expression contains github.event_name != push (pattern in test/dev-mesh-mergefix.test.js).\n\nRelated: event-driven-polling-backstop (schedule backstop pattern), actions-recursion-guard-schedule (GITHUB_TOKEN recursion). Provenance: PR #56 (2026-06-16), closing Issue #38.",
     "provenance": {
       "source": "PR #56: fix(dev-mesh): skip Drive Coder on push event (Closes #38)",
+      "ts": "2026-06-16"
+    }
+  },
+  "paths-ignore-suppresses-validate-jobs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "paths-ignore at the trigger level silently suppresses ALL jobs — use per-job label-based if: for expensive-only skips.",
+    "l1": "validate-memory job (PR #59/Issue #41) catches over-cap quick.json at PR time. paths-ignore at the workflow trigger would have suppressed it for the memory:promote PRs it must guard. Fix: leave validate-memory unconditional; add label-based if: only on the heavy matrix job. Cascade: gate the test job on if: needs.matrix.result == 'success' so it skips cleanly when matrix is skipped.",
+    "value": "Pattern: (1) Validation jobs that must run for special PRs must be unconditional — no paths-ignore. (2) Skip expensive jobs via per-job label if:, not trigger paths-ignore. (3) Gate dependent jobs on needs.X.result == 'success' so they skip cleanly when parent skips. (4) Use bash arrays not ls for CI file globs — avoids SC2012 word-splitting. Provenance: PR #59 (2026-06-16).",
+    "provenance": {
+      "source": "PR #59: ci: add validate-memory job; gate heavy matrix by label not paths-ignore (#41)",
       "ts": "2026-06-16"
     }
   }
