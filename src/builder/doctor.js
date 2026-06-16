@@ -86,6 +86,12 @@ export async function doctor(meshRoot, { agentName, apply = false, managedOnly =
     //    agentmesh_* names from agent-local files before re-adding the
     //    bridge, so this entry never duplicates in managed sessions.
     await syncBridgeMcp(agent, snapshot.meshRoot, apply, fixed, flagged);
+
+    // 5. Install the board-notify SessionStart hook into the agent's
+    //    .claude/settings.json so an interactive `claude` session started in
+    //    the folder surfaces its board tasks. Identified by the hook script
+    //    path, so author-authored SessionStart hooks are preserved.
+    await syncBoardNotifyHook(agent, apply, fixed, flagged);
   }
 
   return { fixed, seeded, proposed, flagged };
@@ -141,6 +147,66 @@ async function syncBridgeMcp(agent, meshRoot, apply, fixed, flagged) {
   // never a torn .mcp.json. mode 0o644 preserves config readability (writeFile's
   // prior default), not atomicWriteFile's 0o600 secret-file default.
   await atomicWriteFile(mcpPath, JSON.stringify(next, null, 2) + '\n', { mode: 0o644 });
+  fixed.push(action);
+}
+
+// ---------------------------------------------------------------------------
+// Sync: board-notify SessionStart hook in <agent>/.claude/settings.json
+// ---------------------------------------------------------------------------
+
+const BOARD_HOOK_MARKER = 'hooks/board-notify.js';
+
+function boardNotifyHookEntry() {
+  const hookPath = fileURLToPath(new URL('../../hooks/board-notify.js', import.meta.url));
+  return {
+    matcher: '*',
+    hooks: [{ type: 'command', command: process.execPath, args: [hookPath] }]
+  };
+}
+
+// Is `entry` the mesh's own board-notify SessionStart entry? (Identified by the
+// hook script path, so we never touch an author's unrelated SessionStart hooks.)
+function isBoardHookEntry(entry) {
+  return (entry?.hooks ?? []).some(
+    (h) => h?.type === 'command' && Array.isArray(h.args) &&
+           h.args.some((a) => String(a).replace(/\\/g, '/').endsWith(BOARD_HOOK_MARKER))
+  );
+}
+
+export async function syncBoardNotifyHook(agent, apply, fixed, flagged) {
+  const settingsPath = join(agent.agentRoot, '.claude', 'settings.json');
+
+  let doc = null;
+  try { doc = JSON.parse(await readFile(settingsPath, 'utf8')); }
+  catch (err) {
+    if (err.code !== 'ENOENT') {
+      flagged.push(`[${agent.name}] .claude/settings.json unparseable — board-notify hook not synced`);
+      return;
+    }
+  }
+
+  const hasPeers = (agent.peers ?? []).length > 0;
+  const existing = doc?.hooks?.SessionStart ?? [];
+  const others = existing.filter((e) => !isBoardHookEntry(e));
+  const mineNow = existing.some(isBoardHookEntry);
+
+  const wantMine = hasPeers;
+  if (wantMine === mineNow) return; // idempotent
+
+  const action = wantMine
+    ? `[${agent.name}] .claude/settings.json — board-notify SessionStart hook synced`
+    : `[${agent.name}] .claude/settings.json — board-notify SessionStart hook removed (no peers)`;
+
+  if (!apply) { fixed.push(`[dry-run] ${action}`); return; }
+
+  const next = doc && typeof doc === 'object' ? doc : {};
+  next.hooks = next.hooks && typeof next.hooks === 'object' ? next.hooks : {};
+  const merged = wantMine ? [...others, boardNotifyHookEntry()] : others;
+  if (merged.length) next.hooks.SessionStart = merged;
+  else delete next.hooks.SessionStart;
+
+  await mkdir(dirname(settingsPath), { recursive: true });
+  await atomicWriteFile(settingsPath, JSON.stringify(next, null, 2) + '\n', { mode: 0o644 });
   fixed.push(action);
 }
 
