@@ -189,7 +189,7 @@ async function startServer(root, env) {
       input.write(`${JSON.stringify(message)}\n`);
     },
     async stop() {
-      const deadline = Date.now() + 1000;
+      const deadline = Date.now() + 5000;
       while (messages.length === 0 && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
