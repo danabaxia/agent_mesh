@@ -53,6 +53,11 @@ test('mergefix: branch ref via env (no shell/prompt injection) + fail-fast on em
   assert.match(wf, /if \[ -z "\$CLEAN" \]/, 'fail-fast when the OAuth token is empty');
 });
 
+test('mergefix: Drive Coder skipped on push (claude-code-action does not support push event)', () => {
+  assert.match(wf, /github\.event_name\s*!=\s*'push'/,
+    'Drive Coder if: must guard against push event (claude-code-action@v1 does not support push context)');
+});
+
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {
   assert.match(wf, /\[mergefix\]/, 'commits are tagged [mergefix] for the budget count');
   assert.doesNotMatch(wf, /--force\b/, 'must never force-push');
