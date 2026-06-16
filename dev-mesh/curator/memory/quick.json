@@ -148,11 +148,11 @@
     "status": "active",
     "valid_to": null,
     "l0": "Validate quick.json caps at write time (Curator workflow), not only at auto-merge — over-cap l0s deadlock the pipeline.",
-    "l1": "PR #44 consolidated 9 stalled memory:promote PRs into one valid quick.json. Root cause: three PRs carried l0 fields >120 chars that the auto-merge validator correctly refused. Mergefix resolves merge conflicts but not validation failures, so those PRs were permanently stuck and the remaining PRs piled up behind them. Recovery required a manual consolidation PR that deduped and trimmed all pending entries. Prevention at write time is always cleaner than post-hoc recovery.",
-    "value": "(1) Add `node scripts/validate-quick-memory.mjs dev-mesh/curator/memory/quick.json` to the Curator workflow (dev-mesh-curate.yml) AFTER the Curator commits the quick.json update but BEFORE `git push` — fail early rather than create an un-mergeable PR. The script already exists; it just is not called from the write side. (2) Recovery from a deadlock (N conflicting + invalid PRs): list open memory/* branches, read each PR's quick.json diff, dedup + trim all entries to fit caps, fold into one manual consolidation PR, close the stale PRs with a reference to the consolidation PR. (3) Mergefix handles merge CONFLICTS (key-union) but cannot fix validation FAILURES — write-time prevention is the only robust guard against pipeline deadlock. Provenance: PR #44 (2026-06-15).",
+    "l1": "PR #44: 9 stalled memory:promote PRs piled up because three had l0 fields >120 chars — auto-merge refused them, mergefix cannot fix validation failures, PRs were permanently stuck. Root cause: validate-quick-memory.mjs ran at auto-merge but not at Curator write time. PR #66 wired the validator into dev-mesh-curate.yml BEFORE git push — fail fast at source. Prevention at write time is always cleaner than post-hoc recovery.",
+    "value": "(1) Wire `node scripts/validate-quick-memory.mjs dev-mesh/curator/memory/quick.json` in dev-mesh-curate.yml AFTER claude-code-action commits quick.json, BEFORE git push — abort on non-zero (PR #66 wired this; PR #44 first documented the gap). (2) Recovery from deadlock (N conflicting + invalid PRs): list open memory/* branches, read each PR quick.json diff, dedup+trim to caps, fold into one consolidation PR, close stale PRs. (3) Mergefix handles CONFLICTS (key-union) but not validation FAILURES — write-time guard is the only robust pipeline protection.",
     "provenance": {
-      "source": "PR #44: memory(curator): consolidate the stalled memory:promote backlog into one valid quick.json",
-      "ts": "2026-06-15"
+      "source": "PR #44 (origin) + PR #66 (implementation): validate quick.json caps at Curator write time",
+      "ts": "2026-06-16"
     }
   },
   "test-dynamic-discovery-over-lists": {
