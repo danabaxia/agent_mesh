@@ -187,5 +187,16 @@
       "source": "PR #53: chore(dev-mesh): let do-workers self-edit workflows via DEV_MESH_PAT + CODEOWNERS gate",
       "ts": "2026-06-16"
     }
+  },
+  "claude-code-action-push-unsupported": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "claude-code-action@v1 rejects push event — guard claude steps with && github.event_name != 'push'.",
+    "l1": "When a workflow triggers on: push: alongside schedule, claude-code-action@v1 raises \"Unsupported event type: push\" if a push-triggered run reaches the claude step — the agent never runs. Push events are fine for discovery steps (find conflicting PRs, detect state) but cannot drive the Action itself. PR #56 fixed dev-mesh-mergefix.yml: the Drive Coder step gained && github.event_name != 'push' in its if: condition; push runs skip cleanly while the hourly schedule backstop continues to invoke the agent. Lint in test/dev-mesh-mergefix.test.js statically enforces the guard.",
+    "value": "Pattern: any workflow with on: push: that calls claude-code-action must gate the claude step with github.event_name != push. The push trigger remains useful for fast discovery (find a conflicting PR, detect a failing check) but must not drive the Action — if it reaches the Action the run fails with Unsupported event type: push and aborts entirely.\n\nConcrete steps:\n1. Add && github.event_name != push to the Drive Coder step if: expression.\n2. Confirm Verify step has if: always() && steps.claude.outcome != skipped so it also skips cleanly.\n3. Add a hermetic lint assertion that the if: expression contains github.event_name != push (pattern in test/dev-mesh-mergefix.test.js).\n\nRelated: event-driven-polling-backstop (schedule backstop pattern), actions-recursion-guard-schedule (GITHUB_TOKEN recursion). Provenance: PR #56 (2026-06-16), closing Issue #38.",
+    "provenance": {
+      "source": "PR #56: fix(dev-mesh): skip Drive Coder on push event (Closes #38)",
+      "ts": "2026-06-16"
+    }
   }
 }
