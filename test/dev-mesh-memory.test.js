@@ -8,14 +8,23 @@
 // Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §10/§16
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readQuickMemory, validateQuickMemory, isLive } from '../src/quick-memory.js';
 import { selectPrefetch } from '../src/prefetch.js';
 
 const root = (role) => fileURLToPath(new URL(`../dev-mesh/${role}/`, import.meta.url));
 
+// Discover every role that currently has a quick.json — catches future roles automatically.
+const devMeshDir = fileURLToPath(new URL('../dev-mesh/', import.meta.url));
+const rolesWithMemory = readdirSync(devMeshDir, { withFileTypes: true })
+  .filter((d) => d.isDirectory())
+  .map((d) => d.name)
+  .filter((name) => existsSync(fileURLToPath(new URL(`../dev-mesh/${name}/memory/quick.json`, import.meta.url))));
+
 test('seed memory validates under the framework caps (fail-closed shape)', async () => {
-  for (const role of ['coder', 'triager']) {
+  assert.ok(rolesWithMemory.length > 0, 'expected at least one role with a quick.json');
+  for (const role of rolesWithMemory) {
     const quick = await readQuickMemory(root(role));
     assert.ok(Object.keys(quick).length > 0, `${role}: seed memory should be non-empty`);
     assert.doesNotThrow(() => validateQuickMemory(quick), `${role}: seed must satisfy caps/shape`);

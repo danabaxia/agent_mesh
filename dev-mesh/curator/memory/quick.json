@@ -33,18 +33,6 @@
       "ts": "2026-06-15"
     }
   },
-  "honesty-gate-blocked-advisory": {
-    "status": "superseded",
-    "valid_to": "2026-06-15T00:00:00.000Z",
-    "superseded_by": "honesty-gate-role-scoped",
-    "l0": "SUPERSEDED by PR #26 — the all-roles advisory default was too broad. See honesty-gate-role-scoped.",
-    "l1": "PR #25 made `blocked` globally advisory (exit 0). PR #26 reverted this: `blocked` is fatal again by default for do-workers; only light/ask roles get `--advisory-blocked` explicitly. The lesson was directionally correct about ask-roles but incorrectly extended the advisory behavior to do-workers, which need the strict default to catch real tool-grant misconfigurations.",
-    "value": "Retired 2026-06-15. Use honesty-gate-role-scoped instead.",
-    "provenance": {
-      "source": "PR #25 (superseded by PR #26)",
-      "ts": "2026-06-15"
-    }
-  },
   "yaml-flag-drift-structural-lint": {
     "status": "active",
     "valid_to": null,
@@ -165,6 +153,50 @@
     "provenance": {
       "source": "PR #44: memory(curator): consolidate the stalled memory:promote backlog into one valid quick.json",
       "ts": "2026-06-15"
+    }
+  },
+  "test-dynamic-discovery-over-lists": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Enumerate test subjects dynamically (glob/readdir) — hardcoded role lists silently miss newly added entries.",
+    "l1": "PR #40 closed a structural gap: `dev-mesh-memory.test.js` validated quick.json for `['coder', 'triager']` only, missing curator. Curator's over-cap entries passed CI silently for multiple PRs before being caught. Fix: `readdirSync` + `existsSync` to enumerate roles dynamically; guard with `assert.ok(length > 0)` to prevent vacuous pass if the glob returns nothing.",
+    "value": "Pattern for any test over parallel-structured files (per-role, per-agent, per-module): (1) Discover: readdirSync + existsSync to enumerate directories that have the target file — no hardcoded list. (2) Guard: assert discovered.length >= EXPECTED_MIN so an empty result doesn't silently vacuously pass. (3) Validate each discovered entry in a loop. Applies whenever the subject set can grow over time (roles, agents, modules, plugins). Provenance: PR #40 / Issue #39 (2026-06-15).",
+    "provenance": {
+      "source": "PR #40: test(dev-mesh): validate all roles' quick.json in the hermetic suite (#39)",
+      "ts": "2026-06-15"
+    }
+  },
+  "quick-json-supersede-delete": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Delete superseded quick.json entries: valid_to set breaks isLive() CI gate when dynamic role discovery runs.",
+    "l1": "PR #40 changed dev-mesh-memory.test.js to discover roles dynamically — previously only coder/triager were validated. Once curator was included, isLive() caught honesty-gate-blocked-advisory (status:'superseded', valid_to set) that had sat since PR #26. Fix (PR #50): delete the entry outright — the seed file must contain only live entries (status:'active', valid_to:null). The replacement (honesty-gate-role-scoped) was already active. Superseded entries are never injected and break the CI gate.",
+    "value": "Supersession is a two-step operation: (1) add the replacement entry (status:'active', valid_to:null); (2) DELETE the old entry from quick.json in the same PR. Do NOT leave it as status:'superseded' with valid_to set — isLive() in dev-mesh-memory.test.js requires every persisted entry to be live. The 'mark it and leave it' pattern compiles silently until dynamic role discovery expands coverage (as PR #40 did), at which point the stale entry causes an immediate CI failure. The replacement's provenance captures historical context; no information is lost by deleting. Pattern: distill replacement → write replacement entry → delete old key → open memory:promote PR. Provenance: PR #50 (2026-06-15), closing Issue #48.",
+    "provenance": {
+      "source": "PR #50: fix(dev-mesh): remove superseded honesty-gate-blocked-advisory from curator quick.json",
+      "ts": "2026-06-15"
+    }
+  },
+  "drift-check-content-not-names": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Registry drift check must compare full content not just names — stale paths pass name-match and bypass regeneration.",
+    "l1": "PR #49 fix: `doctor.js` compared only peer names when checking if a managed registry was stale. Relocating a mesh left all embedded absolute paths wrong while names still matched → no regeneration triggered → `delegate_to_peer` failed with opaque `caller_identity_unresolved`. The refusal in `peer-bridge.js` now includes the `meshRoot` and `agentRoot` paths it tried, plus a `run agent-mesh doctor` hint. Root: generated artifacts capture absolute paths at generation time; name-only equality misses path/env/arg drift entirely.",
+    "value": "When writing drift/staleness detectors for generated artifacts that embed absolute paths: (1) compare full serialized content of each peer object (paths, env vars, args), not just identifiers. (2) Normalize both sides (e.g. sort keys) before comparison so field-order differences don't produce false positives. (3) Apply to any generated file — registry.json, mcp.json, wiring — where paths are captured at generation time and can drift on relocation (mesh moved, copied, or re-initialized under a different absolute path). (4) Pair any identity-resolution failure with a diagnostic that includes the paths tried and a repair hint (`agent-mesh doctor`). Quick test: seed a registry with correct names but stale absolute paths, verify dry-run flags it, verify apply regenerates it. Provenance: PR #49 (2026-06-15), fixing Issue #47.",
+    "provenance": {
+      "source": "PR #49: fix: detect registry path drift on relocation; improve caller_identity_unresolved diagnostic",
+      "ts": "2026-06-15"
+    }
+  },
+  "github-token-workflow-write-blocked": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GITHUB_TOKEN cannot write .github/workflows/** — do-workers need DEV_MESH_PAT (Workflows:RW) for self-editable CI.",
+    "l1": "GitHub rejects GITHUB_TOKEN pushes to .github/workflows/** (only PATs/GitHub Apps with Workflows:RW scope can write there). Without a PAT, a Coder writing and testing a workflow fix cannot push it — the ephemeral runner discards the branch and the issue deadlocks with a report but no PR (bugs #38 and #41). Fix: DEV_MESH_PAT || GITHUB_TOKEN fallback chain in every do-worker that may touch CI. curate must stay on GITHUB_TOKEN only — removing the recursion guard breaks the memory auto-merge loop.",
+    "value": "Add a fine-grained PAT (Contents:RW, Pull requests:RW, Workflows:RW, scoped to this repo only) as repo secret DEV_MESH_PAT. Wire do-workers (backlog, autofix, mergefix, review-respond) as `secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN` — PAT when present, GITHUB_TOKEN otherwise; fully non-breaking until the secret is created. curate must stay on GITHUB_TOKEN only: its memory:promote PRs rely on GitHub's recursion guard (GITHUB_TOKEN PRs don't re-fire pull_request events). Add .github/CODEOWNERS gating .github/workflows/** on owner review — the mesh can now author changes to its own CI harness, so the human merge gate must be explicit and specific. Pin the full wiring as a standalone hermetic lint (test/dev-mesh-pat-wiring.test.js). PAT pushes re-trigger workflows — bounded by existing per-PR budget caps (see actions-recursion-guard-schedule). Provenance: PR #53 (2026-06-16), fixing Issue #38 + #41.",
+    "provenance": {
+      "source": "PR #53: chore(dev-mesh): let do-workers self-edit workflows via DEV_MESH_PAT + CODEOWNERS gate",
+      "ts": "2026-06-16"
     }
   }
 }

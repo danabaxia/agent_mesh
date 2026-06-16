@@ -85,7 +85,7 @@ export async function doctor(meshRoot, { agentName, apply = false, managedOnly =
     //    config). Safe: the framework's config assembly DROPS reserved
     //    agentmesh_* names from agent-local files before re-adding the
     //    bridge, so this entry never duplicates in managed sessions.
-    await syncBridgeMcp(agent, apply, fixed, flagged);
+    await syncBridgeMcp(agent, snapshot.meshRoot, apply, fixed, flagged);
   }
 
   return { fixed, seeded, proposed, flagged };
@@ -97,7 +97,7 @@ export async function doctor(meshRoot, { agentName, apply = false, managedOnly =
 
 const BRIDGE_NAME = 'agentmesh_peerbridge';
 
-async function syncBridgeMcp(agent, apply, fixed, flagged) {
+async function syncBridgeMcp(agent, meshRoot, apply, fixed, flagged) {
   const mcpPath = join(agent.agentRoot, '.mcp.json');
 
   // Read the file as it is on disk (authored content must survive verbatim).
@@ -112,7 +112,16 @@ async function syncBridgeMcp(agent, apply, fixed, flagged) {
 
   const hasPeers = (agent.peers ?? []).length > 0;
   const current = doc?.mcpServers?.[BRIDGE_NAME];
-  const wanted = hasPeers ? generateBridgeServerEntry(agent.agentRoot, BIN_PATH) : undefined;
+  // Stamp the reserved mesh env so a plain `claude` session started directly in
+  // the agent folder (which has only this .mcp.json — unlike dashboard/worker
+  // launches, which assemble env via mesh-mcp) can resolve its own caller name
+  // from the manifest. Without it the bridge refuses with caller_identity_unresolved.
+  // Same values generateRegistry stamps per peer: CEILING = mesh root, ROOT = mesh/ dir.
+  const bridgeEnv = {
+    AGENT_MESH_MESH_ROOT: join(meshRoot, 'mesh'),
+    AGENT_MESH_MESH_CEILING: meshRoot
+  };
+  const wanted = hasPeers ? generateBridgeServerEntry(agent.agentRoot, BIN_PATH, bridgeEnv) : undefined;
 
   const same = JSON.stringify(current) === JSON.stringify(wanted);
   if (same) return; // idempotent — nothing to do
@@ -169,9 +178,16 @@ async function fixRegistry(agent, manifest, meshRoot, apply, fixed, flagged) {
     });
     const expected = expectedRegistries[agent.name];
     if (expected) {
-      const actualPeerNames = Object.keys(agent.registryJson.peers || {}).sort();
-      const expectedPeerNames = Object.keys(expected.peers || {}).sort();
-      if (JSON.stringify(actualPeerNames) !== JSON.stringify(expectedPeerNames)) {
+      // Compare full peer content (names AND embedded paths) so that path drift
+      // caused by mesh relocation also triggers regeneration, not just peer-set changes.
+      const actualPeers = agent.registryJson.peers || {};
+      const expectedPeers = expected.peers || {};
+      const actualPeerNames = Object.keys(actualPeers).sort();
+      const expectedPeerNames = Object.keys(expectedPeers).sort();
+      if (
+        JSON.stringify(actualPeerNames) !== JSON.stringify(expectedPeerNames) ||
+        actualPeerNames.some(n => JSON.stringify(actualPeers[n]) !== JSON.stringify(expectedPeers[n]))
+      ) {
         needsRegen = true;
       }
     }

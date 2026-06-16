@@ -123,8 +123,14 @@ export function createBridge({ root, env = process.env, createClient = createA2A
     if (!managed.registry.peers[peer]) return refuseLogged('bad_input', `peer "${peer}" is not in this agent's registry.`);
 
     if (!from) {
+      const meshRoot = env?.AGENT_MESH_MESH_CEILING
+        || (env?.AGENT_MESH_MESH_ROOT ? dirname(env.AGENT_MESH_MESH_ROOT) : null);
+      const pathHint = meshRoot
+        ? `meshRoot=${meshRoot}, agentRoot=${root}`
+        : 'AGENT_MESH_MESH_CEILING and AGENT_MESH_MESH_ROOT are unset';
       return refuseLogged('caller_identity_unresolved',
-        'cannot resolve a unique caller name from the mesh manifest; refusing to risk a colliding session key.');
+        `cannot resolve a unique caller name from the mesh manifest; refusing to risk a colliding session key. ` +
+        `(${pathHint}) — re-run 'agent-mesh doctor' if the mesh was relocated.`);
     }
 
     let client;

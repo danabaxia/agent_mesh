@@ -32,6 +32,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # Push via DEV_MESH_PAT (workflows scope) so a conflict resolution that touches
+          # .github/workflows/** can be pushed (the Actions GITHUB_TOKEN is barred from
+          # workflow files). Falls back to GITHUB_TOKEN when the secret is absent.
+          token: ${{ secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN }}
       - name: Find a conflicting (DIRTY) same-repo PR
         id: pick
         env:
@@ -80,12 +84,12 @@ jobs:
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: Drive Coder (resolve the conflict with main)
-        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true' && github.event_name != 'push'
         uses: anthropics/claude-code-action@v1
         id: claude
         with:
           claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN }}
           # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback.
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
