@@ -198,5 +198,16 @@
       "source": "PR #53: chore(dev-mesh): let do-workers self-edit workflows via DEV_MESH_PAT + CODEOWNERS gate",
       "ts": "2026-06-16"
     }
+  },
+  "paths-ignore-suppresses-validate-jobs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "paths-ignore at the trigger level silently suppresses ALL jobs — use per-job label-based if: for expensive-only skips.",
+    "l1": "validate-memory job (PR #59/Issue #41) catches over-cap quick.json at PR time. paths-ignore at the workflow trigger would have suppressed it for the memory:promote PRs it must guard. Fix: leave validate-memory unconditional; add label-based if: only on the heavy matrix job. Cascade: gate the test job on if: needs.matrix.result == 'success' so it skips cleanly when matrix is skipped.",
+    "value": "Pattern: (1) Validation jobs that must run for special PRs must be unconditional — no paths-ignore. (2) Skip expensive jobs via per-job label if:, not trigger paths-ignore. (3) Gate dependent jobs on needs.X.result == 'success' so they skip cleanly when parent skips. (4) Use bash arrays not ls for CI file globs — avoids SC2012 word-splitting. Provenance: PR #59 (2026-06-16).",
+    "provenance": {
+      "source": "PR #59: ci: add validate-memory job; gate heavy matrix by label not paths-ignore (#41)",
+      "ts": "2026-06-16"
+    }
   }
 }
