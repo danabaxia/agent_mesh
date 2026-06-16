@@ -9,7 +9,8 @@ approval and merge gates. It runs entirely as **GitHub Actions** driving
 > - **A2A peer mesh** = the *product* (`agent-mesh serve-a2a`, `registry.json`,
 >   `delegate_to_peer`): agents in folders that talk over the A2A stdio protocol.
 > - **Dev-mesh** = *this* — the self-hosting society of GitHub-Actions workflows below.
->   It does **not** use the A2A protocol; it coordinates through GitHub.
+>   In the current Phase-0 deployment, it does **not** use the A2A protocol; it
+>   coordinates through GitHub. (Phase 1 will make the society mesh-native.)
 
 Run/health/auth notes: [OPERATING.md](OPERATING.md). Full design:
 [docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md](../docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md).
@@ -22,7 +23,7 @@ workflows (10 model-agents + 3 pure scripts):
 
 | Workflow | Role | Trigger | Job |
 |---|---|---|---|
-| `research` | Analyst | sched (weekly Mon) | Generate new `idea` issues from the roadmap |
+| `research` | Analyst | `workflow_dispatch` + sched (weekly Mon) | Generate new `idea` issues from the roadmap |
 | `intake` | Analyst | `issues` / `issue_comment` | Triage issues, draft specs, manage labels (discuss → approval gate) |
 | `backlog` | Maintainer→Coder→Tester | `issues:labeled` + sched 30m | Claim an `approved` issue, build on a branch, run tests, open a PR |
 | `review` | Maintainer→Reviewer | `pull_request` | Review PRs (correctness, tests, scope, security invariants); comments only |
@@ -48,9 +49,10 @@ artifact moving through the stages *is* the collaboration (stigmergic / choreogr
                          │  every agent reads it as collective knowledge; Curator writes it                     │
                          └────────────────────────────────────────────────────────────────────────────────────┘
                                     ▲
-   research ──▶ idea ──▶ [HUMAN approves] ──▶ approved
-   (Analyst)                  │ intake (Analyst): discuss/spec/label
-                              ▼
+   research ──▶ idea ──▶ intake (Analyst) ──▶ [HUMAN approves] ──▶ approved
+   (Analyst)              discussing/spec:draft/spec:in-review
+                                                                          │
+                                                                          ▼
                           backlog (Coder) ── build branch + tests ──▶ Pull Request ──▶ review (Reviewer)
                                                                           │                  │ CHANGES_REQUESTED
                                   CI red ──▶ autofix / ci-sweep ──┐       │                  ▼
@@ -68,9 +70,14 @@ Humans appear at exactly two gates: **approve an `idea`** and **merge a code PR*
 
 ### Lifecycle labels (the hand-off protocol)
 
-`idea` → `approved` → `in-progress` → `pr:in-review` → (merge) → `done`.
-Plus `blocked` (needs a human), `bug`, and `memory:promote`. Labels + PR/issue state
-are how a stage signals the next agent — changing a label is the hand-off.
+`idea` → `discussing` → `spec:draft` → `spec:in-review` → `approved` → `in-progress`
+→ `pr:in-review` → (merge) → `done`.
+
+`intake` manages the pre-approval stages (`discussing` → `spec:draft` → `spec:in-review`);
+the human approval gate fires only after `spec:in-review`. Terminal labels: `blocked`
+(needs a human unblock) and `rejected` (closed without implementation). Supporting
+labels: `bug` and `memory:promote`. Labels + PR/issue state are how a stage signals
+the next agent — changing a label is the hand-off.
 
 ## Safety properties
 
