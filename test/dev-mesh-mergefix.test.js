@@ -70,6 +70,12 @@ test('mergefix: Drive Coder skipped on push (claude-code-action does not support
     /event_name\s*!=\s*'schedule'/,
     'schedule backstop must not be blocked — it is how push-discovered conflicts get resolved',
   );
+  // …and workflow_dispatch (on-demand resolution) must stay un-guarded too.
+  assert.doesNotMatch(
+    wf,
+    /event_name\s*!=\s*'workflow_dispatch'/,
+    'workflow_dispatch must not be blocked — it is the on-demand conflict-resolution trigger',
+  );
 });
 
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {
