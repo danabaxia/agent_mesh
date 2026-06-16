@@ -231,5 +231,16 @@
       "source": "PR #67: fix(dev-mesh): quote validator args in memory-automerge (A2A-authored seam probe)",
       "ts": "2026-06-16"
     }
+  },
+  "dev-mesh-two-meshes-distinction": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Dev-mesh (GitHub Actions society) ≠ A2A peer mesh (product) — state this up front or agents misuse protocols.",
+    "l1": "PR #61 added dev-mesh/README.md because no document explained the two co-existing layers: Dev-mesh is a GitHub Actions CI/CD society (Maintainer/Analyst/Triager/Coder/Tester/Reviewer/Curator) coordinated via GitHub state (issues/PRs/labels/quick.json memory); A2A peer mesh is the product the society builds (serve-a2a, delegate_to_peer). The Dev-mesh does NOT use A2A delegate_to_peer internally. Without this distinction, agents conflate coordination protocols or misroute work between layers.",
+    "value": "Lead every multi-layer agent society's README with the two-layers distinction as the first section: (1) identify the meta-layer — the society of agents that maintains the product (Dev-mesh: GitHub Actions + quick.json, no central orchestrator, coordinated via issues/PRs/labels); (2) identify the product layer (A2A peer mesh: serve-a2a, delegate_to_peer). Also include: full agent roster table (workflow → role), lifecycle labels as the hand-off protocol, the canonical loop (idea → approved → build → review → merge → distill), and two human gates (approve / merge). A clear society README is the single artifact that prevents protocol confusion for all future agents and contributors. Provenance: PR #61 (2026-06-16).",
+    "provenance": {
+      "source": "PR #61: docs(dev-mesh): add society README — agent roster + collaboration flow",
+      "ts": "2026-06-16"
+    }
   }
 }
