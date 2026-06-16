@@ -43,27 +43,35 @@ Mirrors the product's own pure-core / impure-shell split.
 
 ```
  PERSISTENT HOST
- ┌─ society daemon (OUTER SHELL — impure: git/gh/test) ────────────────────────────┐
+ ┌─ society daemon (OUTER SHELL — impure: git/gh/test + WRITE orchestration) ───────┐
  │  1. poll GitHub for approved+unclaimed issues labeled route:a2a                  │
  │  2. prepare an isolated git worktree (= the Coder agent's single writable root)  │
- │  3. A2A SendMessage(task) ─────────────▶  INNER A2A MESH (the product, on test)  │
- │                                            Maintainer  (serve-a2a, entry agent)   │
- │                                              └ delegate_to_peer ▶ Coder (do:      │
- │                                                   edits the worktree, path-guarded)│
- │                                              └ delegate_to_peer ▶ Reviewer (ask:  │
- │                                                   reads the diff, returns findings)│
- │  4. ◀──────────────── A2A Task result + run records / metrics                    │
+ │  3. A2A SendMessage(task, mode=do) ───▶  Coder  (serve-a2a)  [top-level do]      │
+ │                                            edits the worktree, path-guarded       │
+ │  4. ◀── A2A Task (files_changed, metrics)                                        │
  │  5. run the suite on the worktree (Tester = shell step) ; if green:              │
- │  6. commit → push branch → open PR (Closes #N) → label pr:in-review              │
- │  7. append metrics to the perf ledger ─────▶ eval-perf / eval-a2a scorecards     │
+ │  6. A2A SendMessage(diff, mode=ask) ──▶  Reviewer (serve-a2a)  [ask; may also be │
+ │                                            reached agent→agent via the bridge]    │
+ │  7. ◀── A2A Task (review findings)                                               │
+ │  8. commit → push branch → open PR (Closes #N) → label pr:in-review              │
+ │  9. append metrics to the perf ledger ─────▶ eval-perf / eval-a2a scorecards     │
  └─────────────────────────────────────────────────────────────────────────────────┘
-        │ PR
-        ▼
+                                    │ PR
+                                    ▼
    GitHub-Actions Dev-mesh (UNCHANGED): review · CI · human merge · curate → memory
 ```
 
+> **Why the driver — not a Maintainer agent — orchestrates writes.** Validated in P0
+> (§10): the peer bridge's onward delegation is **ask-only in v1** (`ONWARD_MODE='ask'`;
+> `delegate_to_peer` refuses any `do` with `mode_disabled` *before spawning*). So an
+> autonomous Maintainer agent **cannot** delegate write-work to a Coder peer. Write tasks
+> must be issued **top-level** by the outer driver (mode=do, directly to the Coder agent).
+> Reads/reviews (mode=ask) *can* flow agent→agent via the bridge. A truly
+> agent-orchestrated write society would require deliberately lifting the ask-only gate —
+> a separate product + security decision, out of scope here.
+
 The **inner mesh is the product under test**; the **outer daemon** does only what the confined
-workers cannot (and must not): Git, GitHub, and test execution.
+workers cannot (and must not): Git, GitHub, test execution, **and write-orchestration**.
 
 ## 4. Role → A2A mapping
 
@@ -73,16 +81,17 @@ is the working template.
 
 | Role | A2A agent? | Mode | How it participates |
 |---|---|---|---|
-| **Maintainer** | yes (entry) | do | Receives the task; `delegate_to_peer` to Coder, then Reviewer |
-| **Coder** | yes | do | Edits the worktree (Edit/Write/MultiEdit, path-guarded); may delegate back to Maintainer-curated peers |
-| **Reviewer** | yes | ask | Reads the diff + invariants; returns structured findings (no writes) |
-| **Curator** | yes (later) | do | Distills a lesson into its own memory root (path-guarded) |
+| **Maintainer** | **the outer driver** | — | The *orchestration* role. In v1 the driver issues the **top-level `do`** to Coder (onward `do` is bridge-blocked — §3) and routes the `ask` review. A Maintainer *agent* could still do `ask` fan-out, but it cannot delegate writes |
+| **Coder** | yes | do | Receives a **top-level `do`** task from the driver; edits the worktree (Edit/Write/MultiEdit, path-guarded) |
+| **Reviewer** | yes | ask | Reads the diff (as data) + invariants; returns findings (no writes). Reachable from the driver *or* agent→agent via the bridge |
+| **Curator** | yes (later) | do | Distills a lesson into its own memory root (path-guarded), as a top-level `do` |
 | **Tester** | **no — shell step** | — | Suite execution needs Bash, forbidden in `do` (§5). The daemon runs it and feeds results back as a message |
 | **Triager / Analyst** | n/a here | — | Stay in the GitHub layer (CI triage, issue intake) — the augment seam |
 
-The genuinely A2A-delegated, validated path is **Maintainer→Coder→Reviewer** (+ Curator later).
-Execution + I/O are the outer shell. The spec is deliberately honest that **not all 7 roles are
-A2A agents** — that's a property of the security model, not a shortcut.
+The genuinely A2A-delegated, validated path is **driver→Coder (`do`)** + **driver/Maintainer→Reviewer
+(`ask`)**. Orchestration of *writes*, execution, and I/O are the outer shell. The spec is deliberately
+honest that **not all 7 roles are A2A agents, and write-orchestration is not an agent** — that's a
+property of the v1 security model (ask-only bridge), not a shortcut.
 
 ## 5. Hard constraints (do not pretend around these)
 
@@ -144,3 +153,27 @@ issue" into "we measured the mesh doing it."
   `curate` workflow? (Either; P0 keeps it in GitHub.)
 - Test execution: pure shell step vs a dedicated non-mesh "tester" service the Coder can *ask*
   (still outside `do`).
+
+## 10. P0 validation (2026-06-16, run live in the Claude Code sandbox)
+
+A minimal P0 was materialized with the framework's own commands (`init-mesh` → `add
+maintainer/coder/reviewer` → peer → `doctor --apply`) and driven over the **real A2A wire**
+(`createA2AClient().send()` → `serve-a2a` → real `claude -p` workers). Results:
+
+- **do-delegation works (driver → Coder, top-level):** a `do` `SendMessage` produced a real
+  `Task` — `TASK_STATE_COMPLETED`, `files_changed:["strings.js"]`, run_id, and a `metrics`
+  block (`worker_run_ms≈20s`, `isolation_violations:0`). The Coder authored correct code; the
+  write was **confined to `coder/`** (the `maintainer/` root was untouched — path-guard held).
+- **ask-delegation works (driver → Reviewer):** an `ask` `SendMessage` returned a real review
+  that **caught a genuine bug** in the Coder's diff (`truncateSlug("foo-bar-baz",7)` → "foo"
+  instead of "foo-bar" because the trailing-segment regex was unconditional). The Reviewer
+  authored **no files** — the only thing appearing in `reviewer/` was the framework's own
+  `.agent-mesh/` audit log (expected residue, like the CLI's `.claude/`).
+- **The decisive finding:** onward `do` delegation is **refused** (`ONWARD_MODE='ask'`), which
+  is why write-orchestration is driver-side (see §3 callout + §5). This was *confirmed in code
+  and by running it*, not assumed.
+
+**Conclusion:** the inner loop (real A2A do + ask delegation, confinement, metrics, review
+catching a real defect) is proven. P0 ran entirely locally (GitHub egress is blocked in the
+sandbox), exactly matching the design's "develop *through* the mesh + emit validation metrics"
+intent. Remaining build is the outer daemon (P1) + the metrics→eval ledger (P2).
