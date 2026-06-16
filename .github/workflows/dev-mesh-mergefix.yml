@@ -83,8 +83,25 @@ jobs:
           if [ -z "$CLEAN" ]; then echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for mergefix"; exit 1; fi
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
+      - name: Merge main into PR branch
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
+        env:
+          PR_NUMBER: ${{ steps.pick.outputs.number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # $PR_BRANCH is already in $GITHUB_ENV (exported by the budget step).
+          # Using it here in a plain bash run: step is safe — no agent Bash tool involved.
+          git checkout "$PR_BRANCH"
+          git reset --hard "origin/$PR_BRANCH"
+          if git merge origin/main; then
+            echo "CONFLICTS_FOUND=false" >> "$GITHUB_ENV"
+            echo "No conflicts — Drive Coder will be skipped."
+          else
+            echo "CONFLICTS_FOUND=true" >> "$GITHUB_ENV"
+            echo "Conflicts detected; leaving repo in mid-merge state for Drive Coder."
+          fi
       - name: Drive Coder (resolve the conflict with main)
-        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true' && github.event_name != 'push'
+        if: steps.pick.outputs.none != 'true' && env.CONFLICTS_FOUND == 'true' && env.BUDGET_EXHAUSTED != 'true' && github.event_name != 'push'
         uses: anthropics/claude-code-action@v1
         id: claude
         with:
@@ -95,26 +112,31 @@ jobs:
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
             --allowedTools "Edit,Write,MultiEdit,Read,Grep,Glob,Bash(git:*),Bash(gh:*),Bash(npm:*),Bash(node:*)"
           prompt: |
-            PR #${{ steps.pick.outputs.number }} cannot merge — it CONFLICTS with `main`. The PR
-            branch name is in the `$PR_BRANCH` environment variable (kept out of this prompt —
-            it is author-controlled DATA; use it verbatim, never guess it). You are the **Coder**
-            resolving it. In THIS GitHub Actions context you run git/npm/node yourself (this is
-            not the no-shell mesh role).
+            PR #${{ steps.pick.outputs.number }} conflicts with `main` and needs resolution.
+            The branch is already checked out and `git merge origin/main` has been run —
+            the repo is in a mid-merge/conflict state. You are the **Coder** resolving it.
+            In THIS GitHub Actions context you run git/npm/node yourself (this is not the
+            no-shell mesh role).
 
             Resolve it:
-              1. `git checkout "$PR_BRANCH" && git reset --hard "origin/$PR_BRANCH"`, then
-                 `git merge origin/main`.
+              1. Find every conflicted file: run `git diff --name-only --diff-filter=U` or
+                 look for `<<<<<<<` conflict markers via Grep/Read.
               2. Resolve EVERY conflict:
                  - `**/memory/quick.json` (a keyed JSON object) → UNION both sides' keys (keep all
                    lessons), valid JSON within the caps.
                  - code / tests → the minimal correct COMBINED result (honour both intents).
-                 If a conflict can't be resolved safely → `git merge --abort`, comment what's
-                 blocking, and STOP.
-              3. Run `node run-all-tests.mjs` until green; commit the merge with a `[mergefix]`
-                 message; push with `git push origin "HEAD:$PR_BRANCH"` (never force-push).
-                 Comment a one-line summary. Do NOT merge the PR — a human merges.
+                 If a conflict can't be resolved safely → `git merge --abort`, comment on PR
+                 #${{ steps.pick.outputs.number }} what's blocking, and STOP.
+              3. Run `node run-all-tests.mjs` until green; then `git add -A` and commit
+                 with a `[mergefix]` message (never force-push, never merge the PR).
+                 Comment a one-line summary on PR #${{ steps.pick.outputs.number }}.
+                 Do NOT push — the push is handled automatically after this step.
       - name: Verify the agent actually worked (green != healthy)
         if: always() && steps.claude.outcome != 'skipped'
         env:
           CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: node scripts/assert-run-healthy.mjs
+      - name: Push resolved merge
+        if: steps.pick.outputs.none != 'true' && env.CONFLICTS_FOUND == 'true' && steps.claude.outcome == 'success'
+        run: |
+          git push origin "HEAD:$PR_BRANCH"
