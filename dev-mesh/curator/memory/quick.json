@@ -165,5 +165,16 @@
       "source": "PR #49: fix: detect registry path drift on relocation; improve caller_identity_unresolved diagnostic",
       "ts": "2026-06-15"
     }
+  },
+  "github-token-workflow-write-blocked": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GITHUB_TOKEN cannot write .github/workflows/** — do-workers need DEV_MESH_PAT (Workflows:RW) for self-editable CI.",
+    "l1": "GitHub rejects GITHUB_TOKEN pushes to .github/workflows/** (only PATs/GitHub Apps with Workflows:RW scope can write there). Without a PAT, a Coder writing and testing a workflow fix cannot push it — the ephemeral runner discards the branch and the issue deadlocks with a report but no PR (bugs #38 and #41). Fix: DEV_MESH_PAT || GITHUB_TOKEN fallback chain in every do-worker that may touch CI. curate must stay on GITHUB_TOKEN only — removing the recursion guard breaks the memory auto-merge loop.",
+    "value": "Add a fine-grained PAT (Contents:RW, Pull requests:RW, Workflows:RW, scoped to this repo only) as repo secret DEV_MESH_PAT. Wire do-workers (backlog, autofix, mergefix, review-respond) as `secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN` — PAT when present, GITHUB_TOKEN otherwise; fully non-breaking until the secret is created. curate must stay on GITHUB_TOKEN only: its memory:promote PRs rely on GitHub's recursion guard (GITHUB_TOKEN PRs don't re-fire pull_request events). Add .github/CODEOWNERS gating .github/workflows/** on owner review — the mesh can now author changes to its own CI harness, so the human merge gate must be explicit and specific. Pin the full wiring as a standalone hermetic lint (test/dev-mesh-pat-wiring.test.js). PAT pushes re-trigger workflows — bounded by existing per-PR budget caps (see actions-recursion-guard-schedule). Provenance: PR #53 (2026-06-16), fixing Issue #38 + #41.",
+    "provenance": {
+      "source": "PR #53: chore(dev-mesh): let do-workers self-edit workflows via DEV_MESH_PAT + CODEOWNERS gate",
+      "ts": "2026-06-16"
+    }
   }
 }
