@@ -20,7 +20,7 @@ export function renderBoardNotice({ inbound, outboundDone }) {
       ''
     );
     for (const t of inbound) {
-      lines.push(`📋 Pending task from ${t.from} — "${t.title}" [${t.id}]`);
+      lines.push(`Pending task from ${t.from} — "${t.title}" [${t.id}]`);
       lines.push(`   Objective: ${t.objective}`);
       if (t.context) lines.push(`   Context: ${t.context}`);
       lines.push(`   Requirements: ${t.requirements}`);
@@ -31,7 +31,7 @@ export function renderBoardNotice({ inbound, outboundDone }) {
   if (outboundDone.length) {
     lines.push('Completed handoffs (tasks you assigned that a peer has finished):');
     for (const t of outboundDone) {
-      lines.push(`✅ "${t.title}" you assigned to ${t.to} is done. Result: ${t.result ?? '(no result text)'} [${t.id}]`);
+      lines.push(`Done: "${t.title}" you assigned to ${t.to} is complete. Result: ${t.result ?? '(no result text)'} [${t.id}]`);
     }
     lines.push('');
   }

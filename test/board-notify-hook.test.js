@@ -31,11 +31,11 @@ test('renderBoardNotice returns empty string when nothing to show', () => {
 });
 
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, realpath } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, realpath, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createTask } from '../src/board/store.js';
+import { createTask, readTask } from '../src/board/store.js';
 
 const HOOK = fileURLToPath(new URL('../hooks/board-notify.js', import.meta.url));
 
@@ -58,4 +58,31 @@ test('board-notify hook emits additionalContext for an inbound task (walk-up mes
   const out = JSON.parse(res.stdout);
   assert.equal(out.hookSpecificOutput.hookEventName, 'SessionStart');
   assert.match(out.hookSpecificOutput.additionalContext, /Pending task from agentA/);
+});
+
+test('board-notify hook flips seen_by_from on a surfaced completion (notify-once)', async () => {
+  const mesh = await mkdtemp(join(tmpdir(), 'board-hook-seen-'));
+  const rootA = join(mesh, 'agentA');
+  await mkdir(rootA, { recursive: true });
+  await writeFile(join(mesh, 'mesh.json'), JSON.stringify({
+    'x-agentmesh-generated': true, meshVersion: 1, agents: [{ name: 'agentA', root: 'agentA' }]
+  }), 'utf8');
+  const real = await realpath(mesh);
+  // A assigned a task to B that is now done and unseen by A.
+  const t = await createTask(real, { from: 'agentA', to: 'agentB', title: 'X', objective: 'o', requirements: 'r', at: '2026-06-15T00:00:00.000Z' });
+  // Move it to done + unseen directly via writeTask.
+  const { writeTask } = await import('../src/board/store.js');
+  await writeTask(real, { ...t, state: 'done', result: 'fin', seen_by_from: false,
+    history: [...t.history, { state: 'acknowledged', at: '', by: 'agentB' }, { state: 'in-progress', at: '', by: 'agentB' }, { state: 'done', at: '', by: 'agentB' }] });
+
+  const res = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ cwd: join(real, 'agentA') }),
+    encoding: 'utf8',
+    env: { ...process.env, AGENT_MESH_MESH_CEILING: '' }
+  });
+  assert.equal(res.status, 0);
+  const out = JSON.parse(res.stdout);
+  assert.match(out.hookSpecificOutput.additionalContext, /Done: "X" you assigned to agentB/);
+  const after = await readTask(real, t.id);
+  assert.equal(after.seen_by_from, true);
 });

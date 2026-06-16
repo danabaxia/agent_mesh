@@ -31,29 +31,31 @@ async function findMeshCeiling(start) {
   return null;
 }
 
-try {
-  let payload = {};
+(async () => {
   try {
-    let text = '';
-    for await (const chunk of process.stdin) text += chunk;
-    payload = JSON.parse(text || '{}');
-  } catch { /* no/!JSON stdin → use cwd */ }
+    let payload = {};
+    try {
+      let text = '';
+      for await (const chunk of process.stdin) text += chunk;
+      payload = JSON.parse(text || '{}');
+    } catch { /* no/!JSON stdin → use cwd */ }
 
-  const cwd = payload?.cwd || process.cwd();
-  const root = await realpath(cwd).catch(() => cwd);
-  const env = process.env;
+    const cwd = payload?.cwd || process.cwd();
+    const root = await realpath(cwd).catch(() => cwd);
+    const env = process.env;
 
-  // Mesh root: env first, else walk up from the agent root.
-  const meshRoot = resolveMeshRoot(env) || (await findMeshCeiling(root));
-  if (!meshRoot) emit('');
+    // Mesh root: env first, else walk up from the agent root.
+    const meshRoot = resolveMeshRoot(env) || (await findMeshCeiling(root));
+    if (!meshRoot) { emit(''); return; }
 
-  const name = await resolveSelfName({ root, env: { ...env, AGENT_MESH_MESH_CEILING: meshRoot } });
-  if (!name) emit('');
+    const name = await resolveSelfName({ root, env: { ...env, AGENT_MESH_MESH_CEILING: meshRoot } });
+    if (!name) { emit(''); return; }
 
-  const tasks = await listTasks(meshRoot);
-  const notices = selectNotices(tasks, name);
-  for (const t of notices.outboundDone) await markSeenByFrom(meshRoot, t.id);
-  emit(renderBoardNotice(notices));
-} catch {
-  emit(''); // fail open
-}
+    const tasks = await listTasks(meshRoot);
+    const notices = selectNotices(tasks, name);
+    for (const t of notices.outboundDone) await markSeenByFrom(meshRoot, t.id);
+    emit(renderBoardNotice(notices));
+  } catch {
+    emit(''); // fail open
+  }
+})();
