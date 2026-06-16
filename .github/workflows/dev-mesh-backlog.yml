@@ -28,6 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Push via DEV_MESH_PAT (a PAT with `workflows` scope) so the Coder can land fixes
+          # that touch .github/workflows/** — the Actions GITHUB_TOKEN is barred from workflow
+          # files by GitHub. Falls back to GITHUB_TOKEN when the secret is absent (non-breaking;
+          # workflow-file edits stay blocked until the PAT is set). NOTE: PAT pushes are not
+          # covered by the GITHUB_TOKEN recursion guard, so they re-trigger workflows — the
+          # per-PR budget caps + concurrency groups are the loop bound.
+          token: ${{ secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -43,7 +51,7 @@ jobs:
         id: claude
         with:
           claude_code_oauth_token: ${{ env.CLAUDE_CODE_OAUTH_TOKEN }}
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN }}
           # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
           # action otherwise forces Opus 4.8, which THIS key cannot access (instant
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
