@@ -80,12 +80,14 @@ jobs:
   # ships. Issue #41.
   validate-memory:
     runs-on: ubuntu-latest
+    timeout-minutes: 3   # trivially fast (parse small JSON); ceiling so a hung runner can't hold the PR
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
       - name: Validate quick.json files
+        shell: bash
         run: |
           # bash array (not `ls` + word-splitting): role dirs with a space/glob char can't
           # split into wrong args. If the glob matches nothing, files[0] is the literal
