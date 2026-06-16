@@ -65,6 +65,8 @@ jobs:
 
             Do NOT push memory to main directly and do NOT touch code — promotion is
             review-gated by design.
+      - name: Validate quick.json caps (belt-and-suspenders backstop)
+        run: node scripts/validate-quick-memory.mjs dev-mesh/curator/memory/quick.json
       - name: Verify the agent actually worked (green != healthy)
         if: always()
         env:
