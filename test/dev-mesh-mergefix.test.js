@@ -78,6 +78,30 @@ test('mergefix: Drive Coder skipped on push (claude-code-action does not support
   );
 });
 
+test('mergefix: CONFLICTS_FOUND branches, Drive Coder gate, and Push step coverage', () => {
+  // R2(1): both the no-conflict and conflict branches must exist in the merge step.
+  assert.match(wf, /CONFLICTS_FOUND=false/, 'success-path must set CONFLICTS_FOUND=false');
+  assert.match(wf, /CONFLICTS_FOUND=true/, 'conflict-path must set CONFLICTS_FOUND=true');
+  // R2(2): Drive Coder if: must gate on CONFLICTS_FOUND == 'true' so a refactor that drops
+  // this condition cannot silently invoke the agent when there is nothing to resolve.
+  assert.match(
+    wf,
+    /env\.CONFLICTS_FOUND\s*==\s*'true'/,
+    "Drive Coder if: must include env.CONFLICTS_FOUND == 'true'",
+  );
+  // R2(3): Push step must exist and guard on steps.claude.outcome == 'success' so a failed
+  // agent run cannot push partial/broken conflict resolutions.
+  assert.match(wf, /Push resolved merge/, 'Push resolved merge step must exist');
+  assert.match(
+    wf,
+    /steps\.claude\.outcome\s*==\s*['"]success['"]/,
+    "Push step if: must check steps.claude.outcome == 'success'",
+  );
+  // R1 regression: non-zero git merge exit must be inspected with git ls-files -u so hard
+  // git errors (exit 128+) don't silently set CONFLICTS_FOUND=true.
+  assert.match(wf, /git ls-files -u/, 'non-zero merge exit must be verified via git ls-files -u');
+});
+
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {
   assert.match(wf, /\[mergefix\]/, 'commits are tagged [mergefix] for the budget count');
   assert.doesNotMatch(wf, /--force\b/, 'must never force-push');

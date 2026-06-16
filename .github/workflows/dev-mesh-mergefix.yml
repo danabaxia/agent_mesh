@@ -97,8 +97,17 @@ jobs:
             echo "CONFLICTS_FOUND=false" >> "$GITHUB_ENV"
             echo "No conflicts — Drive Coder will be skipped."
           else
-            echo "CONFLICTS_FOUND=true" >> "$GITHUB_ENV"
-            echo "Conflicts detected; leaving repo in mid-merge state for Drive Coder."
+            merge_exit=$?
+            # Distinguish real conflicts (exit 1, unresolved files) from hard git errors
+            # (exit 128+, e.g. bad ref or detached HEAD) — don't invoke Drive Coder against
+            # an undefined repo state.
+            if git ls-files -u | grep -q .; then
+              echo "CONFLICTS_FOUND=true" >> "$GITHUB_ENV"
+              echo "Conflicts detected; leaving repo in mid-merge state for Drive Coder."
+            else
+              echo "::error::git merge failed with exit $merge_exit but no unresolved files — hard git error, aborting." >&2
+              exit 1
+            fi
           fi
       - name: Drive Coder (resolve the conflict with main)
         if: steps.pick.outputs.none != 'true' && env.CONFLICTS_FOUND == 'true' && env.BUDGET_EXHAUSTED != 'true' && github.event_name != 'push'
@@ -127,7 +136,7 @@ jobs:
                  - code / tests → the minimal correct COMBINED result (honour both intents).
                  If a conflict can't be resolved safely → `git merge --abort`, comment on PR
                  #${{ steps.pick.outputs.number }} what's blocking, and STOP.
-              3. Run `node run-all-tests.mjs` until green; then `git add -A` and commit
+              3. Run `node run-all-tests.mjs` until green; then `git add -u` and commit
                  with a `[mergefix]` message (never force-push, never merge the PR).
                  Comment a one-line summary on PR #${{ steps.pick.outputs.number }}.
                  Do NOT push — the push is handled automatically after this step.
@@ -139,4 +148,5 @@ jobs:
       - name: Push resolved merge
         if: steps.pick.outputs.none != 'true' && env.CONFLICTS_FOUND == 'true' && steps.claude.outcome == 'success'
         run: |
+          # $PR_BRANCH is in $GITHUB_ENV (exported by the Mergefix budget step).
           git push origin "HEAD:$PR_BRANCH"
