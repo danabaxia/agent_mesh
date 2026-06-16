@@ -42,3 +42,16 @@ test('safety-critical skills encode the invariants', () => {
   const cls = readFileSync(join(devMesh, 'triager', 'skills', 'classify-ci-failure', 'SKILL.md'), 'utf8');
   assert.match(cls, /infra > out-of-scope > flake > real_bug/, 'classifier precedence must be stated');
 });
+
+test('promote-to-memory SKILL.md retains the pre-push validation gate (step 2b)', () => {
+  // This is the PRIMARY gate: Claude validates quick.json caps and aborts before
+  // pushing. The workflow-level backstop (dev-mesh-curate.yml) only catches the case
+  // where Claude skips this instruction. If step 2b is removed here, the pipeline
+  // loses its early-exit and only the post-hoc backstop remains.
+  const promoteMd = readFileSync(
+    join(devMesh, 'curator', 'skills', 'promote-to-memory', 'SKILL.md'), 'utf8');
+  assert.match(promoteMd, /validate-quick-memory\.mjs/,
+    'promote-to-memory: must include the pre-push validation step (step 2b)');
+  assert.match(promoteMd, /do NOT push/,
+    'promote-to-memory: must instruct Claude to abort (do NOT push) on non-zero exit');
+});

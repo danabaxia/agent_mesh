@@ -61,12 +61,19 @@ test('memory-automerge: validates the MERGE RESULT (merges main first), then squ
   assert.ok(existsSync(scriptPath), 'scripts/validate-quick-memory.mjs must exist');
 });
 
-test('validate-quick-memory.mjs exits 1 with no args (blocks .md-only PRs with no quick.json)', () => {
-  // The workflow validates `git ls-files quick.json`; for an .md-only PR in a tree with no
-  // tracked quick.json, that expands to nothing and the validator is called with no args.
-  // The workflow comment relies on this exiting non-zero to BLOCK the merge — pin it.
+test('validate-quick-memory.mjs exits 1 with no args (script-level fail-closed)', () => {
+  // Script property: called with no paths it errors rather than vacuously passing. (The
+  // workflow now never reaches this — it handles the no-quick.json case explicitly, below —
+  // but the script staying fail-closed is still the right default.)
   const r = spawnSync(process.execPath, [scriptPath], { encoding: 'utf8' });
-  assert.strictEqual(r.status, 1, 'no-args must exit 1 (safe: blocks the merge)');
+  assert.strictEqual(r.status, 1, 'no-args must exit 1');
+});
+
+test('memory-automerge: the empty (no quick.json) case comments + needs-a-human, never a silent skip', () => {
+  // The glob can match nothing (e.g. an .md-only PR before any role has a quick.json). That
+  // branch must leave author feedback, not silently re-skip every sweep (#67 review finding).
+  assert.match(wf, /\[\[ ! -e "\$\{qjs\[0\]\}" \]\]/, 'must detect the empty-glob case');
+  assert.match(wf, /no quick\.json found in the merged tree — needs a human/, 'empty case must post a needs-a-human comment');
 });
 
 test('validate-quick-memory.mjs exits 1 for an over-cap l0 entry (CI gate fails closed)', () => {

@@ -63,8 +63,11 @@ test('doctor generates a marked, stdio-A2A topology from the committed content',
     assert.deepEqual(Object.keys(creg.peers), ['tester']);
     assert.ok(JSON.parse(readFileSync(join(ws, 'coder', '.mcp.json'), 'utf8')).mcpServers.agentmesh_peerbridge);
 
-    // A leaf (analyst) has no peers → doctor generates no peer-bridge wiring.
-    assert.equal(existsSync(join(ws, 'analyst', '.mcp.json')), false, 'leaf has no peer-bridge');
+    // A leaf (analyst) has no OUTBOUND peers, but it IS the maintainer's peer (a
+    // task-board receiver), so doctor wires the peer-bridge so it can run
+    // list_my_tasks / update_my_task on tasks assigned to it.
+    assert.ok(JSON.parse(readFileSync(join(ws, 'analyst', '.mcp.json'), 'utf8')).mcpServers.agentmesh_peerbridge,
+      'receiver leaf gets a peer-bridge for the task board');
 
     // Idempotent: re-doctor flags nothing about wiring.
     const report = await doctor(ws, { apply: true });

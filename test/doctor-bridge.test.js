@@ -82,8 +82,10 @@ test('doctor --apply MERGES into an authored .mcp.json, preserving existing serv
 });
 
 test('peerless agent: no .mcp.json created; a stale bridge entry is removed', async () => {
-  const meshRoot = await buildMesh();
-  // plant a stale bridge entry on the PEERLESS agent b
+  // peers:[] → a has no outbound peers and b is no one's peer, so b is a true
+  // NON-participant (cannot assign or receive). Its stale bridge must be removed.
+  const meshRoot = await buildMesh({ peers: [] });
+  // plant a stale bridge entry on the non-participant agent b
   await writeFile(join(meshRoot, 'b', '.mcp.json'), JSON.stringify({
     mcpServers: {
       agentmesh_peerbridge: { command: 'node', args: ['old', 'serve-peer-bridge', 'old'] },
@@ -94,6 +96,13 @@ test('peerless agent: no .mcp.json created; a stale bridge entry is removed', as
   const mcpB = await readMcp(meshRoot, 'b');
   assert.ok(!mcpB.mcpServers.agentmesh_peerbridge, 'stale bridge removed from peerless agent');
   assert.ok(mcpB.mcpServers.keepme, 'other servers untouched');
+});
+
+test('inbound-only agent (a peer of someone, no peers itself) still gets the bridge', async () => {
+  const meshRoot = await buildMesh();            // a.peers=['b'], b.peers=[]  → b is a's peer
+  await doctor(meshRoot, { apply: true });
+  const mcpB = await readMcp(meshRoot, 'b');
+  assert.ok(mcpB.mcpServers.agentmesh_peerbridge, 'receiver b gets a bridge so it can run list_my_tasks/update_my_task');
 });
 
 test('dry-run reports the sync but writes nothing', async () => {

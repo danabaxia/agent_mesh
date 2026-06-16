@@ -50,10 +50,13 @@ test('setup wires peer-selection + two-hop topology over stdio A2A', async () =>
       const mcp = JSON.parse(readFileSync(join(ws, agent, '.mcp.json'), 'utf8'));
       assert.ok(mcp.mcpServers.agentmesh_peerbridge, `${agent} peer-bridge wired`);
     }
-    // lib is a leaf — marked registry with empty peers, and no peer-bridge.
+    // lib is a leaf — marked registry with empty OUTBOUND peers. But lib IS a
+    // peer of app/docs (a task-board receiver), so doctor now wires its peer-
+    // bridge so it can run list_my_tasks / update_my_task on assigned tasks.
     const libReg = JSON.parse(readFileSync(join(ws, 'lib', 'registry.json'), 'utf8'));
     assert.deepEqual(libReg.peers, {}, 'lib leaf has no peers');
-    assert.equal(existsSync(join(ws, 'lib', '.mcp.json')), false, 'lib leaf has no peer-bridge');
+    assert.ok(JSON.parse(readFileSync(join(ws, 'lib', '.mcp.json'), 'utf8')).mcpServers.agentmesh_peerbridge,
+      'receiver leaf gets a peer-bridge for the task board');
 
     // Idempotent: a second doctor --apply leaves the wiring unflagged.
     const report = await doctor(ws, { apply: true });
