@@ -56,3 +56,25 @@ test('syncBoardNotifyHook preserves an author SessionStart hook while adding/rem
   assert.equal(doc.hooks.SessionStart.length, 1);
   assert.equal(doc.hooks.SessionStart[0].hooks[0].command, 'echo');
 });
+
+test('syncBoardNotifyHook is idempotent starting from a pre-existing settings file', async () => {
+  const agentRoot = await mkdtemp(join(tmpdir(), 'board-doctor-'));
+  await mkdir(join(agentRoot, '.claude'), { recursive: true });
+  await writeFile(join(agentRoot, '.claude', 'settings.json'), JSON.stringify({ env: { A: '1' } }), 'utf8');
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, [], []);
+  const fixed2 = [];
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: ['agentA'] }, true, fixed2, []);
+  assert.deepEqual(fixed2, []);
+});
+
+test('syncBoardNotifyHook does not mistake an author hook whose later arg ends in board-notify.js', async () => {
+  const agentRoot = await mkdtemp(join(tmpdir(), 'board-doctor-'));
+  await mkdir(join(agentRoot, '.claude'), { recursive: true });
+  const authorHook = { matcher: '*', hooks: [{ type: 'command', command: process.execPath, args: ['--script', 'hooks/board-notify.js'] }] };
+  await writeFile(join(agentRoot, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [authorHook] } }), 'utf8');
+  // remove ours (no peers): the author hook (board-notify.js only in args[1]) must SURVIVE
+  await syncBoardNotifyHook({ name: 'agentB', agentRoot, peers: [] }, true, [], []);
+  const doc = JSON.parse(await readFile(join(agentRoot, '.claude', 'settings.json'), 'utf8'));
+  assert.equal(doc.hooks.SessionStart.length, 1);
+  assert.deepEqual(doc.hooks.SessionStart[0].hooks[0].args, ['--script', 'hooks/board-notify.js']);
+});

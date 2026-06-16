@@ -47,6 +47,7 @@ const BIN_PATH = resolve(__dirname, '../../bin/agent-mesh.js');
  *   @param {boolean} [opts.apply]        false = dry-run (default); true = execute fixes
  *   @param {boolean} [opts.managedOnly]  true = skip Seeded steps (seedMissingAnatomy,
  *                                        proposeSeededFixes); only fixRegistry + syncBridgeMcp
+ *                                        + syncBoardNotifyHook
  * @returns {Promise<{ fixed: string[], seeded: string[], proposed: string[], flagged: string[] }>}
  */
 export async function doctor(meshRoot, { agentName, apply = false, managedOnly = false } = {}) {
@@ -168,8 +169,8 @@ function boardNotifyHookEntry() {
 // hook script path, so we never touch an author's unrelated SessionStart hooks.)
 function isBoardHookEntry(entry) {
   return (entry?.hooks ?? []).some(
-    (h) => h?.type === 'command' && Array.isArray(h.args) &&
-           h.args.some((a) => String(a).replace(/\\/g, '/').endsWith(BOARD_HOOK_MARKER))
+    (h) => h?.type === 'command' && Array.isArray(h.args) && h.args.length > 0 &&
+           String(h.args[0]).replace(/\\/g, '/').endsWith(BOARD_HOOK_MARKER)
   );
 }
 
