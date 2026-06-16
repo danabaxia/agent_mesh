@@ -54,8 +54,22 @@ test('mergefix: branch ref via env (no shell/prompt injection) + fail-fast on em
 });
 
 test('mergefix: Drive Coder skipped on push (claude-code-action does not support push event)', () => {
-  assert.match(wf, /github\.event_name\s*!=\s*'push'/,
-    'Drive Coder if: must guard against push event (claude-code-action@v1 does not support push context)');
+  // Anchor the guard to the Drive Coder step's own condition (appended after the existing
+  // BUDGET_EXHAUSTED clause), not just "anywhere in the file" — a guard on the wrong step
+  // (e.g. the Find-PR step) would silently change behaviour yet pass a loose match. This also
+  // verifies the original clauses weren't dropped when the line was edited.
+  assert.match(
+    wf,
+    /BUDGET_EXHAUSTED\s*!=\s*'true'\s*&&\s*github\.event_name\s*!=\s*'push'/,
+    "Drive Coder if: must append `&& github.event_name != 'push'` to its existing conditions",
+  );
+  // The schedule backstop is the resolution path for push-discovered conflicts — it must NOT
+  // be guarded out by an over-wide expression.
+  assert.doesNotMatch(
+    wf,
+    /event_name\s*!=\s*'schedule'/,
+    'schedule backstop must not be blocked — it is how push-discovered conflicts get resolved',
+  );
 });
 
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {
