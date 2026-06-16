@@ -144,6 +144,17 @@
       "ts": "2026-06-15"
     }
   },
+  "memory-cap-validate-at-write": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Validate quick.json caps at write time (Curator workflow), not only at auto-merge — over-cap l0s deadlock the pipeline.",
+    "l1": "PR #44 consolidated 9 stalled memory:promote PRs into one valid quick.json. Root cause: three PRs carried l0 fields >120 chars that the auto-merge validator correctly refused. Mergefix resolves merge conflicts but not validation failures, so those PRs were permanently stuck and the remaining PRs piled up behind them. Recovery required a manual consolidation PR that deduped and trimmed all pending entries. Prevention at write time is always cleaner than post-hoc recovery.",
+    "value": "(1) Add `node scripts/validate-quick-memory.mjs dev-mesh/curator/memory/quick.json` to the Curator workflow (dev-mesh-curate.yml) AFTER the Curator commits the quick.json update but BEFORE `git push` — fail early rather than create an un-mergeable PR. The script already exists; it just is not called from the write side. (2) Recovery from a deadlock (N conflicting + invalid PRs): list open memory/* branches, read each PR's quick.json diff, dedup + trim all entries to fit caps, fold into one manual consolidation PR, close the stale PRs with a reference to the consolidation PR. (3) Mergefix handles merge CONFLICTS (key-union) but cannot fix validation FAILURES — write-time prevention is the only robust guard against pipeline deadlock. Provenance: PR #44 (2026-06-15).",
+    "provenance": {
+      "source": "PR #44: memory(curator): consolidate the stalled memory:promote backlog into one valid quick.json",
+      "ts": "2026-06-15"
+    }
+  },
   "test-dynamic-discovery-over-lists": {
     "status": "active",
     "valid_to": null,
@@ -152,6 +163,17 @@
     "value": "Pattern for any test over parallel-structured files (per-role, per-agent, per-module): (1) Discover: readdirSync + existsSync to enumerate directories that have the target file — no hardcoded list. (2) Guard: assert discovered.length >= EXPECTED_MIN so an empty result doesn't silently vacuously pass. (3) Validate each discovered entry in a loop. Applies whenever the subject set can grow over time (roles, agents, modules, plugins). Provenance: PR #40 / Issue #39 (2026-06-15).",
     "provenance": {
       "source": "PR #40: test(dev-mesh): validate all roles' quick.json in the hermetic suite (#39)",
+      "ts": "2026-06-15"
+    }
+  },
+  "quick-json-supersede-delete": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Delete superseded quick.json entries: valid_to set breaks isLive() CI gate when dynamic role discovery runs.",
+    "l1": "PR #40 changed dev-mesh-memory.test.js to discover roles dynamically — previously only coder/triager were validated. Once curator was included, isLive() caught honesty-gate-blocked-advisory (status:'superseded', valid_to set) that had sat since PR #26. Fix (PR #50): delete the entry outright — the seed file must contain only live entries (status:'active', valid_to:null). The replacement (honesty-gate-role-scoped) was already active. Superseded entries are never injected and break the CI gate.",
+    "value": "Supersession is a two-step operation: (1) add the replacement entry (status:'active', valid_to:null); (2) DELETE the old entry from quick.json in the same PR. Do NOT leave it as status:'superseded' with valid_to set — isLive() in dev-mesh-memory.test.js requires every persisted entry to be live. The 'mark it and leave it' pattern compiles silently until dynamic role discovery expands coverage (as PR #40 did), at which point the stale entry causes an immediate CI failure. The replacement's provenance captures historical context; no information is lost by deleting. Pattern: distill replacement → write replacement entry → delete old key → open memory:promote PR. Provenance: PR #50 (2026-06-15), closing Issue #48.",
+    "provenance": {
+      "source": "PR #50: fix(dev-mesh): remove superseded honesty-gate-blocked-advisory from curator quick.json",
       "ts": "2026-06-15"
     }
   },
@@ -164,6 +186,28 @@
     "provenance": {
       "source": "PR #49: fix: detect registry path drift on relocation; improve caller_identity_unresolved diagnostic",
       "ts": "2026-06-15"
+    }
+  },
+  "github-token-workflow-write-blocked": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GITHUB_TOKEN cannot write .github/workflows/** — do-workers need DEV_MESH_PAT (Workflows:RW) for self-editable CI.",
+    "l1": "GitHub rejects GITHUB_TOKEN pushes to .github/workflows/** (only PATs/GitHub Apps with Workflows:RW scope can write there). Without a PAT, a Coder writing and testing a workflow fix cannot push it — the ephemeral runner discards the branch and the issue deadlocks with a report but no PR (bugs #38 and #41). Fix: DEV_MESH_PAT || GITHUB_TOKEN fallback chain in every do-worker that may touch CI. curate must stay on GITHUB_TOKEN only — removing the recursion guard breaks the memory auto-merge loop.",
+    "value": "Add a fine-grained PAT (Contents:RW, Pull requests:RW, Workflows:RW, scoped to this repo only) as repo secret DEV_MESH_PAT. Wire do-workers (backlog, autofix, mergefix, review-respond) as `secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN` — PAT when present, GITHUB_TOKEN otherwise; fully non-breaking until the secret is created. curate must stay on GITHUB_TOKEN only: its memory:promote PRs rely on GitHub's recursion guard (GITHUB_TOKEN PRs don't re-fire pull_request events). Add .github/CODEOWNERS gating .github/workflows/** on owner review — the mesh can now author changes to its own CI harness, so the human merge gate must be explicit and specific. Pin the full wiring as a standalone hermetic lint (test/dev-mesh-pat-wiring.test.js). PAT pushes re-trigger workflows — bounded by existing per-PR budget caps (see actions-recursion-guard-schedule). Provenance: PR #53 (2026-06-16), fixing Issue #38 + #41.",
+    "provenance": {
+      "source": "PR #53: chore(dev-mesh): let do-workers self-edit workflows via DEV_MESH_PAT + CODEOWNERS gate",
+      "ts": "2026-06-16"
+    }
+  },
+  "paths-ignore-suppresses-validate-jobs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "paths-ignore at the trigger level silently suppresses ALL jobs — use per-job label-based if: for expensive-only skips.",
+    "l1": "validate-memory job (PR #59/Issue #41) catches over-cap quick.json at PR time. paths-ignore at the workflow trigger would have suppressed it for the memory:promote PRs it must guard. Fix: leave validate-memory unconditional; add label-based if: only on the heavy matrix job. Cascade: gate the test job on if: needs.matrix.result == 'success' so it skips cleanly when matrix is skipped.",
+    "value": "Pattern: (1) Validation jobs that must run for special PRs must be unconditional — no paths-ignore. (2) Skip expensive jobs via per-job label if:, not trigger paths-ignore. (3) Gate dependent jobs on needs.X.result == 'success' so they skip cleanly when parent skips. (4) Use bash arrays not ls for CI file globs — avoids SC2012 word-splitting. Provenance: PR #59 (2026-06-16).",
+    "provenance": {
+      "source": "PR #59: ci: add validate-memory job; gate heavy matrix by label not paths-ignore (#41)",
+      "ts": "2026-06-16"
     }
   }
 }

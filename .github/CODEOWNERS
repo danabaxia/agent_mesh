@@ -1,0 +1,14 @@
+# CODEOWNERS — defense-in-depth for the self-hosting Dev-mesh.
+#
+# The mesh's do-workers push with DEV_MESH_PAT (a PAT with `workflows` scope) so the
+# Coder can land fixes that touch workflow files — the Actions GITHUB_TOKEN is barred
+# from .github/workflows/** by GitHub. That means the mesh can now AUTHOR changes to its
+# own CI / safety harness on a branch. This file makes the human merge gate explicit and
+# specific for those changes: any PR touching a workflow file (or this file) requires
+# review from the repo owner.
+#
+# NOTE: CODEOWNERS is only *enforced* when branch protection on `main` has
+# "Require review from Code Owners" enabled. Set that on, or this is advisory only.
+
+/.github/workflows/   @danabaxia
+/.github/CODEOWNERS    @danabaxia

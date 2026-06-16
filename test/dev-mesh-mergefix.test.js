@@ -53,6 +53,31 @@ test('mergefix: branch ref via env (no shell/prompt injection) + fail-fast on em
   assert.match(wf, /if \[ -z "\$CLEAN" \]/, 'fail-fast when the OAuth token is empty');
 });
 
+test('mergefix: Drive Coder skipped on push (claude-code-action does not support push event)', () => {
+  // Anchor the guard to the Drive Coder step's own condition (appended after the existing
+  // BUDGET_EXHAUSTED clause), not just "anywhere in the file" — a guard on the wrong step
+  // (e.g. the Find-PR step) would silently change behaviour yet pass a loose match. This also
+  // verifies the original clauses weren't dropped when the line was edited.
+  assert.match(
+    wf,
+    /BUDGET_EXHAUSTED\s*!=\s*'true'\s*&&\s*github\.event_name\s*!=\s*'push'/,
+    "Drive Coder if: must append `&& github.event_name != 'push'` to its existing conditions",
+  );
+  // The schedule backstop is the resolution path for push-discovered conflicts — it must NOT
+  // be guarded out by an over-wide expression.
+  assert.doesNotMatch(
+    wf,
+    /event_name\s*!=\s*'schedule'/,
+    'schedule backstop must not be blocked — it is how push-discovered conflicts get resolved',
+  );
+  // …and workflow_dispatch (on-demand resolution) must stay un-guarded too.
+  assert.doesNotMatch(
+    wf,
+    /event_name\s*!=\s*'workflow_dispatch'/,
+    'workflow_dispatch must not be blocked — it is the on-demand conflict-resolution trigger',
+  );
+});
+
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {
   assert.match(wf, /\[mergefix\]/, 'commits are tagged [mergefix] for the budget count');
   assert.doesNotMatch(wf, /--force\b/, 'must never force-push');
