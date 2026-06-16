@@ -187,5 +187,16 @@
       "source": "PR #53: chore(dev-mesh): let do-workers self-edit workflows via DEV_MESH_PAT + CODEOWNERS gate",
       "ts": "2026-06-16"
     }
+  },
+  "doctor-bridge-env-stamp": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "doctor syncBridgeMcp must stamp MESH_ROOT/MESH_CEILING in .mcp.json — plain sessions have no other env source.",
+    "l1": "PR #54: syncBridgeMcp wrote the agentmesh_peerbridge entry to .mcp.json with no env block. Dashboard/worker spawns inject MESH_ROOT/MESH_CEILING separately so they work. A direct folder session reads only .mcp.json — bridge starts env-blind, resolveCallerName returns null, and every delegate_to_peer fails as caller_identity_unresolved despite a correct registry.",
+    "value": "Whenever mesh tooling writes an MCP server entry to .mcp.json (doctor syncBridgeMcp or equivalent), embed the reserved env the framework passes at runtime: AGENT_MESH_MESH_ROOT (<mesh>/mesh) and AGENT_MESH_MESH_CEILING (mesh root). Direct sessions consume only .mcp.json — they have no other env source for these keys. Dashboard/worker spawns inject them separately (masking the gap during testing). Assert the synced entry carries the env block in tests. Provenance: PR #54 (2026-06-15).",
+    "provenance": {
+      "source": "PR #54: fix(doctor): stamp mesh env on synced peer-bridge .mcp.json entry",
+      "ts": "2026-06-16"
+    }
   }
 }
