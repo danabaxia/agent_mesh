@@ -67,7 +67,13 @@ test('validate-quick-memory.mjs exits 1 with no args (blocks .md-only PRs with n
   assert.strictEqual(r.status, 1, 'no-args must exit 1 (safe: blocks the merge)');
 });
 
-test('ci.yml skips the heavy matrix for memory-only PRs', () => {
-  assert.match(ci, /paths-ignore:/);
-  assert.match(ci, /dev-mesh\/\*\/memory\/\*\*/, 'ci.yml must paths-ignore memory dirs');
+test('ci.yml skips the heavy matrix for memory-only PRs, but still runs validate-memory', () => {
+  // Mechanism (#41): a label-based if-condition on the matrix job (NOT paths-ignore), so the
+  // validate-memory job still runs for memory:promote PRs even though the heavy matrix skips.
+  // paths-ignore would have suppressed validate-memory too.
+  assert.match(ci, /memory:promote/, 'matrix job must gate-skip on the memory:promote label');
+  assert.match(ci, /needs\.matrix\.result\s*==\s*['"]success['"]/, 'test job must skip when matrix is skipped');
+  assert.match(ci, /validate-memory:/, 'a validate-memory job must exist');
+  assert.match(ci, /validate-quick-memory\.mjs/, 'validate-memory must run the validator');
+  assert.doesNotMatch(ci, /paths-ignore:/, 'paths-ignore is replaced by the label gate (it would skip validate-memory)');
 });
