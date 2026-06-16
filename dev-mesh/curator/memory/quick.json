@@ -209,5 +209,16 @@
       "source": "PR #59: ci: add validate-memory job; gate heavy matrix by label not paths-ignore (#41)",
       "ts": "2026-06-16"
     }
+  },
+  "ci-sweep-silent-skip-antipattern": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "CI sweeps that match nothing must post a comment — silent skip leaves PR authors with no signal and stalls the queue.",
+    "l1": "PR #67: the automerge sweep's no-quick.json branch silently re-skipped every cycle. An .md-only PR sat indefinitely with no comment and no merge path. Fix: detect empty glob explicitly (`[[ ! -e \"${qjs[0]}\" ]]`) and post a PR comment naming what is missing. Applies to any CI sweep with a conditional skip — missing files, no matching PRs, pre-condition not met. Pattern: (1) detect skip condition; (2) post comment; (3) continue. Never assume re-running a sweep on unchanged state produces new results.",
+    "value": "For any scheduled or event-driven CI sweep that may conditionally skip a PR: (1) detect the skip condition EXPLICITLY (bash: `[[ ! -e \"${arr[0]}\" ]]` for empty glob; `[[ -z \"$list\" ]]` for empty string); (2) post a PR comment that names the reason and what action is needed ('no quick.json found — needs a human'); (3) continue to next PR without attempting a merge. Never silently `continue` — the author has no signal and the PR stalls in the sweep queue indefinitely. This is distinct from 'nothing to do' (e.g. PR is up-to-date): a truly unprocessable PR must say so. Applies to: automerge, autofix, ci-sweep, mergefix, any sweep that conditionally skips. Also: combine with the bash-array pattern (not unquoted $var expansion) so the empty-check is reliable. Provenance: PR #67 (2026-06-16), A2A-authored seam probe; Reviewer finding C.",
+    "provenance": {
+      "source": "PR #67: fix(dev-mesh): quote validator args in memory-automerge (A2A-authored seam probe)",
+      "ts": "2026-06-16"
+    }
   }
 }
