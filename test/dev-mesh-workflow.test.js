@@ -185,6 +185,13 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
   }
 });
 
+test('CURATOR GATE: curate validates quick.json caps before any push (prevents un-mergeable PRs)', () => {
+  // memory-cap-validate-at-write (quick.json): over-cap l0s deadlock the pipeline.
+  // The validate step must appear after the claude-code-action and before assert-run-healthy.
+  assert.match(wf.curate, /validate-quick-memory\.mjs.*quick\.json/,
+    'curate: must call validate-quick-memory.mjs on the curator quick.json');
+});
+
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   // autofix is the one exception: it's a combined Triager+Coder CI-fix role described
   // INLINE in the prompt (it deliberately does NOT read the no-shell Coder AGENT.md).
