@@ -77,7 +77,13 @@ jobs:
             # we skip to avoid passing a garbage arg to the validator.
             qjs=(dev-mesh/*/memory/quick.json)
             if [[ ! -e "${qjs[0]}" ]]; then
-              echo "no quick.json files found — skipping validator"
+              # No quick.json in the merged tree (e.g. an .md-only PR before any role has one).
+              # Do NOT silently re-skip every sweep — leave the author feedback so it isn't a
+              # dead-end (preserves the old "no quick.json → needs a human" intent without
+              # passing a garbage arg to the validator).
+              echo "#$pr has no quick.json in the merged tree — needs a human"
+              gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" \
+                --body "🤖 memory auto-merge skipped: no quick.json found in the merged tree — needs a human."
             elif node scripts/validate-quick-memory.mjs "${qjs[@]}"; then
               # NB: gh squash-merges the PR HEAD onto main server-side, not our local merge
               # commit — so this is validated against an APPROXIMATION of the final state. The
