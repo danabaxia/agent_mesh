@@ -231,5 +231,16 @@
       "source": "PR #67: fix(dev-mesh): quote validator args in memory-automerge (A2A-authored seam probe)",
       "ts": "2026-06-16"
     }
+  },
+  "task-board-interactive-handoff": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Mesh task board for user-interactive peer work: framework identity, only `to` advances, brief is data, hook fails open.",
+    "l1": "PR #64: headless ask/do is for automation; use the mesh board for tasks requiring user involvement. Identity (from/to/id/timestamps) is framework-stamped — same anti-spoof as delegate_task. Only `to` may advance state (forward-only). Brief is surfaced for user review, never auto-executed. SessionStart hook fails open so board unavailability doesn't break interactive sessions.",
+    "value": "Use create_task_for_peer (not delegate_to_peer) for tasks needing user-driven peer work. Doctor wires board to both assigners and receivers. Invariants: from/to/id/timestamps framework-derived (never from args); only `to` advances (forward-only); brief is data (never auto-executed); hook fails open. Board writes go only under <mesh-root>/mesh/board/ — ask-safe. Provenance: PR #64 (2026-06-16).",
+    "provenance": {
+      "source": "PR #64: feat(board): mesh task handoff — durable peer task board",
+      "ts": "2026-06-16"
+    }
   }
 }
