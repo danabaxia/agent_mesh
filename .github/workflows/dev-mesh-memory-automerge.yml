@@ -70,11 +70,15 @@ jobs:
               git merge --abort 2>&1 || echo "merge --abort failed; git state may be inconsistent"
               git checkout - >/dev/null 2>&1 || true; echo "::endgroup::"; continue
             fi
-            # ls-files lists ALL tracked quick.json (every role), not just this PR's changed
-            # files — so an .md-only PR still validates the resulting quick.json(s). If none
-            # exist, the validator is called with no args and exits 1 (safe: blocks the merge).
-            qjs=$(git ls-files 'dev-mesh/*/memory/quick.json')
-            if node scripts/validate-quick-memory.mjs $qjs; then
+            # bash array (not git ls-files + word-splitting): a path with a space or glob
+            # char would break unquoted expansion (shellcheck SC2086/SC2012). Glob the
+            # worktree directly — covers every tracked role after merging main above. If
+            # the glob matches nothing, qjs[0] is the literal pattern (non-existent) and
+            # we skip to avoid passing a garbage arg to the validator.
+            qjs=(dev-mesh/*/memory/quick.json)
+            if [[ ! -e "${qjs[0]}" ]]; then
+              echo "no quick.json files found — skipping validator"
+            elif node scripts/validate-quick-memory.mjs "${qjs[@]}"; then
               # NB: gh squash-merges the PR HEAD onto main server-side, not our local merge
               # commit — so this is validated against an APPROXIMATION of the final state. The
               # concurrency group serialises sweeps and the per-loop fetch accounts for prior
