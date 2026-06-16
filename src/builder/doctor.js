@@ -47,6 +47,7 @@ const BIN_PATH = resolve(__dirname, '../../bin/agent-mesh.js');
  *   @param {boolean} [opts.apply]        false = dry-run (default); true = execute fixes
  *   @param {boolean} [opts.managedOnly]  true = skip Seeded steps (seedMissingAnatomy,
  *                                        proposeSeededFixes); only fixRegistry + syncBridgeMcp
+ *                                        + syncBoardNotifyHook
  * @returns {Promise<{ fixed: string[], seeded: string[], proposed: string[], flagged: string[] }>}
  */
 export async function doctor(meshRoot, { agentName, apply = false, managedOnly = false } = {}) {
@@ -65,6 +66,12 @@ export async function doctor(meshRoot, { agentName, apply = false, managedOnly =
     return { fixed, seeded, proposed, flagged };
   }
 
+  // Agents that are named as a peer by ANY agent — they can RECEIVE tasks even
+  // if they have no outbound peers of their own. Board wiring (bridge + hook)
+  // must reach them, not just agents that can assign.
+  const inboundPeers = new Set();
+  for (const a of (manifest.agents || [])) for (const p of (a.peers || [])) inboundPeers.add(p);
+
   // ── Process each agent ──────────────────────────────────────────────────────
   for (const agent of snapshot.agents) {
     // 1. Auto-fix Managed: regenerate drifted/missing registry.json
@@ -79,13 +86,27 @@ export async function doctor(meshRoot, { agentName, apply = false, managedOnly =
       await proposeSeededFixes(agent, apply, proposed, flagged);
     }
 
+    // An agent participates in the task board if it has outbound peers (can
+    // assign/delegate) OR is named as a peer by some other agent (can receive).
+    // Pure receivers (inbound-only leaf agents) MUST be wired too, or the board
+    // is dead for them: no hook to surface inbound tasks, no bridge to call
+    // list_my_tasks/update_my_task.
+    const participatesInBoard = (agent.peers ?? []).length > 0 || inboundPeers.has(agent.name);
+
     // 4. Sync the peer-bridge MCP entry into the agent's .mcp.json so ANY
-    //    claude session started in the agent folder can reach its peers —
-    //    not just dashboard/worker launches (which assemble their own
-    //    config). Safe: the framework's config assembly DROPS reserved
-    //    agentmesh_* names from agent-local files before re-adding the
-    //    bridge, so this entry never duplicates in managed sessions.
-    await syncBridgeMcp(agent, snapshot.meshRoot, apply, fixed, flagged);
+    //    claude session started in the agent folder can reach its peers AND
+    //    drive the task board (receivers included) — not just dashboard/worker
+    //    launches (which assemble their own config). Safe: the framework's
+    //    config assembly DROPS reserved agentmesh_* names from agent-local
+    //    files before re-adding the bridge, so this entry never duplicates in
+    //    managed sessions.
+    await syncBridgeMcp(agent, snapshot.meshRoot, participatesInBoard, apply, fixed, flagged);
+
+    // 5. Install the board-notify SessionStart hook into the agent's
+    //    .claude/settings.json so an interactive `claude` session started in
+    //    the folder surfaces its board tasks. Identified by the hook script
+    //    path, so author-authored SessionStart hooks are preserved.
+    await syncBoardNotifyHook(agent, participatesInBoard, apply, fixed, flagged);
   }
 
   return { fixed, seeded, proposed, flagged };
@@ -97,7 +118,11 @@ export async function doctor(meshRoot, { agentName, apply = false, managedOnly =
 
 const BRIDGE_NAME = 'agentmesh_peerbridge';
 
-async function syncBridgeMcp(agent, meshRoot, apply, fixed, flagged) {
+// Syncs the peer-bridge entry into the agent's .mcp.json. Wired whenever the
+// agent participates in the board — for outbound peers (onward delegation) AND
+// for pure receivers (so they can run list_my_tasks/update_my_task), per
+// `participatesInBoard`.
+async function syncBridgeMcp(agent, meshRoot, participatesInBoard, apply, fixed, flagged) {
   const mcpPath = join(agent.agentRoot, '.mcp.json');
 
   // Read the file as it is on disk (authored content must survive verbatim).
@@ -110,7 +135,7 @@ async function syncBridgeMcp(agent, meshRoot, apply, fixed, flagged) {
     }
   }
 
-  const hasPeers = (agent.peers ?? []).length > 0;
+  const hasPeers = participatesInBoard;
   const current = doc?.mcpServers?.[BRIDGE_NAME];
   // Stamp the reserved mesh env so a plain `claude` session started directly in
   // the agent folder (which has only this .mcp.json — unlike dashboard/worker
@@ -127,8 +152,8 @@ async function syncBridgeMcp(agent, meshRoot, apply, fixed, flagged) {
   if (same) return; // idempotent — nothing to do
 
   const action = wanted
-    ? `[${agent.name}] .mcp.json — peer-bridge entry synced (peers: ${agent.peers.join(', ')})`
-    : `[${agent.name}] .mcp.json — stale peer-bridge entry removed (no peers)`;
+    ? `[${agent.name}] .mcp.json — peer-bridge entry synced (peers: ${(agent.peers ?? []).join(', ') || 'inbound-only'})`
+    : `[${agent.name}] .mcp.json — stale peer-bridge entry removed (no board participation)`;
 
   if (!apply) { fixed.push(`[dry-run] ${action}`); return; }
 
@@ -141,6 +166,66 @@ async function syncBridgeMcp(agent, meshRoot, apply, fixed, flagged) {
   // never a torn .mcp.json. mode 0o644 preserves config readability (writeFile's
   // prior default), not atomicWriteFile's 0o600 secret-file default.
   await atomicWriteFile(mcpPath, JSON.stringify(next, null, 2) + '\n', { mode: 0o644 });
+  fixed.push(action);
+}
+
+// ---------------------------------------------------------------------------
+// Sync: board-notify SessionStart hook in <agent>/.claude/settings.json
+// ---------------------------------------------------------------------------
+
+const BOARD_HOOK_MARKER = 'hooks/board-notify.js';
+
+function boardNotifyHookEntry() {
+  const hookPath = fileURLToPath(new URL('../../hooks/board-notify.js', import.meta.url));
+  return {
+    matcher: '*',
+    hooks: [{ type: 'command', command: process.execPath, args: [hookPath] }]
+  };
+}
+
+// Is `entry` the mesh's own board-notify SessionStart entry? (Identified by the
+// hook script path, so we never touch an author's unrelated SessionStart hooks.)
+function isBoardHookEntry(entry) {
+  return (entry?.hooks ?? []).some(
+    (h) => h?.type === 'command' && Array.isArray(h.args) && h.args.length > 0 &&
+           String(h.args[0]).replace(/\\/g, '/').endsWith(BOARD_HOOK_MARKER)
+  );
+}
+
+export async function syncBoardNotifyHook(agent, participatesInBoard, apply, fixed, flagged) {
+  const settingsPath = join(agent.agentRoot, '.claude', 'settings.json');
+
+  let doc = null;
+  try { doc = JSON.parse(await readFile(settingsPath, 'utf8')); }
+  catch (err) {
+    if (err.code !== 'ENOENT') {
+      flagged.push(`[${agent.name}] .claude/settings.json unparseable — board-notify hook not synced`);
+      return;
+    }
+  }
+
+  const hasPeers = participatesInBoard;
+  const existing = doc?.hooks?.SessionStart ?? [];
+  const others = existing.filter((e) => !isBoardHookEntry(e));
+  const mineNow = existing.some(isBoardHookEntry);
+
+  const wantMine = hasPeers;
+  if (wantMine === mineNow) return; // idempotent
+
+  const action = wantMine
+    ? `[${agent.name}] .claude/settings.json — board-notify SessionStart hook synced`
+    : `[${agent.name}] .claude/settings.json — board-notify SessionStart hook removed (no board participation)`;
+
+  if (!apply) { fixed.push(`[dry-run] ${action}`); return; }
+
+  const next = doc && typeof doc === 'object' ? doc : {};
+  next.hooks = next.hooks && typeof next.hooks === 'object' ? next.hooks : {};
+  const merged = wantMine ? [...others, boardNotifyHookEntry()] : others;
+  if (merged.length) next.hooks.SessionStart = merged;
+  else delete next.hooks.SessionStart;
+
+  await mkdir(dirname(settingsPath), { recursive: true });
+  await atomicWriteFile(settingsPath, JSON.stringify(next, null, 2) + '\n', { mode: 0o644 });
   fixed.push(action);
 }
 

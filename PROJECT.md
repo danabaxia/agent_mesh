@@ -192,6 +192,19 @@ per-canonical-root write lock and downstream-Task audit propagation (see the
 onward-delegation design spec). This is the single sanctioned worker-visible MCP
 delegation surface; nothing else may model a peer as a tool.
 
+**Task board (durable hand-off, ask-safe).** The same peer bridge also exposes
+the ask-safe task-board verbs `create_task_for_peer({ peer, title, objective,
+context?, requirements, pointers? })` / `list_my_tasks()` /
+`update_my_task({ task_id, state, result? })`. These do **no** `claude -p`
+spawn — they write the framework-owned board at `<mesh-root>/mesh/board/`
+(atomic file-per-task). Identity (`from`/`to`/`id`/timestamps) is
+framework-derived from the authentic caller and the task record, never a model
+argument, with the same anti-spoof guarantee as `delegate_to_peer`; assignment
+writes only the framework board (never a peer's folder), so it is ask-safe. The
+assigned peer picks the task up in its own interactive session and advances it
+single-step forward through `assigned → acknowledged → in-progress → done`;
+only the task's `to` agent may advance it.
+
 **Peer discovery (two tiers, untrusted data).** `list_peers` returns each peer's
 bounded `AGENT.md` self-description (`{ name, description, capabilities? }`),
 and the worker's runtime prompt carries a one-line-per-peer roster (capped at
