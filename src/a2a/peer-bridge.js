@@ -410,7 +410,11 @@ function buildTools() {
         required: ['peer', 'task'],
         properties: {
           peer: { type: 'string', minLength: 1 },
-          mode: { type: 'string', enum: ['ask'] },
+          // No enum restriction: the bridge's ask-only capability gate (mode_disabled)
+          // is the enforcement layer, not the schema. Allowing any string here lets
+          // the model pass mode:'do' so the bridge can return a structured refusal
+          // that the model then reports back (required by the I6 adversarial probe).
+          mode: { type: 'string', minLength: 1 },
           task: { type: 'string', minLength: 1, maxLength: MAX_TASK_CHARS },
           new_conversation: {
             type: 'boolean',
