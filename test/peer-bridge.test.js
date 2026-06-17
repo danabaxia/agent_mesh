@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { readManagedRegistry } from '../src/a2a/registry.js';
-import { createBridge, RESERVED_BRIDGE_ENV, BRIDGE_SERVER_NAME } from '../src/a2a/peer-bridge.js';
+import { createBridge, buildTools, RESERVED_BRIDGE_ENV, BRIDGE_SERVER_NAME } from '../src/a2a/peer-bridge.js';
 import { readRunLogRecords } from '../src/log.js';
 
 // Read all a2a records written under an agent root (newest date file).
@@ -172,6 +172,13 @@ test('delegateToPeer(ask) routes an ask message and maps the final Task', async 
     assert.ok(calls.factory[0].options.protectedEnv.includes(k), `protects ${k}`);
   }
   assert.equal(calls.closed, 1);
+});
+
+test('buildTools: delegate_to_peer mode field has no enum restriction (I6 schema fix)', () => {
+  const tool = buildTools().find(t => t.name === 'delegate_to_peer');
+  const modeProp = tool.inputSchema.properties.mode;
+  assert.ok(!modeProp.enum, 'mode must not have enum — schema restriction removed so mode:do reaches the bridge gate');
+  assert.equal(modeProp.minLength, 1);
 });
 
 test('delegateToPeer defaults mode to ask', async () => {

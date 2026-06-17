@@ -386,7 +386,7 @@ async function handle(message, bridge) {
   return rpcError(id, -32601, `Unknown method: ${method}`);
 }
 
-function buildTools() {
+export function buildTools() {
   return [
     {
       name: 'list_peers',
