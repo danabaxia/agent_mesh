@@ -84,9 +84,8 @@ jobs:
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: Merge main into PR branch
-        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true' && github.event_name != 'push'
         env:
-          PR_NUMBER: ${{ steps.pick.outputs.number }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # $PR_BRANCH is already in $GITHUB_ENV (exported by the budget step).
@@ -136,7 +135,7 @@ jobs:
                  - code / tests → the minimal correct COMBINED result (honour both intents).
                  If a conflict can't be resolved safely → `git merge --abort`, comment on PR
                  #${{ steps.pick.outputs.number }} what's blocking, and STOP.
-              3. Run `node run-all-tests.mjs` until green; then `git add -u` and commit
+              3. Run `node run-all-tests.mjs` until green; commit all resolved changes
                  with a `[mergefix]` message (never force-push, never merge the PR).
                  Comment a one-line summary on PR #${{ steps.pick.outputs.number }}.
                  Do NOT push — the push is handled automatically after this step.

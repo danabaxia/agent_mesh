@@ -76,6 +76,13 @@ test('mergefix: Drive Coder skipped on push (claude-code-action does not support
     /event_name\s*!=\s*'workflow_dispatch'/,
     'workflow_dispatch must not be blocked — it is the on-demand conflict-resolution trigger',
   );
+  // C3: Merge step must ALSO carry the push guard (not just Drive Coder). Count occurrences
+  // so a future edit that removes it from the Merge step while Drive Coder keeps it fails here
+  // rather than silently passing (that would leave the Merge step running on push events).
+  assert.ok(
+    (wf.match(/github\.event_name\s*!=\s*'push'/g) || []).length >= 2,
+    "Merge step if: must also carry github.event_name != 'push' (not just Drive Coder)",
+  );
 });
 
 test('mergefix: CONFLICTS_FOUND branches, Drive Coder gate, and Push step coverage', () => {
