@@ -242,5 +242,16 @@
       "source": "PR #61: docs(dev-mesh): add society README — agent roster + collaboration flow",
       "ts": "2026-06-16"
     }
+  },
+  "claude-code-action-push-inside-step": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "claude-code-action@v1 does commit+push+PR INSIDE the Action step — a post-step YAML cannot gate 'before push'.",
+    "l1": "PR #69 Reviewer finding (Issue #63): adding a YAML step after claude-code-action@v1 in curate.yml does not provide 'before git push' validation. The Curator agent commits, pushes, and opens the memory:promote PR INSIDE the Action step via Bash(git:*)/Bash(gh:*). Any YAML step after runs after the PR already exists — it cannot abort the push, and is redundant with the automerge gate (dev-mesh-memory-automerge.yml).",
+    "value": "Pre-push validation for curator-committed content must be embedded in the agent prompt or system config, NOT placed as a YAML step after claude-code-action@v1. The agent does all work (git commit, git push, gh pr create) INSIDE the Action step; any YAML step after runs retroactively against an already-pushed branch.\n\nFor curate.yml: embed validate-quick-memory.mjs in the Curator system prompt as a mandatory pre-PR check the agent runs before gh pr create (agent self-aborts on violation). The robust merge-time gate (dev-mesh-memory-automerge.yml) remains the correct enforcement point — do not attempt to replace it with a post-action step.\n\nApplies to any workflow where claude-code-action is the 'do-worker' and also handles the git push. Provenance: PR #69 / Issue #63 (2026-06-17).",
+    "provenance": {
+      "source": "PR #69 (2026-06-17): Reviewer found post-action YAML cannot gate pre-push; Issue #63 approach closed as misplaced",
+      "ts": "2026-06-17"
+    }
   }
 }
