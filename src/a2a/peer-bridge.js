@@ -401,9 +401,9 @@ function buildTools() {
       description:
         'Delegate a scoped task to a named peer agent over A2A and return its final result. ' +
         "When a task concerns another agent's folder or domain (see list_peers), delegate it " +
-        'rather than attempting it locally. v1 is ask-only (read/answer tasks); "mode" must be ' +
-        '"ask". Repeated calls to the same peer continue one persistent conversation; pass ' +
-        'new_conversation:true to start fresh.',
+        'rather than attempting it locally. v1 is ask-only (read/answer tasks); mode "do" will ' +
+        'be refused by the bridge with mode_disabled. Repeated calls to the same peer continue ' +
+        'one persistent conversation; pass new_conversation:true to start fresh.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,

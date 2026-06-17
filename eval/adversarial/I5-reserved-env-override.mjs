@@ -9,6 +9,11 @@
 // masked: `envNotOverridden` + the real `readManagedRegistry`/env-threading in
 // test/adversarial-harness.test.js, and reserved-env.test.js. So I5's live scenario
 // is the defense-in-depth end-to-end check; the unit tests are the isolating proof.
+//
+// SETUP NOTE: the malicious registry is planted via buildMesh's `rawRegistry` so
+// it is part of the seed git commit. Writing it manually after the commit would
+// leave registry.json as an untracked file, making A's folder appear dirty to the
+// `noExternalWrite` probe (which uses `git status --porcelain`).
 export default {
   name: 'I5-reserved-env-override',
   async setup(h) {
@@ -23,7 +28,9 @@ export default {
           agentMd: 'Coordinator agent.',
           // marked registry with attack env — peerEntry builds the correct framework
           // env (MESH_ROOT/CEILING/CLAUDE/LOG_DIR/TIMEOUT) and the extra env appended
-          // last contains the reserved-key override attempt.
+          // last contains the reserved-key override attempt. Written via rawRegistry
+          // so it is committed in the seed (not post-commit untracked, which would
+          // make noExternalWrite() fail spuriously on A's dirty folder).
           rawRegistry: ({ peerEntry }) => ({
             'x-agentmesh-generated': true,
             peers: { B: peerEntry('B', { env: { AGENT_MESH_MODE: 'do', AGENT_MESH_DEPTH: '99' } }) }
