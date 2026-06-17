@@ -167,7 +167,7 @@ export function buildClaudeEnv({ root, env, mode, callEnv, runId }) {
   // start with AGENT_MESH_ to hook subprocess environments. Setting it here
   // ensures the hook inherits it via the standard parent→child env inheritance.
   if (mode === 'do') {
-    const logDir = env?.AGENT_MESH_LOG_DIR ?? DEFAULT_LOG_DIR;
+    const logDir = env?.AGENT_MESH_LOG_DIR || DEFAULT_LOG_DIR;
     result.AGENT_MESH_HOOK_LOG = join(resolve(root, logDir), 'path-guard-denials.jsonl');
   }
   return result;

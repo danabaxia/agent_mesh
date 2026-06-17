@@ -38,11 +38,12 @@ export const BRIDGE_SERVER_NAME = `${RESERVED_PREFIX}peerbridge`;
 
 // Env keys the operator-authored registry `peer.env` must NOT override for a
 // bridge spawn. PATH/DEPTH are already protected by stdio-client's PROTECTED_ENV;
-// these add the rest of the security-relevant set (mode, mesh layer, ceiling).
+// these add the rest of the security-relevant set (mode, mesh layer, ceiling, audit log).
 export const RESERVED_BRIDGE_ENV = [
   'AGENT_MESH_MODE',
   'AGENT_MESH_MESH_ROOT',
-  'AGENT_MESH_MESH_CEILING'
+  'AGENT_MESH_MESH_CEILING',
+  'AGENT_MESH_HOOK_LOG' // audit trail must not be redirectable by peer.env
 ];
 
 const ONWARD_MODE = 'ask'; // v1: ask-only
