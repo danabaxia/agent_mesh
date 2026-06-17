@@ -275,5 +275,16 @@
       "source": "PR #69 (2026-06-17): Reviewer found post-action YAML cannot gate pre-push; Issue #63 approach closed as misplaced",
       "ts": "2026-06-17"
     }
+  },
+  "bash-tool-simple-expansion-hoist": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "$VAR simple_expansion blocked in agent Bash — hoist git branch ops (checkout/merge/push) to plain YAML run: steps.",
+    "l1": "PR #70: mergefix agent's first Bash call was `echo \"PR_BRANCH=$PR_BRANCH\"` — rejected by Bash tool simple_expansion filter. `git checkout \"$PR_BRANCH\"` also blocked. Agent accumulated 5 denials, flagged unhealthy. Fix: add a YAML run: step BEFORE Drive Coder — checkout + git merge + set CONFLICTS_FOUND in $GITHUB_ENV. Agent only edits conflict files and commits, no branch env vars needed. Post-agent YAML step does `git push origin HEAD:$PR_BRANCH`. Guard both Merge and Drive Coder steps with github.event_name != 'push' (push events have no conflicting PR).",
+    "value": "Pattern: when an agent needs git branch operations involving shell env-var expansion ($BRANCH, $REF), do NOT put them in the agent's Bash tool calls — simple_expansion is blocked.\n\nThree-step YAML split:\n1. Pre-agent run: step — checkout the branch (`git checkout \"$HEAD_REF\"`), merge main (`git merge origin/main`), detect conflicts (`git ls-files -u | grep -q .`), set CONFLICTS_FOUND in $GITHUB_ENV. Distinguish real conflicts (exit 1 + unresolved files) from hard git errors (exit 128+) — fail the step on the latter.\n2. Drive Coder step — guarded by `if: env.CONFLICTS_FOUND == 'true' && github.event_name != 'push'`. Agent receives a clean conflict state; it opens and resolves conflicted files using Edit/Write, stages with `git add -u` (or lets the agent decide), commits. No branch env vars needed.\n3. Post-agent run: step — `git push origin \"HEAD:$PR_BRANCH\"` (plain YAML; guarded by steps.claude.outcome == 'success').\n\nAlso: add `if: github.event_name != 'push'` to the Merge step — push events have no conflicting PR to resolve (see claude-code-action-push-inside-step for why Drive Coder already has this guard). Lint-assert both guards in the test suite. Related: gh-actions-ref-injection (use env: for untrusted refs — injection-safe side of the same pattern). Provenance: PR #70 (2026-06-17), closing Issue #65.",
+    "provenance": {
+      "source": "PR #70 (2026-06-17): fix: move git branch ops before agent to avoid simple_expansion blocks (closes #65)",
+      "ts": "2026-06-17"
+    }
   }
 }
