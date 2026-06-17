@@ -23,7 +23,7 @@ test('buildClaudeEnv: do-mode sets AGENT_MESH_HOOK_LOG; ask-mode does not (I3 au
   assert.match(eDo.AGENT_MESH_HOOK_LOG, /path-guard-denials\.jsonl$/);
   // Caller-supplied log dir is respected (|| fallback — empty string falls back too)
   const eCustom = buildClaudeEnv({ root: '/srv/proj', env: { AGENT_MESH_LOG_DIR: 'custom/logs' }, mode: 'do', callEnv: {}, runId: 'r1' });
-  assert.match(eCustom.AGENT_MESH_HOOK_LOG, /custom\/logs.*path-guard-denials\.jsonl$/);
+  assert.match(eCustom.AGENT_MESH_HOOK_LOG, /custom[/\\]logs.*path-guard-denials\.jsonl$/);
   // ask-mode must NOT set it (hook is do-only)
   const eAsk = buildClaudeEnv({ root: '/srv/proj', env: {}, mode: 'ask', callEnv: {}, runId: 'r1' });
   assert.equal(eAsk.AGENT_MESH_HOOK_LOG, undefined);
