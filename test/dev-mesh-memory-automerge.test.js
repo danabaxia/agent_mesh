@@ -4,7 +4,9 @@
 // tightly scoped: memory-data only, same-repo, validated — it can NEVER merge code.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -59,15 +61,43 @@ test('memory-automerge: validates the MERGE RESULT (merges main first), then squ
   assert.ok(existsSync(scriptPath), 'scripts/validate-quick-memory.mjs must exist');
 });
 
-test('validate-quick-memory.mjs exits 1 with no args (blocks .md-only PRs with no quick.json)', () => {
-  // The workflow validates `git ls-files quick.json`; for an .md-only PR in a tree with no
-  // tracked quick.json, that expands to nothing and the validator is called with no args.
-  // The workflow comment relies on this exiting non-zero to BLOCK the merge — pin it.
+test('validate-quick-memory.mjs exits 1 with no args (script-level fail-closed)', () => {
+  // Script property: called with no paths it errors rather than vacuously passing. (The
+  // workflow now never reaches this — it handles the no-quick.json case explicitly, below —
+  // but the script staying fail-closed is still the right default.)
   const r = spawnSync(process.execPath, [scriptPath], { encoding: 'utf8' });
-  assert.strictEqual(r.status, 1, 'no-args must exit 1 (safe: blocks the merge)');
+  assert.strictEqual(r.status, 1, 'no-args must exit 1');
 });
 
-test('ci.yml skips the heavy matrix for memory-only PRs', () => {
-  assert.match(ci, /paths-ignore:/);
-  assert.match(ci, /dev-mesh\/\*\/memory\/\*\*/, 'ci.yml must paths-ignore memory dirs');
+test('memory-automerge: the empty (no quick.json) case comments + needs-a-human, never a silent skip', () => {
+  // The glob can match nothing (e.g. an .md-only PR before any role has a quick.json). That
+  // branch must leave author feedback, not silently re-skip every sweep (#67 review finding).
+  assert.match(wf, /\[\[ ! -e "\$\{qjs\[0\]\}" \]\]/, 'must detect the empty-glob case');
+  assert.match(wf, /no quick\.json found in the merged tree — needs a human/, 'empty case must post a needs-a-human comment');
+});
+
+test('validate-quick-memory.mjs exits 1 for an over-cap l0 entry (CI gate fails closed)', () => {
+  // The task-critical path: a real over-cap l0 must make the validator exit non-zero so the
+  // ci.yml validate-memory step (and the auto-merge gate) register it as a failure — #41/#59.
+  const dir = mkdtempSync(join(tmpdir(), 'qm-overcap-'));
+  const file = join(dir, 'quick.json');
+  writeFileSync(file, JSON.stringify({ k: { status: 'active', valid_to: null, l0: 'x'.repeat(121) } }));
+  try {
+    const r = spawnSync(process.execPath, [scriptPath, file], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 1, 'over-cap l0 (121 > 120) must exit 1');
+    assert.match(r.stderr, /exceeds 120 chars/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('ci.yml skips the heavy matrix for memory-only PRs, but still runs validate-memory', () => {
+  // Mechanism (#41): a label-based if-condition on the matrix job (NOT paths-ignore), so the
+  // validate-memory job still runs for memory:promote PRs even though the heavy matrix skips.
+  // paths-ignore would have suppressed validate-memory too.
+  assert.match(ci, /memory:promote/, 'matrix job must gate-skip on the memory:promote label');
+  assert.match(ci, /needs\.matrix\.result\s*==\s*['"]success['"]/, 'test job must skip when matrix is skipped');
+  assert.match(ci, /validate-memory:/, 'a validate-memory job must exist');
+  assert.match(ci, /validate-quick-memory\.mjs/, 'validate-memory must run the validator');
+  assert.doesNotMatch(ci, /paths-ignore:/, 'paths-ignore is replaced by the label gate (it would skip validate-memory)');
 });

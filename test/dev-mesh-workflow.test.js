@@ -185,6 +185,25 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
   }
 });
 
+test('CURATOR GATE: curate validates quick.json caps (belt-and-suspenders backstop after claude-code-action)', () => {
+  // memory-cap-validate-at-write (quick.json): over-cap l0s deadlock the pipeline.
+  // The primary gate is the promote-to-memory SKILL.md step 2b (validate before push
+  // inside Claude's execution). This workflow step is the belt-and-suspenders backstop:
+  // it runs after claude-code-action exits (and after git push / gh pr create have
+  // already happened inside the action), not before the push. It fails the curate run
+  // if the gate was skipped, but the memory:promote PR is already open at that point.
+  // Ordering: must appear after `id: claude` (so it reads the committed file) and
+  // before assert-run-healthy (so a cap violation shows up before the honesty gate).
+  assert.match(wf.curate, /validate-quick-memory\.mjs.*quick\.json/,
+    'curate: must call validate-quick-memory.mjs on the curator quick.json');
+  const ls = wf.curate.split('\n');
+  const clIdx = ls.findIndex((l) => /id:\s*claude/.test(l));
+  const vaIdx = ls.findIndex((l) => /validate-quick-memory\.mjs/.test(l));
+  const hhIdx = ls.findIndex((l) => /assert-run-healthy\.mjs/.test(l));
+  assert.ok(clIdx < vaIdx, 'validate step must come after id: claude');
+  assert.ok(vaIdx < hhIdx, 'validate step must come before assert-run-healthy');
+});
+
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   // autofix is the one exception: it's a combined Triager+Coder CI-fix role described
   // INLINE in the prompt (it deliberately does NOT read the no-shell Coder AGENT.md).
