@@ -9,16 +9,18 @@
 # machine-specific is committed. See dev-mesh/DEPLOY-A2A-SOCIETY.md for the full model.
 #
 # Usage:
-#   DEV_SOCIETY_REPO=owner/repo scripts/dev-society-install.sh install     # install + start (default)
+#   DEV_SOCIETY_REPO=owner/repo scripts/dev-society-install.sh install     # daemon + daily report (default)
+#   scripts/dev-society-install.sh install-report                          # just the daily-report schedule
 #   scripts/dev-society-install.sh status                                  # show state / pid
 #   scripts/dev-society-install.sh logs                                    # tail the daemon log
 #   scripts/dev-society-install.sh restart                                 # restart now
-#   scripts/dev-society-install.sh uninstall                               # stop + remove the unit
+#   scripts/dev-society-install.sh uninstall                               # stop + remove both units
 #
 # Env (read at install time; persisted into the unit):
 #   DEV_SOCIETY_REPO     owner/repo            (required to install)
 #   DEV_SOCIETY_BASE     base branch           (default: main)
 #   DEV_SOCIETY_POLL_MS  poll interval ms      (default: 60000)
+#   DAILY_REPORT_HOUR    daily report hour     (default: 8 — local time)
 #   AGENT_MESH_CLAUDE    claude binary         (default: claude on PATH)
 
 set -euo pipefail
@@ -33,6 +35,13 @@ DAEMON="$REPO_ROOT/scripts/dev-society-daemon.mjs"
 LOG_DIR="$REPO_ROOT/.dev-society"
 OUT_LOG="$LOG_DIR/daemon.out.log"
 ERR_LOG="$LOG_DIR/daemon.err.log"
+
+# Daily Mesh Report — a calendar-scheduled (not KeepAlive) unit that posts the digest once a day.
+REPORT_LABEL="com.danabaxia.agent-mesh.dev-society-report"
+REPORT_SERVICE="dev-society-report"
+REPORT_SCRIPT="$REPO_ROOT/scripts/daily-report.mjs"
+REPORT_HOUR="${DAILY_REPORT_HOUR:-8}"
+REPORT_OUT="$LOG_DIR/daily-report.out.log"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: '$1' not found on PATH" >&2; exit 1; }; }
 
@@ -122,6 +131,46 @@ macos_uninstall() {
   echo "uninstalled launchd agent and removed $(plist_path)"
 }
 
+macos_install_report() {
+  preflight
+  [ -f "$REPORT_SCRIPT" ] || { echo "error: daily-report not found at $REPORT_SCRIPT" >&2; exit 1; }
+  local plist="$HOME/Library/LaunchAgents/$REPORT_LABEL.plist"
+  mkdir -p "$(dirname "$plist")"
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>$REPORT_LABEL</string>
+    <key>ProgramArguments</key>
+    <array><string>$NODE_BIN</string><string>$REPORT_SCRIPT</string><string>--post</string></array>
+    <key>WorkingDirectory</key><string>$REPO_ROOT</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key><string>$HOME</string>
+        <key>USER</key><string>$(id -un)</string>
+        <key>PATH</key><string>$RUN_PATH</string>
+        <key>DEV_SOCIETY_REPO</key><string>$DEV_SOCIETY_REPO</string>
+$( [ -n "$CLAUDE_BIN" ] && printf '        <key>AGENT_MESH_CLAUDE</key><string>%s</string>\n' "$CLAUDE_BIN" )
+    </dict>
+    <key>StartCalendarInterval</key>
+    <dict><key>Hour</key><integer>$REPORT_HOUR</integer><key>Minute</key><integer>0</integer></dict>
+    <key>StandardOutPath</key><string>$REPORT_OUT</string>
+    <key>StandardErrorPath</key><string>$REPORT_OUT</string>
+</dict>
+</plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/$REPORT_LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$plist"
+  echo "installed daily-report LaunchAgent (${REPORT_HOUR}:00 local): $plist"
+}
+
+macos_uninstall_report() {
+  launchctl bootout "gui/$(id -u)/$REPORT_LABEL" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/$REPORT_LABEL.plist"
+  echo "removed daily-report LaunchAgent"
+}
+
 # ════════════════════════════════ Linux / systemd --user ═════════════════════════
 unit_path() { echo "$HOME/.config/systemd/user/$SERVICE.service"; }
 
@@ -175,6 +224,47 @@ linux_uninstall() {
   echo "uninstalled systemd user service and removed $(unit_path)"
 }
 
+linux_install_report() {
+  preflight; need systemctl
+  [ -f "$REPORT_SCRIPT" ] || { echo "error: daily-report not found at $REPORT_SCRIPT" >&2; exit 1; }
+  local svc="$HOME/.config/systemd/user/$REPORT_SERVICE.service"
+  local tmr="$HOME/.config/systemd/user/$REPORT_SERVICE.timer"
+  mkdir -p "$(dirname "$svc")"
+  cat > "$svc" <<UNIT
+[Unit]
+Description=Daily Mesh Report
+[Service]
+Type=oneshot
+WorkingDirectory=$REPO_ROOT
+Environment=HOME=$HOME
+Environment=PATH=$RUN_PATH
+Environment=DEV_SOCIETY_REPO=$DEV_SOCIETY_REPO
+ExecStart=$NODE_BIN $REPORT_SCRIPT --post
+StandardOutput=append:$REPORT_OUT
+StandardError=append:$REPORT_OUT
+UNIT
+  cat > "$tmr" <<UNIT
+[Unit]
+Description=Run the Daily Mesh Report at ${REPORT_HOUR}:00
+[Timer]
+OnCalendar=*-*-* ${REPORT_HOUR}:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+UNIT
+  loginctl enable-linger "$(id -un)" 2>/dev/null || true
+  systemctl --user daemon-reload
+  systemctl --user enable --now "$REPORT_SERVICE.timer"
+  echo "installed daily-report timer (${REPORT_HOUR}:00): $tmr"
+}
+
+linux_uninstall_report() {
+  systemctl --user disable --now "$REPORT_SERVICE.timer" 2>/dev/null || true
+  rm -f "$HOME/.config/systemd/user/$REPORT_SERVICE.service" "$HOME/.config/systemd/user/$REPORT_SERVICE.timer"
+  systemctl --user daemon-reload 2>/dev/null || true
+  echo "removed daily-report timer"
+}
+
 # ════════════════════════════════ dispatch ═══════════════════════════════════════
 OS="$(uname -s)"
 CMD="${1:-install}"
@@ -186,10 +276,11 @@ case "$OS" in
 esac
 
 case "$CMD" in
-  install)   "${PFX}_install" ;;
-  uninstall) "${PFX}_uninstall" ;;
-  status)    "${PFX}_status" ;;
-  restart)   "${PFX}_restart" ;;
-  logs)      echo "== $OUT_LOG =="; tail -n 40 -f "$OUT_LOG" ;;
-  *) echo "usage: $0 {install|uninstall|status|restart|logs}" >&2; exit 2 ;;
+  install)        "${PFX}_install"; "${PFX}_install_report" ;;
+  install-report) "${PFX}_install_report" ;;
+  uninstall)      "${PFX}_uninstall"; "${PFX}_uninstall_report" ;;
+  status)         "${PFX}_status" ;;
+  restart)        "${PFX}_restart" ;;
+  logs)           echo "== $OUT_LOG =="; tail -n 40 -f "$OUT_LOG" ;;
+  *) echo "usage: $0 {install|install-report|uninstall|status|restart|logs}" >&2; exit 2 ;;
 esac

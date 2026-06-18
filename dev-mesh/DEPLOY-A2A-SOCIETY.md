@@ -63,15 +63,19 @@ start at boot). The unit is generated from detected absolute paths at install ti
 machine-specific is committed.
 
 ```sh
-DEV_SOCIETY_REPO=danabaxia/agent_mesh scripts/dev-society-install.sh install   # install + start
+DEV_SOCIETY_REPO=danabaxia/agent_mesh scripts/dev-society-install.sh install   # daemon + daily report
+scripts/dev-society-install.sh install-report  # just the daily-report schedule
 scripts/dev-society-install.sh status      # state / pid
 scripts/dev-society-install.sh logs        # tail .dev-society/daemon.out.log
 scripts/dev-society-install.sh restart     # restart now
-scripts/dev-society-install.sh uninstall   # stop + remove the unit
+scripts/dev-society-install.sh uninstall   # stop + remove both units
 ```
-Logs land in `.dev-society/daemon.out.log` / `daemon.err.log`. Reads `DEV_SOCIETY_BASE`
-(default `main`), `DEV_SOCIETY_POLL_MS` (default `60000`), and `AGENT_MESH_CLAUDE` at install time
-and persists them into the unit.
+`install` sets up TWO units: the always-on daemon AND a **daily report** (a calendar-scheduled
+unit — launchd `StartCalendarInterval` / a systemd timer — that runs `scripts/daily-report.mjs
+--post` once a day to post the PR/Issue/Token digest). Logs: `.dev-society/daemon.out.log` /
+`daemon.err.log` for the daemon, `daily-report.out.log` for the report. Reads `DEV_SOCIETY_BASE`
+(default `main`), `DEV_SOCIETY_POLL_MS` (default `60000`), `DAILY_REPORT_HOUR` (default `8`, local
+time), and `AGENT_MESH_CLAUDE` at install time and persists them into the units.
 
 ## How to feed it work
 Label an issue **`approved` + `route:a2a`** (the `route:a2a` label opts it into the A2A society;
