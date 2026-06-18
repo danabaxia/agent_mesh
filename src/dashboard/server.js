@@ -51,6 +51,7 @@ import { doctor } from '../builder/doctor.js';
 import { fetchRemoteImage, defaultPinnedFetch } from './img-proxy.js';
 import { createScheduler } from '../schedule/scheduler.js';
 import { validateCadence, describeCadence } from '../schedule/schedule-cadence.js';
+import { listAllSchedules } from '../schedule/list-all.js';
 import { createRotationManager } from './rotation.js';
 import { runDigest } from '../digest.js';
 import { buildResumeCommand } from './resume-command.js';
@@ -623,7 +624,7 @@ function consoleErrorStatus(code) {
 // Route handling
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir }) {
+async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dashboardOwnsScheduler }) {
   applySecurityHeaders(res);
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenerPort}`);
@@ -717,6 +718,15 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
       }
     }
     sendJson(res, 200, { range, model: aggregateRange(models) });
+    return;
+  }
+
+  // GET /api/schedules → mesh-wide read-only view of every agent's scheduled
+  // jobs (defs + runtime state). The daemon owns execution; this is a window.
+  if (pathname === '/api/schedules' && req.method === 'GET') {
+    const { jobs } = await listAllSchedules({ meshRoot });
+    const schedulerOwner = dashboardOwnsScheduler ? 'dashboard' : (jobs.length ? 'daemon' : 'none');
+    sendJson(res, 200, { schedulerOwner, jobs });
     return;
   }
 
@@ -2715,7 +2725,8 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
       spawnLocate: spawnLocate ?? defaultSpawnLocate,
       scheduler: sched,
       dailyReportPath,
-      dailyReportDir
+      dailyReportDir,
+      dashboardOwnsScheduler: schedulerOwned
     }).catch((err) => {
       applySecurityHeaders(res);
       try {
