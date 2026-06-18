@@ -35,6 +35,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createA2AClient } from '../src/a2a/stdio-client.js';
 import * as core from '../src/dev-society/core.js';
+import { createScheduler } from '../src/schedule/scheduler.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -51,6 +52,18 @@ const cfg = {
 const once = process.argv.includes('--once');
 const selftest = process.argv.includes('--selftest');
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+const SCHED_MESH_ROOT = process.env.DEV_SOCIETY_MESH_ROOT || join(repoRoot, 'dev-mesh');
+
+// Always-on standard scheduler: runs agents' .agent/schedule.json jobs 24/7.
+// Skipped in --once/--selftest (those paths exit early; scheduler must not start).
+let sched = null;
+if (!once && !selftest) {
+  sched = createScheduler({ meshRoot: SCHED_MESH_ROOT });
+  sched.start();
+  log('scheduler started — meshRoot=' + SCHED_MESH_ROOT);
+}
+
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.stop(); } catch {} process.exit(0); });
 
 // ── GitHub shell (impure; uses the `gh` CLI the user authenticates) ─────────────
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
