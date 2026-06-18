@@ -297,5 +297,16 @@
       "source": "PR #79: fix: L3 adversarial battery I3/I5/I6 security invariant failures",
       "ts": "2026-06-18"
     }
+  },
+  "agent-prompt-dedupe-cap-on-frequency-increase": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Raise schedule frequency only with dedupe-first + per-run cap in the agent prompt — else daily runs spam the queue.",
+    "l1": "PR #85 changed the Analyst from weekly to daily. Without guardrails the agent re-proposes the same ideas each morning, flooding the issue backlog. Fix: embed in the prompt — (1) list open issues first ('dedupe-first'), (2) propose only genuinely-new directions, (3) cap at 1–2 per run, (4) file nothing if nothing new qualifies. Both safeguards are necessary: dedupe alone still lets a chatty model treat near-duplicates as new; a cap alone still lets covered ideas through.",
+    "value": "Pattern for increasing the schedule frequency of any recurring proposal/research agent:\n\n1. Dedupe-first instruction: 'List current open issues first (gh issue list --state open --limit 100) — do NOT propose anything already covered by an existing Issue.'\n2. Per-run cap: explicitly state the max items (e.g., 'at most 1–2 genuinely NEW, non-duplicate directions per run').\n3. Zero-item exit: 'if nothing new is worth filing today, file NOTHING and stop.' This must be explicit — agents default to producing output unless told zero is acceptable.\n4. Quality framing: 'Quality over volume — never spam the backlog.' Frames the constraint positively so the model understands intent.\n\nAll four lines are mandatory when moving a proposal-loop agent from weekly/monthly to daily. Mental check: if the agent ran 7 consecutive days with no new research, would it produce 0 issues or 7 duplicate issues? The prompt must produce 0.\n\nAlso applicable to: backlog triagers, spec-proposal agents, idea generators — any role that files durable artifacts into a human-consumed queue. Do NOT rely on the queue consumer to dedupe — deduplication must happen at the source (the agent) to keep signal-to-noise high for human reviewers.\n\nProvenance: PR #85 (2026-06-18) — feat(dev-mesh): research Analyst runs daily + dedupes.",
+    "provenance": {
+      "source": "PR #85: feat(dev-mesh): research Analyst runs daily + dedupes — keep the idea queue fed",
+      "ts": "2026-06-18"
+    }
   }
 }
