@@ -49,8 +49,8 @@ import { MAX_TASK_CHARS, DEFAULT_AUTOSYNC_DEBOUNCE_MS, readPositiveInt } from '.
 import { createAutoSync } from './auto-sync.js';
 import { doctor } from '../builder/doctor.js';
 import { fetchRemoteImage, defaultPinnedFetch } from './img-proxy.js';
-import { createScheduler } from './scheduler.js';
-import { validateCadence, describeCadence } from './schedule-cadence.js';
+import { createScheduler } from '../schedule/scheduler.js';
+import { validateCadence, describeCadence } from '../schedule/schedule-cadence.js';
 import { createRotationManager } from './rotation.js';
 import { runDigest } from '../digest.js';
 import { buildResumeCommand } from './resume-command.js';
