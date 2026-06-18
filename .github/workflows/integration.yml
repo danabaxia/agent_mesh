@@ -153,7 +153,7 @@ jobs:
           if [ -f scripts/eval-adversarial.mjs ]; then
             node scripts/eval-adversarial.mjs --min-pass-rate 1.0 --out adversarial-results
           else
-            echo "::notice::scripts/eval-adversarial.mjs not present yet — skipping L3 (backlog #3)."
+            echo "::notice::skipping L3 (eval-adversarial.mjs not found on this ref)."
           fi
       - uses: actions/upload-artifact@v4
         if: always()
@@ -192,7 +192,7 @@ jobs:
           if [ -f scripts/eval-perf.mjs ]; then
             node scripts/eval-perf.mjs --trials 5 --out perf-results
           else
-            echo "::notice::scripts/eval-perf.mjs not present yet — skipping L4 (backlog #4)."
+            echo "::notice::skipping L4 (eval-perf.mjs not found on this ref)."
           fi
       - name: Summarize PerfCard
         if: always()

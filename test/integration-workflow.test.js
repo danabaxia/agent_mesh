@@ -7,6 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const wfPath = fileURLToPath(new URL('../.github/workflows/integration.yml', import.meta.url));
@@ -71,10 +72,21 @@ test('integration workflow: scorecards uploaded as artifacts', () => {
   assert.match(wf, /\$GITHUB_STEP_SUMMARY/);
 });
 
-test('integration workflow does not weaken the L0 gate (ci.yml unchanged in shape)', async () => {
+test('integration workflow does not weaken the L0 gate (ci.yml L0 properties intact)', async () => {
   const ci = await readFile(ciPath, 'utf8');
-  // ci.yml remains the per-PR gate: push + pull_request, OS matrix, hermetic runner.
+  // ci.yml remains the per-PR gate: pull_request trigger, OS matrix, hermetic runner.
   assert.match(ci, /pull_request:/);
   assert.match(ci, /run-all-tests\.mjs/);
   assert.match(ci, /windows-latest/);   // L0 keeps the OS matrix the integration tier drops
+});
+
+test('integration workflow: L3/L4 eval scripts are present on this ref', () => {
+  // The YAML skip-guards (`if [ -f scripts/eval-*.mjs ]`) silently skip the tier
+  // when the script is missing. Now that the nightly tracks `main` and CLAUDE.md
+  // states L3 gates / L4 runs live, assert the files actually exist — otherwise an
+  // accidental deletion would silently disarm both tiers with no L0 failure.
+  assert.ok(existsSync(fileURLToPath(new URL('../scripts/eval-adversarial.mjs', import.meta.url))),
+    'scripts/eval-adversarial.mjs must exist for L3 to gate the nightly');
+  assert.ok(existsSync(fileURLToPath(new URL('../scripts/eval-perf.mjs', import.meta.url))),
+    'scripts/eval-perf.mjs must exist for L4 to run');
 });
