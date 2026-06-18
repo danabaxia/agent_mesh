@@ -1,7 +1,7 @@
 // src/report/aggregate.js
 // Pure reducer: raw record sets → DailyReport. No I/O, no Date.now() —
 // `date` (YYYY-MM-DD) fixes the UTC window; the impure entrypoint picks it.
-import { extractUsage, sumUsage, emptyUsage } from './usage.js';
+import { extractUsage, sumUsage } from './usage.js';
 
 export function dayBoundsMs(date) {
   const fromMs = Date.parse(`${date}T00:00:00.000Z`);
