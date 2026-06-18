@@ -352,5 +352,16 @@
       "source": "PR #108 (2026-06-18): feat(dev-society): 24/7 installer + daily-report scheduling (launchd/systemd)",
       "ts": "2026-06-18"
     }
+  },
+  "v2-migration-delete-v1": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "v1→v2 UI cutover: delete v1 source + tests in the same PR that promotes v2 to root — never dual-maintain.",
+    "l1": "PR #110: board2 became the sole dashboard (serves `/`); index.html/app.js/app.css + session-log-frontend.test.js deleted in the same PR. Dead v1 code imposes double test overhead, routing ambiguity, and stale docs. Once v2 is route-proven and test-covered, v1 artifacts have no incremental value. Live-verification (endpoints 200, old entry points 404) is the gating condition before deletion.",
+    "value": "Pattern for v1→v2 UI migrations:\n\n(1) Build v2 alongside v1 at a different route (e.g. /board2).\n(2) Live-verify v2: all expected endpoints respond 200, old entry points 404, features work.\n(3) Cutover PR: update server root route to serve v2. In the SAME PR: delete v1 source files (index.html, app.js, app.css) AND their dedicated test files (e.g. session-log-frontend.test.js). Repoint route-serving tests to the v2 filenames. CI stays green throughout — the v2 tests were already present before v1 deletion.\n(4) Never defer v1 removal. Once merged, dead code accumulates merge conflicts, confuses file searches, and doubles maintenance on every future change to shared deps. 'Temporary' legacy code becomes permanent. Provenance: PR #110 (2026-06-18), feat(dashboard): top-level live Graph view; remove legacy v1 dashboard.",
+    "provenance": {
+      "source": "PR #110 (2026-06-18): feat(dashboard): top-level live Graph view; remove legacy v1 dashboard",
+      "ts": "2026-06-18"
+    }
   }
 }
