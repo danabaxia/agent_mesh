@@ -9,7 +9,8 @@
 //   node scripts/daily-report.mjs --selftest                    # wiring, no gh
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { realpathSync } from 'node:fs';
+import { realpathSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aggregate } from '../src/report/aggregate.js';
@@ -48,13 +49,26 @@ async function findOrCreateIssue() {
 async function upsertComment(issueNumber, date, body) {
   const data = JSON.parse(await gh(['issue', 'view', String(issueNumber), '--repo', REPO, '--json', 'comments']));
   const id = findDatedCommentId((data.comments || []).map((c) => ({ id: c.url, body: c.body })), date);
-  if (id) {
-    // gh has no "edit comment by id" for issues; patch via the REST API instead.
-    const m = String(id).match(/#issuecomment-(\d+)/) || String(id).match(/(\d+)$/);
-    if (m) { await gh(['api', '--method', 'PATCH', `repos/${REPO}/issues/comments/${m[1]}`, '-f', `body=${body}`]); return 'edited'; }
+  // Pass the multiline Markdown body via a temp FILE, never as an inline argv/
+  // key=value string — robust to '=', '@', backticks, and newlines in the body.
+  const dir = mkdtempSync(join(tmpdir(), 'mesh-report-'));
+  try {
+    if (id) {
+      // gh has no "edit comment by id" for issues; patch via the REST API.
+      const m = String(id).match(/#issuecomment-(\d+)/) || String(id).match(/(\d+)$/);
+      if (!m) throw new Error(`could not parse comment id from "${id}"`);
+      const jsonFile = join(dir, 'patch.json');
+      writeFileSync(jsonFile, JSON.stringify({ body }));  // proper JSON encoding of the body field
+      await gh(['api', '--method', 'PATCH', `repos/${REPO}/issues/comments/${m[1]}`, '--input', jsonFile]);
+      return 'edited';
+    }
+    const mdFile = join(dir, 'body.md');
+    writeFileSync(mdFile, body);
+    await gh(['issue', 'comment', String(issueNumber), '--repo', REPO, '--body-file', mdFile]);
+    return 'added';
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
-  await gh(['issue', 'comment', String(issueNumber), '--repo', REPO, '--body', body]);
-  return 'added';
 }
 
 async function main() {
@@ -78,6 +92,7 @@ async function main() {
 
   if (flag('--dry-run') || !flag('--post')) { process.stdout.write(body + '\n'); return; }
   const issueNumber = await findOrCreateIssue();
+  if (!issueNumber) throw new Error('could not find or create the daily-report issue');
   const action = await upsertComment(issueNumber, date, body);
   console.error(`${action} daily report on issue #${issueNumber} for ${date}`);
 }
