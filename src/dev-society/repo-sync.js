@@ -53,7 +53,12 @@ export async function runRepoSyncOnce({
   if (!repoPath) throw new Error('repoPath is required');
 
   await git(repoPath, ['rev-parse', '--is-inside-work-tree']);
-  const branch = (await git(repoPath, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim();
+  let branch;
+  try {
+    branch = (await git(repoPath, ['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim();
+  } catch {
+    branch = '';
+  }
   if (!branch) {
     const rec = { ts: now().toISOString(), action: 'skip_detached', repoPath };
     log(rec);

@@ -36,6 +36,7 @@ test('integration workflow: real-claude auth is OAuth-only with fail-fast prefli
   assert.doesNotMatch(wf, /ANTHROPIC_API_KEY/, 'integration must never use API-key auth');
   assert.match(wf, /RAW_OAUTH:\s*\$\{\{\s*secrets\.CLAUDE_CODE_OAUTH_TOKEN\s*\}\}/);
   assert.match(wf, /tr -d '\[:space:\]'/, 'OAuth token must be sanitized before use');
+  assert.match(wf, /::add-mask::\$CLEAN/, 'sanitized token must be re-masked so stripped whitespace variant is also secret');
   assert.match(wf, /echo "CLAUDE_CODE_OAUTH_TOKEN=\$CLEAN" >> "\$GITHUB_ENV"/);
   assert.match(wf, /npm i -g @anthropic-ai\/claude-code/);
   // a missing secret errors out (::error::) rather than timing out per tier.

@@ -260,3 +260,32 @@ test('dogfood: real-claude, materializes the real mesh, read-only & non-merging'
   assert.match(dogfood, /upload-artifact/, 'dogfood artifacts its run logs');
   assert.doesNotMatch(dogfood, /gh pr merge|merge_pull_request|--auto\b/i, 'dogfood never merges');
 });
+
+// --- PR janitor (elevated-permission scheduled sweep) ---
+const janitor = (() => {
+  const p = `${dir}dev-mesh-pr-janitor.yml`;
+  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+})();
+
+test('janitor: scheduled + manual only, never per-PR (fork-PR / pwn-request safety)', () => {
+  assert.ok(janitor, 'dev-mesh-pr-janitor.yml missing');
+  assert.match(janitor, /schedule:/);
+  assert.match(janitor, /workflow_dispatch:/);
+  // §F4: no secrets must flow to fork PRs — push/pull_request/pull_request_target are forbidden.
+  assert.doesNotMatch(janitor, /^\s*push:/m, 'janitor must not run on push');
+  assert.doesNotMatch(janitor, /^\s*pull_request:/m, 'janitor must not run on pull_request');
+  assert.doesNotMatch(janitor, /pull_request_target/, 'janitor: pull_request_target is forbidden');
+});
+
+test('janitor: serialized runs (cancel-in-progress: false)', () => {
+  assert.match(janitor, /concurrency:/);
+  assert.match(janitor, /cancel-in-progress:\s*false/, 'in-flight janitor run must not be cancelled');
+});
+
+test('janitor: NO auto-merge (NEVER merges, human holds the gate)', () => {
+  assert.doesNotMatch(
+    janitor,
+    /enable_pr_auto_merge|enable-auto-merge|--auto\b|gh pr merge|merge_pull_request/i,
+    'janitor must not auto-merge (contents:write + schedule = elevated risk)',
+  );
+});

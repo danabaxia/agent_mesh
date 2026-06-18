@@ -141,13 +141,13 @@ jobs:
           now_epoch=$(date -u +%s)
           mapfile -t rows < <(gh pr list --state open \
             --json number,title,author,labels,isCrossRepository,createdAt,url \
-            --jq '.[] | select(.isCrossRepository==false and (.labels | length)==0) | "\(.number)|\(.author.login)|\(.createdAt)|\(.url)|\(.title)"')
+            --jq '.[] | select(.isCrossRepository==false and (.labels | length)==0) | "\(.number)\t\(.author.login)\t\(.createdAt)\t\(.url)\t\(.title)"')
           if [ "${#rows[@]}" -eq 0 ]; then
             echo "no unlabelled PRs"
             exit 0
           fi
           for row in "${rows[@]}"; do
-            IFS='|' read -r pr login created url title <<<"$row"
+            IFS=$'\t' read -r pr login created url title <<<"$row"
             crt_epoch=$(date -u -d "$created" +%s 2>/dev/null || gdate -u -d "$created" +%s 2>/dev/null || echo 0)
             age=$(( now_epoch - crt_epoch ))
             if [ "$age" -lt 86400 ]; then
