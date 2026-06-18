@@ -133,7 +133,7 @@ function isSafeArtifactId(id) {
   return typeof id === 'string' && ARTIFACT_ID_RE.test(id) && !id.includes('..');
 }
 
-// Schedule storage (Phase-5 contract, mirrors src/dashboard/scheduler.js):
+// Schedule storage (Phase-5 contract, mirrors src/schedule/scheduler.js):
 // job definitions at <agentRoot>/.agent/schedule.json { jobs:[…] } (git-tracked
 // intent), runtime state at <agentRoot>/.agent-mesh/schedule-state.json (never
 // in git). Missing/corrupt defs are tolerated as empty.

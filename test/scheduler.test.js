@@ -1,5 +1,5 @@
 /**
- * test/scheduler.test.js — src/dashboard/scheduler.js (Phase-5 Task 2).
+ * test/scheduler.test.js — src/schedule/scheduler.js (Phase-5 Task 2).
  *
  * Hermetic temp meshes (initMesh + writeManifest + one agent folder carrying
  * .agent/schedule.json). No HTTP server, no real timers: runJob is an injected
