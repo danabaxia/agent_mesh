@@ -60,6 +60,10 @@ const TEMPLATE = `
     <div class="shead" data-fold><span class="caret">▾</span><span>▤ ISSUES &amp; PRS · PROGRESS</span><span class="meta">idea→spec→approved→in-progress→review→done</span><span class="maxbtn" data-max title="full size">⤢</span></div>
     <div class="secbody"><div class="tscroll" id="gv-issues"></div></div>
   </div>
+  <div class="sec" id="sec-sched">
+    <div class="shead" data-fold><span class="caret">▾</span><span>⏱ SCHEDULES</span><span class="meta" id="gv-sched-owner">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
+    <div class="secbody"><div class="tscroll" id="gv-sched"></div></div>
+  </div>
 </div>`;
 
 export function renderGraphView(rootEl) {
@@ -107,6 +111,7 @@ function loadAll() {
   ensureGraph().then(loadActivity);
   loadTokens();
   loadDaily();
+  loadSchedules();
   if (!es) {
     try { es = new EventSource('/api/events'); es.addEventListener('activity', () => loadActivity()); es.onerror = () => {}; } catch { /* no SSE */ }
   }
@@ -199,10 +204,13 @@ async function loadTokens() {
   setText('tk-big', fmt(total));
   root.querySelector('#tk-sub').innerHTML = `<span class="am">$${(m.cost || 0).toFixed(2)}</span> spend · ${m.runs || 0} runs · ${m.days || 0}d`;
   setText('tk-in', fmt(m.input)); setText('tk-out', fmt(m.output)); setText('tk-turns', m.turns || 0); setText('tk-runs', m.runs || 0);
-  const loPct = local + ci > 0 ? local / (local + ci) * 100 : 0;
-  root.querySelector('#sp-lo').style.width = loPct + '%'; root.querySelector('#sp-ci').style.width = (100 - loPct) + '%';
+  const hasSplit = local + ci > 0;            // empty bar when there's no usage (don't imply 100% CI)
+  const loPct = hasSplit ? local / (local + ci) * 100 : 0;
+  root.querySelector('#sp-lo').style.width = loPct + '%'; root.querySelector('#sp-ci').style.width = (hasSplit ? 100 - loPct : 0) + '%';
   setText('sp-lov', fmt(local)); setText('sp-civ', fmt(ci)); setText('sp-cost', '$' + (m.cost || 0).toFixed(2));
-  const cons = (m.byConsumer || []).slice(0, 8), cmax = cons[0] ? cons[0].tokens : 1;
+  // Only show consumers that actually used tokens; guard cmax against div-by-zero.
+  const cons = (m.byConsumer || []).filter((c) => (c.tokens || 0) > 0).slice(0, 8);
+  const cmax = Math.max(1, cons[0] ? cons[0].tokens : 1);
   root.querySelector('#tk-top').innerHTML = cons.length ? cons.map((c) => {
     const col = c.kind === 'ci' ? 'var(--teal2)' : agentColor(c.name), p = total ? (c.tokens / total * 100).toFixed(0) : 0;
     return `<div class="crow" data-n="${esc(c.name)}" data-c="${col}" data-v="${fmt(c.tokens)}" data-p="${p}"><span class="nm" style="color:${col}">${esc(c.name)}</span><span class="tr"><span class="fl" style="width:${(c.tokens / cmax * 100).toFixed(0)}%;background:${col}"></span></span><span class="vv">${fmt(c.tokens)}</span></div>`;
@@ -256,6 +264,16 @@ async function loadDaily() {
   issuesEl.innerHTML = rows.length
     ? `<table><thead><tr><th>#</th><th>kind</th><th>title</th><th>state</th><th>progress</th><th>age</th></tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table>`
     : '<div class="gv-empty">No open issues or PRs in the latest report.</div>';
+}
+
+async function loadSchedules() {
+  let d; try { d = await (await fetch('/api/schedules')).json(); } catch { return; }
+  setText('gv-sched-owner', `engine: ${d.schedulerOwner || '—'} · ${(d.jobs || []).length} jobs`);
+  const el = root.querySelector('#gv-sched');
+  if (!d.jobs || !d.jobs.length) { el.innerHTML = '<div class="gv-empty">No scheduled jobs. Add one to an agent’s .agent/schedule.json; the daemon runs them 24/7.</div>'; return; }
+  const pill = (s) => s === 'ok' ? '<span class="state done">ok</span>' : s === 'fail' ? '<span class="state block">fail</span>' : '<span class="state open">—</span>';
+  const rows = d.jobs.map((j) => `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span></td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : ''}</td></tr>`).join('');
+  el.innerHTML = `<table><thead><tr><th>agent · job</th><th>cadence</th><th>last</th><th>next run</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function setText(id, v) { const el = root.querySelector('#' + id); if (el) el.textContent = v; }

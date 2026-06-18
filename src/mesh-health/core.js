@@ -149,7 +149,7 @@ export function createMeshHealth({ meshRoot, env = process.env, binPath = BIN_PA
       const inFlight = recent.filter((r) => r.state === 'started');
 
       // Read schedule-state.json — tolerate absent or corrupt (same policy as
-      // src/dashboard/scheduler.js).
+      // src/schedule/scheduler.js).
       const schedule = [];
       try {
         const raw = await readFile(join(agentRoot, '.agent-mesh', 'schedule-state.json'), 'utf8');

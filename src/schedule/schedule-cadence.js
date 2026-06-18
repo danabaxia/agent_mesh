@@ -1,5 +1,5 @@
 /**
- * src/dashboard/schedule-cadence.js — Pure cadence utilities (ESM).
+ * src/schedule/schedule-cadence.js — Pure cadence utilities (ESM).
  *
  * validateCadence(c)         → {ok:true} | {ok:false, message:string}
  * computeNextRun(cadence, after:Date) → Date strictly > after

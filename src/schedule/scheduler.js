@@ -1,5 +1,5 @@
 /**
- * src/dashboard/scheduler.js — Mesh scheduler (Phase-5 Task 2, spec §3.3).
+ * src/schedule/scheduler.js — Mesh scheduler (Phase-5 Task 2, spec §3.3).
  *
  * Per-agent recurring jobs executed as real ask-mode delegations on a timer.
  *

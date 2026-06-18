@@ -1,5 +1,5 @@
 /**
- * test/scheduler.test.js — src/dashboard/scheduler.js (Phase-5 Task 2).
+ * test/scheduler.test.js — src/schedule/scheduler.js (Phase-5 Task 2).
  *
  * Hermetic temp meshes (initMesh + writeManifest + one agent folder carrying
  * .agent/schedule.json). No HTTP server, no real timers: runJob is an injected
@@ -15,8 +15,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createScheduler } from '../src/dashboard/scheduler.js';
-import { computeNextRun } from '../src/dashboard/schedule-cadence.js';
+import { createScheduler } from '../src/schedule/scheduler.js';
+import { computeNextRun } from '../src/schedule/schedule-cadence.js';
 import { initMesh } from '../src/builder/init-mesh.js';
 import { writeManifest } from '../src/builder/manifest.js';
 
