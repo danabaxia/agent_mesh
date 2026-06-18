@@ -341,5 +341,16 @@
       "source": "PR #106: chore(dev-mesh): re-init agent wiring and seed required scaffold",
       "ts": "2026-06-18"
     }
+  },
+  "os-service-installer-generate-at-install": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "OS service units: generate from detected absolute paths at install time; never commit generated .plist/.service files.",
+    "l1": "PR #108: dev-society-install.sh generates launchd (macOS) or systemd --user (Linux) units from paths detected at install time (command -v, $0 resolution). Committed: the install script + portable env config (POLL_MS, DAILY_REPORT_HOUR, AGENT_MESH_CLAUDE). Not committed: .plist/.service/.timer files (absolute-path-bound — identical invariant to registry.json/.mcp.json; see doctor-apply-on-framework-upgrade). Bundle daemon + scheduled companion in one installer so they stay in sync and uninstall atomically.",
+    "value": "Pattern for cross-platform OS service installation:\n\n(1) Detect at install time: OS (uname -s), absolute executable path (command -v node, command -v claude), repo root ($REPO resolved to absolute). Never hard-code paths.\n\n(2) Emit unit files from heredocs — never commit them. macOS: generate .plist under ~/Library/LaunchAgents/<label>.plist. Linux: generate .service + .timer under ~/.config/systemd/user/. Load immediately after generation (launchctl load / systemctl --user enable --now).\n\n(3) Persist only portable config: env vars like DEV_SOCIETY_REPO, POLL_MS, DAILY_REPORT_HOUR, AGENT_MESH_CLAUDE. The env file survives re-install; generated units are regenerated each time.\n\n(4) Bundle related units in one script with consistent subcommands: install / install-report / status / logs / restart / uninstall. uninstall removes BOTH daemon + scheduled unit atomically.\n\n(5) Include --selftest before unit load: fail fast if the daemon cannot start. Avoids loading a broken unit that loops on restart.\n\nRelated: doctor-apply-on-framework-upgrade (same absolute-path invariant for framework wiring). Provenance: PR #108 (2026-06-18).",
+    "provenance": {
+      "source": "PR #108 (2026-06-18): feat(dev-society): 24/7 installer + daily-report scheduling (launchd/systemd)",
+      "ts": "2026-06-18"
+    }
   }
 }
