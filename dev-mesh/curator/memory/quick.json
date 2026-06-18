@@ -363,5 +363,16 @@
       "source": "PR #110 (2026-06-18): feat(dashboard): top-level live Graph view; remove legacy v1 dashboard",
       "ts": "2026-06-18"
     }
+  },
+  "subsystem-promote-and-daemon-guard": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Relocate cross-cutting subsystems to dedicated modules; guard daemon services against --once/--selftest modes.",
+    "l1": "PR #112 promoted the scheduler from src/dashboard/ to src/schedule/ when it became mesh-wide infrastructure. The daemon starts createScheduler 24/7 but guards against --once/--selftest: those are single-pass modes that must exit cleanly. A background service started in them leaks beyond the sweep. Guard: `if (!opts.once && !opts.selftest) { svc.start(); process.on('SIGTERM', () => svc.stop()); }`. New test: daemon-scheduler.test.js asserts clean selftest exit.",
+    "value": "Two patterns from PR #112 (always-on scheduling infra, Phase 1):\n\n(1) Subsystem promotion: when a subsystem initially housed under one feature (e.g. src/dashboard/scheduler.js) grows to serve the whole mesh, relocate it to a dedicated module (e.g. src/schedule/). Use `git mv` — behavior-preserving; repoint all importers and test imports. The old path becomes dead code the moment importers are updated; do not leave it in place. Applies to: any service initially placed under a feature dir that becomes cross-cutting infrastructure.\n\n(2) Always-on daemon guard: a daemon that starts long-running services must guard against single-pass modes:\n```\nif (!opts.once && !opts.selftest) {\n  const svc = createService(meshRoot);\n  svc.start();\n  process.on('SIGTERM', () => svc.stop());\n  process.on('SIGINT',  () => svc.stop());\n}\n```\nWhy: --once and --selftest are sweep/health-check invocations that must complete and exit. A scheduler or background poller started in those modes outlives the sweep, leaks process resources, and interferes with subsequent test runs.\n\nTest coverage: (a) selftest mode → service.start() is NOT called, process exits 0; (b) normal mode → service.start() called, SIGTERM triggers stop(). See test/daemon-scheduler.test.js (PR #112).\n\n(3) Read-only aggregation API: expose per-agent state as a mesh-wide read-only endpoint (GET /api/schedules → {schedulerOwner, jobs:[...]}). The endpoint is a view, not a store — data lives in per-agent files. Use injected deps for hermetic testing. Provenance: PR #112 (2026-06-18).",
+    "provenance": {
+      "source": "PR #112 (2026-06-18): feat(mesh): Phase 1 — always-on scheduling infra + dashboard visibility",
+      "ts": "2026-06-18"
+    }
   }
 }
