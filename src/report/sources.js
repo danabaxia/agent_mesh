@@ -27,3 +27,6 @@ export async function fetchGhActivity({ gh, repo, lookbackDays = 3 }) {
     openIssues: openIssues.map((i) => ({ ...i, labels: names(i.labels) })),
   };
 }
+
+// P1 stub — real implementation lands in Task 10 (P2).
+export async function fetchCiUsage() { return []; }
