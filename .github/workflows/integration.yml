@@ -148,7 +148,7 @@ jobs:
           fi
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
-      - name: L3 — adversarial battery (skip until scripts/eval-adversarial.mjs lands; backlog #3)
+      - name: L3 — adversarial battery (skip-guarded; gates when present)
         run: |
           if [ -f scripts/eval-adversarial.mjs ]; then
             node scripts/eval-adversarial.mjs --min-pass-rate 1.0 --out adversarial-results
@@ -187,7 +187,7 @@ jobs:
           fi
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
-      - name: L4 — performance benchmark (skip until scripts/eval-perf.mjs lands; backlog #4)
+      - name: L4 — performance benchmark (skip-guarded; record-only when present)
         run: |
           if [ -f scripts/eval-perf.mjs ]; then
             node scripts/eval-perf.mjs --trials 5 --out perf-results
