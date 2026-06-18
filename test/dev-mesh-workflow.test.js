@@ -130,7 +130,7 @@ test('autofix: author-controlled branch ref enters via env, never interpolated i
 test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
   // The action otherwise forces Opus 4.8, which the deploy key can't access (instant
   // is_error/$0 — the loop silently no-ops). The model is a repo variable so it can be
-  // changed without a PR; the fallback is a model an API key reliably has. (dogfood
+  // changed without a PR; the fallback is a broadly available model alias. (dogfood
   // checked separately.) This guard keeps it from regressing back to a forced Opus.
   for (const n of NAMES) {
     assert.match(wf[n], /vars\.DEV_MESH_MODEL/, `${n}: model must come from the DEV_MESH_MODEL repo variable`);

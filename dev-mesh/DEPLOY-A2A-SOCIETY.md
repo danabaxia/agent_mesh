@@ -29,8 +29,9 @@ judge it ready and redeploy (`git fetch && git checkout v1.1 && restart`). The d
 
 ## Prerequisites (on the host)
 - **Node ≥ 20** and this repo cloned.
-- **`claude` CLI authenticated** (`claude --version` works headlessly). An **API key** is
-  cleaner than a subscription token for an unattended host.
+- **`claude` CLI authenticated** (`claude --version` works headlessly) using
+  OAuth/subscription auth. This repo does not use key-based Anthropic auth for
+  autonomous mesh work.
 - **`gh` CLI authenticated** (`gh auth status`) with push + PR rights to the repo. (A
   fine-grained PAT with `contents`+`pull-requests` works; `workflows` scope too if society
   changes may touch `.github/workflows/**`.)

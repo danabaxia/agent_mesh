@@ -5,18 +5,16 @@ before changing auth, model, or workflows. Design: `docs/superpowers/specs/2026-
 
 ## Auth (how the agents reach Claude in CI)
 
-The agents run in GitHub Actions via `claude-code-action@v1`. Two **separate**
-billing wallets — don't confuse them:
+The agents run in GitHub Actions via `claude-code-action@v1`. CI auth is
+**OAuth-only**:
 
 | Auth | Secret | Wallet | Notes |
 |------|--------|--------|-------|
-| **Subscription (current)** | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Pro/Max plan | Generate with `claude setup-token` on a logged-in Pro/Max machine (`sk-ant-oat01-…`). No per-call charge; subject to subscription rate limits. Check Anthropic's policy on automated use. |
-| API key (alternative) | `ANTHROPIC_API_KEY` | Anthropic **API** credits (console billing) | Pay-as-you-go. Sturdier for automation. *Not* funded by a Pro/Max subscription — they're different wallets. |
+| **Subscription (required)** | `CLAUDE_CODE_OAUTH_TOKEN` | Claude Pro/Max plan | Generate with `claude setup-token` on a logged-in Pro/Max machine (`sk-ant-oat01-...`). No per-call charge; subject to subscription rate limits. Check Anthropic's policy on automated use. |
 
-A **Pro/Max subscription does NOT fund API keys.** An empty API balance returns
-`billing_error` / "Credit balance is too low" (HTTP 400) — an instant `is_error`
-with `$0`. (This bit us on 2026-06-14: keycheck passed on leftover credit, then the
-mesh failed `billing_error` once it ran out. Switched to subscription auth.)
+Do not wire key-based Anthropic auth into this repo's CI. A Pro/Max subscription
+token and pay-as-you-go Anthropic credentials are different billing/auth paths;
+the dev-mesh standard is the OAuth token above.
 
 ## Model
 
@@ -56,8 +54,9 @@ pr:in-review · done · blocked · rejected · memory:promote`.
 
 ## Quick triage
 
-- All agent runs fail instantly (`is_error`/`$0`, ~150ms): **auth** — token missing,
-  or API credit empty. Check the secret matches the chosen auth row above.
+- All agent runs fail instantly (`is_error`/`$0`, ~150ms): **auth** — OAuth token
+  missing, malformed, expired, or not accepted by the CLI. Check
+  `CLAUDE_CODE_OAUTH_TOKEN`.
 - Job green but nothing happened: shouldn't occur anymore (honesty gate). If it does,
   the gate/`execution_file` wiring regressed — see `dev-mesh-workflow.test.js`.
 - `review`/agent check red but `ci.yml` green: `ci.yml` (pure `node --test`) is the
