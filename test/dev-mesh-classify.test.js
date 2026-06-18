@@ -26,6 +26,12 @@ test('infra_auth: explicit auth / 403 marker', () => {
   assert.equal(classifyFromLog('device code request failed with status 403 Forbidden').label, LABELS.INFRA_AUTH);
 });
 
+test('infra_auth: OAuth "invalid auth" signature (broadened from invalid api key)', () => {
+  // OAuth-authed runners emit "invalid auth …" rather than the API-key text; the
+  // broadened INFRA_RE must still route this to infra_auth (escalate), not real_bug.
+  assert.equal(classifyFromLog('Error: invalid auth token').label, LABELS.INFRA_AUTH);
+});
+
 test('out_of_scope: same failure reproduces on the base branch', () => {
   const r = classifyFailure({ ranAnyTest: true, failingFiles: ['foo.test.js'], failedOnBaseBranch: true });
   assert.equal(r.label, LABELS.OUT_OF_SCOPE);

@@ -164,7 +164,7 @@ The society is hosted by GitHub Actions. Each trigger class is a workflow that
 checks out the repo, materializes/loads the Dev-mesh (`doctor --apply`), and
 drives the relevant agent headlessly; agents delegate onward over `serve-a2a`.
 `claude-code-action@v1` supplies the runner shell, the Claude runtime, and
-`GITHUB_TOKEN`/`ANTHROPIC_API_KEY`.
+`GITHUB_TOKEN`/`CLAUDE_CODE_OAUTH_TOKEN`.
 
 | Workflow | Trigger | Drives |
 |----------|---------|--------|
@@ -332,7 +332,7 @@ it inherits and extends the framework's threat model:
   absorbed research is **cited and review-gated** (§5.0/§10) so a poisoned page
   can't silently become a prefetched instruction.
 - **No secrets to untrusted code (F4).** Dev-mesh workflows run only on
-  **same-repo / trusted refs**; they must NOT expose `ANTHROPIC_API_KEY`/write
+  **same-repo / trusted refs**; they must NOT expose `CLAUDE_CODE_OAUTH_TOKEN`/write
   tokens to **fork PRs** (the `pull_request_target` "pwn request" class). Fork PRs
   get read-only review at most.
 - **Least privilege per role.** `ask` roles get read-only GitHub MCP (the

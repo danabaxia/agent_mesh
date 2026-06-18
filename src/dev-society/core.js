@@ -46,6 +46,21 @@ export function a2aMessage(mode, text, messageId) {
   };
 }
 
+/** Build the peer registry used by the daemon to spawn A2A bridge servers. */
+export function registryFor(worktree, { binPath, nodePath = process.execPath } = {}) {
+  if (!binPath) throw new Error('registryFor requires binPath');
+  // Per-peer modes (S1, #86 review): the Coder writes (do); the Reviewer is ASK-only — it
+  // reads the diff as data and must never accept a write, even on the shared worktree.
+  const peer = (modes) => ({
+    root: worktree,
+    command: nodePath,
+    args: [binPath, 'serve-a2a', worktree],
+    cwd: worktree,
+    env: { AGENT_MESH_ENABLED_MODES: modes },
+  });
+  return { peers: { coder: peer('ask,do'), reviewer: peer('ask') } };
+}
+
 /** The do-task prompt handed to the Coder agent (top-level do). Functional phrasing only. */
 export function coderPrompt(issue) {
   return [

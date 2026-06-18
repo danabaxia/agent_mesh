@@ -16,8 +16,9 @@ name: Integration (nightly)
 # DEFAULT-BRANCH CAVEAT: GitHub `schedule` triggers fire only from the repo's
 # DEFAULT branch, so jobs explicitly `checkout` `v0.4-development` (the
 # integration branch under test). Until this file is on the default branch, use
-# `workflow_dispatch` for an immediate run. Auth is fail-fast: a missing
-# ANTHROPIC_API_KEY secret errors out clearly rather than timing out per tier.
+# `workflow_dispatch` for an immediate run. Auth is OAuth-only and fail-fast: a
+# missing CLAUDE_CODE_OAUTH_TOKEN secret errors out clearly rather than timing
+# out per tier.
 
 on:
   schedule:
@@ -32,9 +33,6 @@ permissions:
   contents: read
 
 env:
-  # Add ANTHROPIC_API_KEY to the repo's Actions secrets. Without it the auth
-  # preflight in each tier fails fast.
-  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   # The branch the integration tier always evaluates (see DEFAULT-BRANCH CAVEAT).
   INTEGRATION_REF: v0.4-development
 
@@ -52,17 +50,22 @@ jobs:
           node-version: 22
       - name: Install claude CLI
         run: npm i -g @anthropic-ai/claude-code
-      - name: Auth preflight (fail fast)
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::ANTHROPIC_API_KEY secret is not set — add it to the repo's Actions secrets."
+          CLEAN=$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')
+          if [ -z "$CLEAN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for integration."
             exit 1
           fi
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
           claude --version
       - name: Auth smoke — surface the real claude error (diagnostic, non-fatal)
         run: |
           # `claude --version` needs no auth, so it passing tells us nothing about
-          # whether `claude -p` can actually reach the API. The L1/L2 tiers were all
+          # whether `claude -p` can actually reach Claude. The L1/L2 tiers were all
           # failing in <1.5s with status 'error' — i.e. claude exits before any model
           # turn. This step runs ONE real `claude -p` and prints its stdout+stderr so
           # the actual cause (auth/permission/credit/config) is visible in the log.
@@ -74,7 +77,7 @@ jobs:
           echo "$OUT"
           echo "--- claude -p exit code: $CODE ---"
           if [ "$CODE" -ne 0 ]; then
-            echo "::error::claude -p failed (exit $CODE) — real error printed above; L1 e2e will fail until this is resolved (likely ANTHROPIC_API_KEY invalid / no API access / no credit)."
+            echo "::error::claude -p failed (exit $CODE) — real error printed above; L1 e2e will fail until OAuth auth is fixed."
           fi
           exit 0
       - name: L1 — demo e2e (real claude delegates a real write across folders)
@@ -95,12 +98,17 @@ jobs:
           node-version: 22
       - name: Install claude CLI
         run: npm i -g @anthropic-ai/claude-code
-      - name: Auth preflight (fail fast)
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::ANTHROPIC_API_KEY secret is not set."
+          CLEAN=$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')
+          if [ -z "$CLEAN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for integration."
             exit 1
           fi
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: L2 — A2A behavior eval (scorecard; non-gating, exits 0)
         run: node scripts/eval-a2a.mjs --trials 3 --out eval-results
       - name: Summarize scorecard
@@ -127,12 +135,20 @@ jobs:
           node-version: 22
       - name: Install claude CLI
         run: npm i -g @anthropic-ai/claude-code
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          CLEAN=$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')
+          if [ -z "$CLEAN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for integration."
+            exit 1
+          fi
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: L3 — adversarial battery (skip until scripts/eval-adversarial.mjs lands; backlog #3)
         run: |
           if [ -f scripts/eval-adversarial.mjs ]; then
-            if [ -z "$ANTHROPIC_API_KEY" ]; then
-              echo "::error::ANTHROPIC_API_KEY secret is not set."; exit 1
-            fi
             node scripts/eval-adversarial.mjs --min-pass-rate 1.0 --out adversarial-results
           else
             echo "::notice::scripts/eval-adversarial.mjs not present yet — skipping L3 (backlog #3)."
@@ -158,12 +174,20 @@ jobs:
           node-version: 22
       - name: Install claude CLI
         run: npm i -g @anthropic-ai/claude-code
+      - name: Sanitize OAuth token (strip stray whitespace/newlines)
+        env:
+          RAW_OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          CLEAN=$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')
+          if [ -z "$CLEAN" ]; then
+            echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for integration."
+            exit 1
+          fi
+          echo "::add-mask::$CLEAN"
+          echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
       - name: L4 — performance benchmark (skip until scripts/eval-perf.mjs lands; backlog #4)
         run: |
           if [ -f scripts/eval-perf.mjs ]; then
-            if [ -z "$ANTHROPIC_API_KEY" ]; then
-              echo "::error::ANTHROPIC_API_KEY secret is not set."; exit 1
-            fi
             node scripts/eval-perf.mjs --trials 5 --out perf-results
           else
             echo "::notice::scripts/eval-perf.mjs not present yet — skipping L4 (backlog #4)."

@@ -130,7 +130,7 @@ test('autofix: author-controlled branch ref enters via env, never interpolated i
 test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
   // The action otherwise forces Opus 4.8, which the deploy key can't access (instant
   // is_error/$0 — the loop silently no-ops). The model is a repo variable so it can be
-  // changed without a PR; the fallback is a model an API key reliably has. (dogfood
+  // changed without a PR; the fallback is a broadly available model alias. (dogfood
   // checked separately.) This guard keeps it from regressing back to a forced Opus.
   for (const n of NAMES) {
     assert.match(wf[n], /vars\.DEV_MESH_MODEL/, `${n}: model must come from the DEV_MESH_MODEL repo variable`);
@@ -259,4 +259,43 @@ test('dogfood: real-claude, materializes the real mesh, read-only & non-merging'
   assert.match(dogfood, /contents:\s*read/, 'dogfood must be read-only (no pushes)');
   assert.match(dogfood, /upload-artifact/, 'dogfood artifacts its run logs');
   assert.doesNotMatch(dogfood, /gh pr merge|merge_pull_request|--auto\b/i, 'dogfood never merges');
+});
+
+// --- PR janitor (elevated-permission scheduled sweep) ---
+const janitor = (() => {
+  const p = `${dir}dev-mesh-pr-janitor.yml`;
+  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+})();
+
+test('janitor: scheduled + manual only, never per-PR (fork-PR / pwn-request safety)', () => {
+  assert.ok(janitor, 'dev-mesh-pr-janitor.yml missing');
+  assert.match(janitor, /schedule:/);
+  assert.match(janitor, /workflow_dispatch:/);
+  // §F4: no secrets must flow to fork PRs — push/pull_request/pull_request_target are forbidden.
+  assert.doesNotMatch(janitor, /^\s*push:/m, 'janitor must not run on push');
+  assert.doesNotMatch(janitor, /^\s*pull_request:/m, 'janitor must not run on pull_request');
+  assert.doesNotMatch(janitor, /pull_request_target/, 'janitor: pull_request_target is forbidden');
+});
+
+test('janitor: serialized runs (cancel-in-progress: false)', () => {
+  assert.match(janitor, /concurrency:/);
+  assert.match(janitor, /cancel-in-progress:\s*false/, 'in-flight janitor run must not be cancelled');
+});
+
+test('janitor: NO auto-merge (NEVER merges, human holds the gate)', () => {
+  assert.doesNotMatch(
+    janitor,
+    /enable_pr_auto_merge|enable-auto-merge|--auto\b|gh pr merge|merge_pull_request/i,
+    'janitor must not auto-merge (contents:write + schedule = elevated risk)',
+  );
+});
+
+test('janitor: every PR query filters out cross-repository (fork) PRs (§F4 runtime guard)', () => {
+  // The complementary defense to the trigger guard: the janitor pushes commits to
+  // PR head branches, so it must never act on a fork PR. Both jq filters (UNKNOWN
+  // nudge + unlabelled escalate) must carry isCrossRepository==false.
+  // All three `gh pr list` steps (1 closes PRs, 2 pushes to branches, 3 opens issues)
+  // must carry the guard; >= 3 so dropping it from the highest-stakes Step 1 (PR close) fails.
+  const count = (janitor.match(/isCrossRepository==false/g) || []).length;
+  assert.ok(count >= 3, `expected isCrossRepository==false in every PR query (3), found ${count}`);
 });

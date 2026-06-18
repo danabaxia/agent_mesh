@@ -32,12 +32,16 @@ test('integration workflow: POSIX-only, scorecard-safe concurrency', () => {
   assert.match(wf, /cancel-in-progress:\s*false/);
 });
 
-test('integration workflow: real-claude auth wired with fail-fast preflight', () => {
-  assert.match(wf, /ANTHROPIC_API_KEY:\s*\$\{\{\s*secrets\.ANTHROPIC_API_KEY\s*\}\}/);
+test('integration workflow: real-claude auth is OAuth-only with fail-fast preflight', () => {
+  assert.doesNotMatch(wf, /ANTHROPIC_API_KEY/, 'integration must never use API-key auth');
+  assert.match(wf, /RAW_OAUTH:\s*\$\{\{\s*secrets\.CLAUDE_CODE_OAUTH_TOKEN\s*\}\}/);
+  assert.match(wf, /tr -d '\[:space:\]'/, 'OAuth token must be sanitized before use');
+  assert.match(wf, /::add-mask::\$CLEAN/, 'sanitized token must be re-masked so stripped whitespace variant is also secret');
+  assert.match(wf, /echo "CLAUDE_CODE_OAUTH_TOKEN=\$CLEAN" >> "\$GITHUB_ENV"/);
   assert.match(wf, /npm i -g @anthropic-ai\/claude-code/);
   // a missing secret errors out (::error::) rather than timing out per tier.
-  assert.match(wf, /if \[ -z "\$ANTHROPIC_API_KEY" \]/);
-  assert.match(wf, /::error::ANTHROPIC_API_KEY/);
+  assert.match(wf, /if \[ -z "\$CLEAN" \]/);
+  assert.match(wf, /::error::CLAUDE_CODE_OAUTH_TOKEN/);
 });
 
 test('integration workflow: schedule-from-default-branch caveat handled (checks out v0.4-development)', () => {
