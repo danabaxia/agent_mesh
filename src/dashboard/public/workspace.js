@@ -14,7 +14,8 @@ const TAB_TITLES = {
   schedule: 'Schedule',
   files: 'Files',
   artifacts: 'Artifacts',
-  workflows: 'Workflows'
+  workflows: 'Workflows',
+  daily: 'Daily'
 };
 
 let MESH = null;          // latest /api/mesh view, threaded in from board2.js
@@ -107,6 +108,14 @@ export function selectTab(tab, name = currentName) {
       .then(({ renderWorkflowsTab }) => { if (body.dataset.activeTab === 'workflows') renderWorkflowsTab(body, name, MESH, (t) => selectTab(t, name)); })
       .catch(() => {
         body.innerHTML = '<div class="wstab-pad"><p class="stub">workflows-tab.js failed to load — the Workflows view is unavailable.</p></div>';
+      });
+  } else if (tab === 'daily') {
+    // Mesh-wide Daily Report digest (PRs/Issues/Tokens) — same for any selected agent.
+    body.innerHTML = '<div class="loading">Loading…</div>';
+    import('/daily-tab.js')
+      .then(({ renderDailyTab }) => { if (body.dataset.activeTab === 'daily') renderDailyTab(body); })
+      .catch(() => {
+        body.innerHTML = '<div class="wstab-pad"><p class="stub">daily-tab.js failed to load — the Daily view is unavailable.</p></div>';
       });
   } else {
     const title = TAB_TITLES[tab] || tab;

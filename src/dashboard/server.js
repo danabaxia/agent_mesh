@@ -622,7 +622,7 @@ function consoleErrorStatus(code) {
 // Route handling
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler }) {
+async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath }) {
   applySecurityHeaders(res);
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenerPort}`);
@@ -676,6 +676,23 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     view.sessionLogEnabled = sessionLogEnabled; // gate the session-log view (list/transcript)
     view.chatEnabled = !!chatEnabled;           // gate the in-dashboard chat composer (off by default)
     sendJson(res, 200, view);
+    return;
+  }
+
+  // GET /api/daily → the latest cached Daily Mesh Report model (mesh-wide
+  // PR/Issue/Token digest), written by scripts/daily-report.mjs each run. A
+  // read-only file read — never shells gh on page load. `{ available:false }`
+  // when no report has been generated yet (so the tab shows an empty state).
+  if (pathname === '/api/daily' && req.method === 'GET') {
+    const cachePath = dailyReportPath
+      || process.env.AGENT_MESH_DAILY_REPORT_CACHE
+      || resolve(meshRoot, '..', '.dev-society', 'daily-report.json');
+    try {
+      const report = JSON.parse(readFileSync(cachePath, 'utf8'));
+      sendJson(res, 200, { available: true, report });
+    } catch {
+      sendJson(res, 200, { available: false });
+    }
     return;
   }
 
@@ -2546,7 +2563,7 @@ function loadOrCreatePersistedToken(meshRoot) {
   return fresh;
 }
 
-export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync }) {
+export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath }) {
   // Resolve auth token. Precedence:
   //   1. Explicit `token` arg (tests inject deterministic tokens)
   //   2. Persisted token at <meshRoot>/.agent-mesh/dashboard-token (so a CLI
@@ -2672,7 +2689,8 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
       rotationManager,
       // Locate-in-Explorer action — injectable so tests record instead of spawn.
       spawnLocate: spawnLocate ?? defaultSpawnLocate,
-      scheduler: sched
+      scheduler: sched,
+      dailyReportPath
     }).catch((err) => {
       applySecurityHeaders(res);
       try {
