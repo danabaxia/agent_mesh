@@ -287,6 +287,17 @@
       "ts": "2026-06-17"
     }
   },
+  "daemon-polling-idempotency": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Polling daemon: exclude ALL in-flight labels from eligibility + fail-closed on null/ambiguous gate inputs.",
+    "l1": "PR #90 fixed C1: isEligible passed pr:in-review issues to the Coder, re-selecting items already under active PR development. Also T2: shouldOpenPR({tests:null}) returned truthy, creating PRs when no CI run had occurred. Both silent failures — no crash, just repeated work or spurious PR creation. Root cause: eligibility checked some but not all in-flight labels; gate function lacked a positive-confirmation requirement.",
+    "value": "(1) Eligibility: every label denoting active ownership (pr:in-review, in-progress, blocked) must appear in isEligible — missing any one silently allows duplicate processing. Test each in-flight label as an explicit negative case.\n(2) Gate functions: require confirmed positive state (e.g. !!tests && tests.passed === true), NOT merely absence of explicit failure. shouldOpenPR(null) → false; shouldMerge(null) → false. 'No data' is not 'ok'.\nApplies to any polling daemon or work-queue consumer. Provenance: PR #90 (2026-06-18), closes Issue #87.",
+    "provenance": {
+      "source": "PR #90: fix(dev-society): apply #86 review findings C1/C2/S1/S2 + tests T1/T2",
+      "ts": "2026-06-18"
+    }
+  },
   "security-eval-layer-targeting": {
     "status": "active",
     "valid_to": null,
