@@ -54,6 +54,25 @@ node scripts/dev-society-daemon.mjs               # poll forever
 Keep it alive with your process manager of choice (`systemd`, `pm2`, `tmux`, a `launchd` plist,
 or a `* * * * *` cron of `--once`).
 
+### 24/7 install (recommended)
+`scripts/dev-society-install.sh` packages the always-on setup: it runs the `--selftest`, then
+generates and loads the right unit for your OS — a **launchd LaunchAgent** on macOS (GUI session,
+so it can reach the keychain for `gh`/`claude` OAuth) or a **systemd `--user` service** on Linux
+(with lingering, so it survives logout). Both use `RunAtLoad`/`KeepAlive` (restart on crash,
+start at boot). The unit is generated from detected absolute paths at install time — nothing
+machine-specific is committed.
+
+```sh
+DEV_SOCIETY_REPO=danabaxia/agent_mesh scripts/dev-society-install.sh install   # install + start
+scripts/dev-society-install.sh status      # state / pid
+scripts/dev-society-install.sh logs        # tail .dev-society/daemon.out.log
+scripts/dev-society-install.sh restart     # restart now
+scripts/dev-society-install.sh uninstall   # stop + remove the unit
+```
+Logs land in `.dev-society/daemon.out.log` / `daemon.err.log`. Reads `DEV_SOCIETY_BASE`
+(default `main`), `DEV_SOCIETY_POLL_MS` (default `60000`), and `AGENT_MESH_CLAUDE` at install time
+and persists them into the unit.
+
 ## How to feed it work
 Label an issue **`approved` + `route:a2a`** (the `route:a2a` label opts it into the A2A society;
 the GitHub `backlog` worker deliberately skips `route:a2a` issues so they're never double-built).
