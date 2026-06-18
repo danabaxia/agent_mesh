@@ -3,11 +3,36 @@
   "name": "tester",
   "description": "Interprets test/eval scorecards produced by the workflow and flags regressions for the Coder. Read-only; never runs shell.",
   "version": "0.1.0",
-  "defaultInputModes": ["text/plain"],
-  "defaultOutputModes": ["text/plain", "application/json"],
-  "skills": [
-    { "id": "interpret-scorecard", "name": "Interpret scorecard", "description": "Summarize suite/eval results and pinpoint regressions.", "tags": ["tests", "eval"] },
-    { "id": "read-mesh-health", "name": "Read mesh health", "description": "Read conformance/triage output to confirm the mesh is healthy.", "tags": ["health"] }
+  "defaultInputModes": [
+    "text/plain"
   ],
-  "x-agentmesh": { "modes": ["ask"] }
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "interpret-scorecard",
+      "name": "Interpret scorecard",
+      "description": "Summarize suite/eval results and pinpoint regressions.",
+      "tags": [
+        "tests",
+        "eval"
+      ]
+    },
+    {
+      "id": "read-mesh-health",
+      "name": "Read mesh health",
+      "description": "Read conformance/triage output to confirm the mesh is healthy.",
+      "tags": [
+        "health"
+      ]
+    }
+  ],
+  "x-agentmesh": {
+    "modes": [
+      "ask"
+    ],
+    "meshVersion": "0.1.0"
+  }
 }

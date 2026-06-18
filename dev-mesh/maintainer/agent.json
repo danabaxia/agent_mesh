@@ -3,11 +3,37 @@
   "name": "maintainer",
   "description": "Dev-mesh dispatcher: watches the backlog, claims approved tasks, and routes work to the right specialist peer. Observes and delegates; never writes code or merges.",
   "version": "0.1.0",
-  "defaultInputModes": ["text/plain"],
-  "defaultOutputModes": ["text/plain", "application/json"],
-  "skills": [
-    { "id": "route-work", "name": "Route work", "description": "Pick the correct peer for a task or event.", "tags": ["dispatch", "routing"] },
-    { "id": "watch-backlog", "name": "Watch backlog", "description": "Detect approved/ready Issues and claim them atomically.", "tags": ["backlog", "claim"] }
+  "defaultInputModes": [
+    "text/plain"
   ],
-  "x-agentmesh": { "modes": ["ask"] }
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "route-work",
+      "name": "Route work",
+      "description": "Pick the correct peer for a task or event.",
+      "tags": [
+        "dispatch",
+        "routing"
+      ]
+    },
+    {
+      "id": "watch-backlog",
+      "name": "Watch backlog",
+      "description": "Detect approved/ready Issues and claim them atomically.",
+      "tags": [
+        "backlog",
+        "claim"
+      ]
+    }
+  ],
+  "x-agentmesh": {
+    "modes": [
+      "ask"
+    ],
+    "meshVersion": "0.1.0"
+  }
 }
