@@ -330,5 +330,16 @@
       "source": "PR #81 (2026-06-18): [codex] harden dev mesh OAuth runtime and sync",
       "ts": "2026-06-18"
     }
+  },
+  "doctor-apply-on-framework-upgrade": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New framework wiring → re-run `doctor --apply`; commit only portable agent content, not env-specific wiring.",
+    "l1": "PR #106: main gained board-notify SessionStart hook + peer-bridge .mcp.json wiring. All 7 dev-mesh agents predated it → 60+ conformance failures. `doctor dev-mesh --apply` fixed all. Per .gitignore: registry.json/.mcp.json/settings.json NOT committed (absolute-path-bound; regenerated per deployment). Portable content to commit: agent.json (meshVersion restamp), prompts/ (system.md/ask.md/do.md seeds), scaffold dirs (.agent/, deliverables/, output/). Verify: `validate dev-mesh` → Conformance: OK.",
+    "value": "After any main merge that introduces new framework wiring (SessionStart hooks, bridge MCP config, or new env stamps), resync all mesh agents: `agent-mesh doctor <mesh-dir> --apply`.\n\nVerify: `agent-mesh validate <mesh-dir>` → Conformance: OK. Record failure count before/after.\n\nCommit only portable content:\n- agent.json (meshVersion restamp clears 'version not declared' warnings)\n- prompts/system.md, prompts/ask.md, prompts/do.md (seeded if missing)\n- scaffold .gitkeeps: .agent/{memories,rules,reference,workflows,artifacts}/, deliverables/, output/\n\nNever commit env-specific generated wiring:\n- registry.json (embedded absolute peer spawn paths)\n- .mcp.json (embedded absolute MESH_ROOT/MESH_CEILING paths)\n- settings.json (machine-absolute hook paths)\n\nThese embed absolute paths at generation time — each deployment regenerates them locally. Committing them breaks every other operator's checkout.\n\nVerify .gitignore excludes: `*/registry.json`, `*/.mcp.json`, `mesh/mcp.json`, machine-absolute settings.json.\n\nProvenance: PR #106 (2026-06-18): dev-mesh re-init after board-notify SessionStart hook + peer-bridge wiring landed on main.",
+    "provenance": {
+      "source": "PR #106: chore(dev-mesh): re-init agent wiring and seed required scaffold",
+      "ts": "2026-06-18"
+    }
   }
 }
