@@ -78,6 +78,10 @@ test('integration workflow does not weaken the L0 gate (ci.yml L0 properties int
   assert.match(ci, /pull_request:/);
   assert.match(ci, /run-all-tests\.mjs/);
   assert.match(ci, /windows-latest/);   // L0 keeps the OS matrix the integration tier drops
+  // Trunk-based: triggers must target only `main` — a regression re-adding the retired
+  // `v*-development` lines would waste CI minutes (caught here, not in review).
+  assert.match(ci, /branches:\s*\[main\]/);
+  assert.doesNotMatch(ci, /v\*-development/, 'ci.yml triggers must not re-add retired vN-development lines');
 });
 
 test('integration workflow: L3/L4 eval scripts are present on this ref', () => {
