@@ -67,6 +67,10 @@ jobs:
             APPROVAL GATE (§5.3): only act on Issues that are `approved` AND unclaimed
             (no assignee, not `in-progress`). If none qualify, do nothing and stop.
 
+            ROUTING (augment / run-both): SKIP any Issue labeled `route:a2a` — those are owned
+            by the A2A dev-society daemon (scripts/dev-society-daemon.mjs), which builds them
+            over the real A2A mesh. Building one here too would double-claim it.
+
             For one ready task (FIFO): CLAIM it atomically — assign yourself (the assignee
             is the lock) and move the label `approved → in-progress` — then act as the
             **Coder** (`dev-mesh/coder/AGENT.md`, skills patch-planning + test-strategy):
