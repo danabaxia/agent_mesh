@@ -16,6 +16,19 @@ test('buildClaudeEnv: workers get DISABLE_AUTOUPDATER=1 by default (auto-update 
   assert.equal(e2.DISABLE_AUTOUPDATER, '0');
 });
 
+test('buildClaudeEnv: do-mode sets AGENT_MESH_HOOK_LOG; ask-mode does not (I3 audit trail)', () => {
+  // The path-guard hook inherits AGENT_MESH_HOOK_LOG from the process env (not
+  // just settings-env) so denial audit records land in the expected location.
+  const eDo = buildClaudeEnv({ root: '/srv/proj', env: {}, mode: 'do', callEnv: {}, runId: 'r1' });
+  assert.match(eDo.AGENT_MESH_HOOK_LOG, /path-guard-denials\.jsonl$/);
+  // Caller-supplied log dir is respected (|| fallback — empty string falls back too)
+  const eCustom = buildClaudeEnv({ root: '/srv/proj', env: { AGENT_MESH_LOG_DIR: 'custom/logs' }, mode: 'do', callEnv: {}, runId: 'r1' });
+  assert.match(eCustom.AGENT_MESH_HOOK_LOG, /custom[/\\]logs.*path-guard-denials\.jsonl$/);
+  // ask-mode must NOT set it (hook is do-only)
+  const eAsk = buildClaudeEnv({ root: '/srv/proj', env: {}, mode: 'ask', callEnv: {}, runId: 'r1' });
+  assert.equal(eAsk.AGENT_MESH_HOOK_LOG, undefined);
+});
+
 test('buildAskInvocation: READ_TOOLS only (no mesh) + Skill (all-skills default), strict mcp, settings + setting-sources ""', async () => {
   const root = await mkdtemp(join(tmpdir(), 'di-'));
   await writeFile(join(root, 'agent.json'), JSON.stringify({ name: 'a' }), 'utf8');

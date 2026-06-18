@@ -38,11 +38,12 @@ export const BRIDGE_SERVER_NAME = `${RESERVED_PREFIX}peerbridge`;
 
 // Env keys the operator-authored registry `peer.env` must NOT override for a
 // bridge spawn. PATH/DEPTH are already protected by stdio-client's PROTECTED_ENV;
-// these add the rest of the security-relevant set (mode, mesh layer, ceiling).
+// these add the rest of the security-relevant set (mode, mesh layer, ceiling, audit log).
 export const RESERVED_BRIDGE_ENV = [
   'AGENT_MESH_MODE',
   'AGENT_MESH_MESH_ROOT',
-  'AGENT_MESH_MESH_CEILING'
+  'AGENT_MESH_MESH_CEILING',
+  'AGENT_MESH_HOOK_LOG' // audit trail must not be redirectable by peer.env
 ];
 
 const ONWARD_MODE = 'ask'; // v1: ask-only
@@ -385,7 +386,7 @@ async function handle(message, bridge) {
   return rpcError(id, -32601, `Unknown method: ${method}`);
 }
 
-function buildTools() {
+export function buildTools() {
   return [
     {
       name: 'list_peers',
@@ -401,16 +402,20 @@ function buildTools() {
       description:
         'Delegate a scoped task to a named peer agent over A2A and return its final result. ' +
         "When a task concerns another agent's folder or domain (see list_peers), delegate it " +
-        'rather than attempting it locally. v1 is ask-only (read/answer tasks); "mode" must be ' +
-        '"ask". Repeated calls to the same peer continue one persistent conversation; pass ' +
-        'new_conversation:true to start fresh.',
+        'rather than attempting it locally. v1 is ask-only (read/answer tasks); mode "do" will ' +
+        'be refused by the bridge with mode_disabled. Repeated calls to the same peer continue ' +
+        'one persistent conversation; pass new_conversation:true to start fresh.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
         required: ['peer', 'task'],
         properties: {
           peer: { type: 'string', minLength: 1 },
-          mode: { type: 'string', enum: ['ask'] },
+          // No enum restriction: the bridge's ask-only capability gate (mode_disabled)
+          // is the enforcement layer, not the schema. Allowing any string here lets
+          // the model pass mode:'do' so the bridge can return a structured refusal
+          // that the model then reports back (required by the I6 adversarial probe).
+          mode: { type: 'string', minLength: 1 },
           task: { type: 'string', minLength: 1, maxLength: MAX_TASK_CHARS },
           new_conversation: {
             type: 'boolean',
