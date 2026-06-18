@@ -15,8 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aggregate } from '../src/report/aggregate.js';
 import { renderMarkdown, dailyMarker, findDatedCommentId } from '../src/report/render.js';
-import { readLocalLogs, fetchGhActivity } from '../src/report/sources.js';
-import { fetchCiUsage } from '../src/report/sources.js';   // present after Task 10; harmless import otherwise
+import { readLocalLogs, fetchGhActivity, fetchCiUsage } from '../src/report/sources.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
