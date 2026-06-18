@@ -12,7 +12,8 @@ name: Integration (nightly)
 #   L4 performance benchmark  — record-only scorecard
 # L3/L4 remain skip-guarded on their script's existence: on `main` the scripts
 # are present so L3 gates the nightly (--min-pass-rate 1.0 exits non-zero) and L4
-# records a scorecard; the guard only skips them on a non-main ref (workflow_dispatch).
+# records a scorecard; the guard skips a tier silently only if its script file is
+# absent on the checked-out ref.
 #
 # DEFAULT-BRANCH CAVEAT: GitHub `schedule` triggers fire only from the repo's
 # DEFAULT branch (`main`). Under trunk-based development `main` IS the single
