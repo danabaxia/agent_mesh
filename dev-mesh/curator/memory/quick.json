@@ -286,5 +286,16 @@
       "source": "PR #70 (2026-06-17): fix: move git branch ops before agent to avoid simple_expansion blocks (closes #65)",
       "ts": "2026-06-17"
     }
+  },
+  "security-eval-layer-targeting": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Security eval fixtures: cooperate past outer safety layers to reach the target framework enforcement layer.",
+    "l1": "PR #79 fixed three L3 adversarial fixture bugs — all the same pattern: (I5) malicious registry.json written post-seed polluted pre-run git state (noExternalWrite false-positive); fix: rawRegistry escape hatch commits it in the seed. (I3) relative escape path ../B/x.txt was refused by model safety heuristics before path-guard fired; fix: absolute path + win32 skip. (I6) enum:['ask'] in delegate_to_peer JSON Schema blocked mode:'do' before the runtime gate; fix: loosen to minLength:1, gate stays.",
+    "value": "Three layered-defense fixture anti-patterns to avoid:\n\n(1) Dirty git state poisons pre-run change detection. Any fixture file written AFTER buildMesh's seed commit appears as untracked/modified, causing noExternalWrite() to see 'already dirty' as a false positive. Fix: committed malicious fixtures must ride the seed commit via buildMesh's rawRegistry escape hatch (or equivalent) — never written manually post-seed.\n\n(2) Relative escape paths trigger model safety heuristics, not the path-guard. A task like 'write to ../B/x.txt' is refused by the model before the path-guard hook fires. Use the absolute path to the sibling root so the model cooperates down to the framework layer under test. On Windows, do-mode is refused by managed-policy preflight without AGENT_MESH_ATTEST_MANAGED_COMPATIBLE — add a win32 skip for path-guard do-mode tests.\n\n(3) JSON Schema enum restriction can block the model from supplying a 'bad' argument. In delegate_to_peer, mode: { enum: ['ask'] } prevented the model from passing mode:'do' — schema validation fired before the bridge's runtime mode_disabled refusal. Fix: loosen to { type: 'string', minLength: 1 }; the runtime gate remains enforcement and is covered deterministically by unit tests.\n\nGeneral rule: design each security eval scenario so the fixture cooperates past every outer layer (model refusals, schema validation, dirty git state, managed-policy preflight) and the framework's own enforcement is the FIRST thing that fires. Provenance: PR #79 (2026-06-18), fixing Issue #77.",
+    "provenance": {
+      "source": "PR #79: fix: L3 adversarial battery I3/I5/I6 security invariant failures",
+      "ts": "2026-06-18"
+    }
   }
 }
