@@ -14,11 +14,12 @@ name: Integration (nightly)
 # backlog #3/#4 land and lights up automatically once they do.
 #
 # DEFAULT-BRANCH CAVEAT: GitHub `schedule` triggers fire only from the repo's
-# DEFAULT branch, so jobs explicitly `checkout` `v0.4-development` (the
-# integration branch under test). Until this file is on the default branch, use
-# `workflow_dispatch` for an immediate run. Auth is OAuth-only and fail-fast: a
-# missing CLAUDE_CODE_OAUTH_TOKEN secret errors out clearly rather than timing
-# out per tier.
+# DEFAULT branch (`main`). Under trunk-based development `main` IS the single
+# living line, so the integration tier evaluates `main` directly — jobs check out
+# `INTEGRATION_REF` (= `main`) explicitly so a `workflow_dispatch` from any ref
+# still tests the trunk. (Historically this tracked a `vN-development` line; that
+# model is retired.) Auth is OAuth-only and fail-fast: a missing
+# CLAUDE_CODE_OAUTH_TOKEN secret errors out clearly rather than timing out per tier.
 
 on:
   schedule:
@@ -34,7 +35,8 @@ permissions:
 
 env:
   # The branch the integration tier always evaluates (see DEFAULT-BRANCH CAVEAT).
-  INTEGRATION_REF: v0.4-development
+  # Trunk-based development: the nightly validates `main`, not a retired vN-development line.
+  INTEGRATION_REF: main
 
 jobs:
   l1-e2e:

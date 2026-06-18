@@ -44,10 +44,12 @@ test('integration workflow: real-claude auth is OAuth-only with fail-fast prefli
   assert.match(wf, /::error::CLAUDE_CODE_OAUTH_TOKEN/);
 });
 
-test('integration workflow: schedule-from-default-branch caveat handled (checks out v0.4-development)', () => {
-  // schedule fires from the default branch, so jobs explicitly evaluate the
-  // integration branch.
-  assert.match(wf, /INTEGRATION_REF:\s*v0\.4-development/);
+test('integration workflow: schedule-from-default-branch caveat handled (checks out main)', () => {
+  // schedule fires from the default branch; under trunk-based development the
+  // integration tier evaluates `main` directly (the retired vN-development line
+  // is no longer the integration branch). Jobs still check out INTEGRATION_REF
+  // explicitly so a workflow_dispatch from any ref tests the trunk.
+  assert.match(wf, /INTEGRATION_REF:\s*main\b/);
   assert.match(wf, /ref:\s*\$\{\{\s*env\.INTEGRATION_REF\s*\}\}/);
 });
 
