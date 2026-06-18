@@ -76,6 +76,37 @@ test('mergefix: Drive Coder skipped on push (claude-code-action does not support
     /event_name\s*!=\s*'workflow_dispatch'/,
     'workflow_dispatch must not be blocked — it is the on-demand conflict-resolution trigger',
   );
+  // C3: Merge step must ALSO carry the push guard (not just Drive Coder). Count occurrences
+  // so a future edit that removes it from the Merge step while Drive Coder keeps it fails here
+  // rather than silently passing (that would leave the Merge step running on push events).
+  assert.ok(
+    (wf.match(/github\.event_name\s*!=\s*'push'/g) || []).length >= 2,
+    "Merge step if: must also carry github.event_name != 'push' (not just Drive Coder)",
+  );
+});
+
+test('mergefix: CONFLICTS_FOUND branches, Drive Coder gate, and Push step coverage', () => {
+  // R2(1): both the no-conflict and conflict branches must exist in the merge step.
+  assert.match(wf, /CONFLICTS_FOUND=false/, 'success-path must set CONFLICTS_FOUND=false');
+  assert.match(wf, /CONFLICTS_FOUND=true/, 'conflict-path must set CONFLICTS_FOUND=true');
+  // R2(2): Drive Coder if: must gate on CONFLICTS_FOUND == 'true' so a refactor that drops
+  // this condition cannot silently invoke the agent when there is nothing to resolve.
+  assert.match(
+    wf,
+    /env\.CONFLICTS_FOUND\s*==\s*'true'/,
+    "Drive Coder if: must include env.CONFLICTS_FOUND == 'true'",
+  );
+  // R2(3): Push step must exist and guard on steps.claude.outcome == 'success' so a failed
+  // agent run cannot push partial/broken conflict resolutions.
+  assert.match(wf, /Push resolved merge/, 'Push resolved merge step must exist');
+  assert.match(
+    wf,
+    /steps\.claude\.outcome\s*==\s*['"]success['"]/,
+    "Push step if: must check steps.claude.outcome == 'success'",
+  );
+  // R1 regression: non-zero git merge exit must be inspected with git ls-files -u so hard
+  // git errors (exit 128+) don't silently set CONFLICTS_FOUND=true.
+  assert.match(wf, /git ls-files -u/, 'non-zero merge exit must be verified via git ls-files -u');
 });
 
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {

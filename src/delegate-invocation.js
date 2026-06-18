@@ -146,7 +146,7 @@ function buildClaudeInvocationSync(mode, task, includeSkill = false) {
 }
 
 export function buildClaudeEnv({ root, env, mode, callEnv, runId }) {
-  return {
+  const result = {
     ...process.env,
     // Workers must NOT self-update: any of the many spawned claude processes
     // triggering the npm auto-updater swaps the binary under concurrent
@@ -161,6 +161,16 @@ export function buildClaudeEnv({ root, env, mode, callEnv, runId }) {
     // A2A sends can stamp `agentmesh/parent_run_id` for board correlation.
     AGENT_MESH_RUN_ID: runId
   };
+  // The path-guard hook reads AGENT_MESH_HOOK_LOG from process.env to know
+  // where to write denial audit records. The settings env block alone is not
+  // sufficient because the claude CLI may not propagate settings-env keys that
+  // start with AGENT_MESH_ to hook subprocess environments. Setting it here
+  // ensures the hook inherits it via the standard parent→child env inheritance.
+  if (mode === 'do') {
+    const logDir = env?.AGENT_MESH_LOG_DIR || DEFAULT_LOG_DIR;
+    result.AGENT_MESH_HOOK_LOG = join(resolve(root, logDir), 'path-guard-denials.jsonl');
+  }
+  return result;
 }
 
 export async function createClaudeSettings(root, env, mode, claudeEnv, skillPerms = null) {
