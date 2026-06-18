@@ -71,6 +71,17 @@ test('SECURITY: ask-roles run least-privilege (review never writes repo contents
   assert.doesNotMatch(wf.review, /contents:\s*write/, 'review must not grant contents: write');
 });
 
+test('REVIEW VERDICT: reviewer emits an explicit approve/request-changes (the all-clear signal)', () => {
+  // Root-cause fix for the sticky-CHANGES_REQUESTED bug: without an approve path the
+  // first request-changes never clears, so a PR shows red forever while CI is green.
+  // The reviewer must submit ONE verdict per commit and approve when no blocking items
+  // remain — green CI + that approval = merge-ready.
+  assert.match(wf.review, /--approve/, 'reviewer must be able to approve (clears sticky CHANGES_REQUESTED)');
+  assert.match(wf.review, /--request-changes/, 'reviewer must request changes on a blocking finding');
+  assert.match(wf.review, /BLOCKING/, 'reviewer must classify findings as blocking vs non-blocking');
+  // Still ask-only: an approval is not a merge. The NO-AUTO-MERGE test guards `gh pr merge`.
+});
+
 test('CLAIM LOCK: backlog & triage serialize via concurrency (no double-claim)', () => {
   for (const n of ['backlog', 'triage']) {
     assert.match(wf[n], /concurrency:/, `${n}: needs a concurrency group (the claim lock)`);
