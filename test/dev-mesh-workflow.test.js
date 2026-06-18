@@ -294,6 +294,8 @@ test('janitor: every PR query filters out cross-repository (fork) PRs (§F4 runt
   // The complementary defense to the trigger guard: the janitor pushes commits to
   // PR head branches, so it must never act on a fork PR. Both jq filters (UNKNOWN
   // nudge + unlabelled escalate) must carry isCrossRepository==false.
+  // All three `gh pr list` steps (1 closes PRs, 2 pushes to branches, 3 opens issues)
+  // must carry the guard; >= 3 so dropping it from the highest-stakes Step 1 (PR close) fails.
   const count = (janitor.match(/isCrossRepository==false/g) || []).length;
-  assert.ok(count >= 2, `expected isCrossRepository==false in every PR query, found ${count}`);
+  assert.ok(count >= 3, `expected isCrossRepository==false in every PR query (3), found ${count}`);
 });
