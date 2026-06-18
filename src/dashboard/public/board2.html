@@ -9,6 +9,7 @@
      stays linked while session-canvas.js exists (removed in Phase-7 Task 3). -->
 <link rel="stylesheet" href="/result-canvas.css">
 <link rel="stylesheet" href="/board2-session.css">
+<link rel="stylesheet" href="/graph-view.css">
 </head>
 <body>
 
@@ -21,6 +22,7 @@
   <span class="pill">⌘ <b id="pill-sessions">—</b> live sessions</span>
   <span class="spacer"></span>
   <div class="bview"><span class="on" data-bv="cards">▦ cards</span><span data-bv="net">◉ network</span></div>
+  <button class="hbtn" data-topview="graph" title="live graph view — mesh activity, tokens, issues/PRs">✦ graph</button>
   <button class="hbtn">＋ Add agent</button>
 </header>
 
@@ -72,13 +74,15 @@
       <span data-wstab="files">Files</span>
       <span data-wstab="artifacts">Artifacts</span>
       <span data-wstab="workflows">Workflows</span>
-      <span data-wstab="daily">Daily</span>
     </div>
     <span class="spacer"></span>
     <button class="hbtn amber" id="ws-terminal">⌘ Terminal — open in Claude CLI</button>
   </div>
   <div id="ws-body"></div>
 </div>
+
+<!-- ═══════════════ VIEW 3: GRAPH (top-level live mesh view) ═══════════════ -->
+<div class="view" id="view-graph"></div>
 
 <!-- session-log.js stays loaded: session-view.js imports transcriptWindowUrl/
      streamUrl from it (its only import-time side effect is window.mountSessionLog). -->

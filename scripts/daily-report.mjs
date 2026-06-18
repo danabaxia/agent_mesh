@@ -35,7 +35,9 @@ const CACHE = process.env.AGENT_MESH_DAILY_REPORT_CACHE || join(repoRoot, '.dev-
 function writeCache(report) {
   try {
     mkdirSync(dirname(CACHE), { recursive: true });
-    writeFileSync(CACHE, JSON.stringify({ ...renderModel(report), generatedAt: new Date().toISOString() }, null, 2));
+    const payload = JSON.stringify({ ...renderModel(report), generatedAt: new Date().toISOString() }, null, 2);
+    writeFileSync(CACHE, payload);                                            // latest (dashboard /api/daily)
+    writeFileSync(join(dirname(CACHE), `daily-report-${report.date}.json`), payload);  // per-date (token ranges)
   } catch (e) {
     console.error('daily-report cache write failed (non-fatal):', e.message);
   }
