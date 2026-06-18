@@ -58,12 +58,12 @@
   "timing-race-two-phase-budget": {
     "status": "active",
     "valid_to": null,
-    "l0": "Two-phase timing tests: poll for the setup condition, define KILL_TIMEOUT_MS = STARTUP_BUDGET_MS + slack.",
-    "l1": "When a test confirms 'state is ready' before an event fires (e.g. wait for pid file, then kill), a formula like `KILL_TIMEOUT_MS - 1000` hides the dependency: changing either constant silently breaks the other, and the gap collapses on loaded CI runners. process.test.js ('spawnFile timeout kills the whole process tree') flaked on windows-latest/node-20 (Issue #9) because the grandchild hadn't written its pid file within the 1s pre-kill window — the tree was killed before the assertion could pass.",
-    "value": "Pattern: (1) poll for the setup condition (pid file, port, lock, etc.) bounded by STARTUP_BUDGET_MS; (2) define KILL_TIMEOUT_MS = STARTUP_BUDGET_MS + N (2s recommended slack) so the ordering constraint is encoded in the constant definition, not implicit math. A generous startup budget (5000ms) covers two cold Node starts on a loaded Windows runner. Apply this shape to any test that must confirm 'state ready' before 'event fires'. Provenance: PR #35 / Issue #9 (2026-06-15).",
+    "l0": "Two-phase timing: anchor KILL_TIMEOUT_MS (15000ms for Windows cold starts), set STARTUP_BUDGET = KILL_TIMEOUT - 500.",
+    "l1": "PR #35's fix (STARTUP_BUDGET_MS=5000, KILL_TIMEOUT_MS=7000) proved insufficient: two cold Node starts on a loaded Windows runner take 5-7s, so the 5s budget expired before the grandchild wrote its pid (PR #102, observed twice). Root cause: kill timeout anchored too low (7s). Fix: anchor on a generous kill timeout (15000ms), derive STARTUP_BUDGET_MS = KILL_TIMEOUT_MS - 500 — poll fills nearly the full pre-kill window. Formula direction matters: budget = kill - slack tracks correctly; kill = budget + slack can silently leave an insufficient ceiling.",
+    "value": "Pattern: (1) Pick KILL_TIMEOUT_MS generously — 15000ms for tests with two cold Node starts on Windows. (2) Derive STARTUP_BUDGET_MS = KILL_TIMEOUT_MS - 500 (poll for nearly the full pre-kill window). (3) Formula direction matters: anchoring on kill and deriving budget means raising the timeout automatically grows the poll window; the reverse (kill = budget + slack) requires both constants to move together and fails silently if kill is raised but budget is not. Symptom of miscalibration: test duration equals STARTUP_BUDGET_MS exactly (poll expires before pid file appears) even when the kill mechanism is correct — assert fires against incomplete state, not a broken feature. Applies to any test confirming 'state ready' before 'event fires' (pid file, port, lock). Provenance: first fixed in PR #35 (values later proven insufficient); definitively calibrated in PR #102 (2026-06-18, two recurrences on windows-latest/node-20).",
     "provenance": {
-      "source": "PR #35 / Issue #9",
-      "ts": "2026-06-15"
+      "source": "PR #102 (2026-06-18): supersedes PR #35 — KILL_TIMEOUT_MS=15000 + STARTUP_BUDGET = KILL_TIMEOUT - 500",
+      "ts": "2026-06-18"
     }
   },
   "gh-actions-ref-injection": {
