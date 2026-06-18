@@ -60,6 +60,10 @@ const TEMPLATE = `
     <div class="shead" data-fold><span class="caret">▾</span><span>▤ ISSUES &amp; PRS · PROGRESS</span><span class="meta">idea→spec→approved→in-progress→review→done</span><span class="maxbtn" data-max title="full size">⤢</span></div>
     <div class="secbody"><div class="tscroll" id="gv-issues"></div></div>
   </div>
+  <div class="sec" id="sec-sched">
+    <div class="shead" data-fold><span class="caret">▾</span><span>⏱ SCHEDULES</span><span class="meta" id="gv-sched-owner">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
+    <div class="secbody"><div class="tscroll" id="gv-sched"></div></div>
+  </div>
 </div>`;
 
 export function renderGraphView(rootEl) {
@@ -107,6 +111,7 @@ function loadAll() {
   ensureGraph().then(loadActivity);
   loadTokens();
   loadDaily();
+  loadSchedules();
   if (!es) {
     try { es = new EventSource('/api/events'); es.addEventListener('activity', () => loadActivity()); es.onerror = () => {}; } catch { /* no SSE */ }
   }
@@ -256,6 +261,16 @@ async function loadDaily() {
   issuesEl.innerHTML = rows.length
     ? `<table><thead><tr><th>#</th><th>kind</th><th>title</th><th>state</th><th>progress</th><th>age</th></tr></thead><tbody>${rows.map(rowHtml).join('')}</tbody></table>`
     : '<div class="gv-empty">No open issues or PRs in the latest report.</div>';
+}
+
+async function loadSchedules() {
+  let d; try { d = await (await fetch('/api/schedules')).json(); } catch { return; }
+  setText('gv-sched-owner', `engine: ${d.schedulerOwner || '—'} · ${(d.jobs || []).length} jobs`);
+  const el = root.querySelector('#gv-sched');
+  if (!d.jobs || !d.jobs.length) { el.innerHTML = '<div class="gv-empty">No scheduled jobs. Add one to an agent’s .agent/schedule.json; the daemon runs them 24/7.</div>'; return; }
+  const pill = (s) => s === 'ok' ? '<span class="state done">ok</span>' : s === 'fail' ? '<span class="state block">fail</span>' : '<span class="state open">—</span>';
+  const rows = d.jobs.map((j) => `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span></td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : ''}</td></tr>`).join('');
+  el.innerHTML = `<table><thead><tr><th>agent · job</th><th>cadence</th><th>last</th><th>next run</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function setText(id, v) { const el = root.querySelector('#' + id); if (el) el.textContent = v; }
