@@ -44,6 +44,7 @@ import { createSessionLive } from './session-live.js';
 import { parseTranscriptLine, redactSessionEvent } from './session-events.js';
 import { readSessionId, writeSessionId } from './session-store.js';
 import { readRunLogRecords, dedupeRunRecords } from '../log.js';
+import { aggregateRange } from '../report/tokens-range.js';
 import { MAX_TASK_CHARS, DEFAULT_AUTOSYNC_DEBOUNCE_MS, readPositiveInt } from '../config.js';
 import { createAutoSync } from './auto-sync.js';
 import { doctor } from '../builder/doctor.js';
@@ -622,7 +623,7 @@ function consoleErrorStatus(code) {
 // Route handling
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler }) {
+async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir }) {
   applySecurityHeaders(res);
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenerPort}`);
@@ -676,6 +677,46 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     view.sessionLogEnabled = sessionLogEnabled; // gate the session-log view (list/transcript)
     view.chatEnabled = !!chatEnabled;           // gate the in-dashboard chat composer (off by default)
     sendJson(res, 200, view);
+    return;
+  }
+
+  // GET /api/daily → the latest cached Daily Mesh Report model (mesh-wide
+  // PR/Issue/Token digest), written by scripts/daily-report.mjs each run. A
+  // read-only file read — never shells gh on page load. `{ available:false }`
+  // when no report has been generated yet (so the tab shows an empty state).
+  if (pathname === '/api/daily' && req.method === 'GET') {
+    const cachePath = dailyReportPath
+      || process.env.AGENT_MESH_DAILY_REPORT_CACHE
+      || resolve(meshRoot, '..', '.dev-society', 'daily-report.json');
+    try {
+      const report = JSON.parse(readFileSync(cachePath, 'utf8'));
+      sendJson(res, 200, { available: true, report });
+    } catch {
+      sendJson(res, 200, { available: false });
+    }
+    return;
+  }
+
+  // GET /api/tokens?range=today|week|month → the token-consumption panel model,
+  // aggregated from the per-date daily-report caches. today = the latest report;
+  // week/month = sum the last 7/30 dated caches (missing days skipped).
+  if (pathname === '/api/tokens' && req.method === 'GET') {
+    const range = url.searchParams.get('range') || 'today';
+    const dir = dailyReportDir || process.env.AGENT_MESH_DAILY_REPORT_DIR
+      || resolve(meshRoot, '..', '.dev-society');
+    const latest = dailyReportPath || join(dir, 'daily-report.json');
+    const models = [];
+    if (range === 'today') {
+      try { models.push(JSON.parse(readFileSync(latest, 'utf8'))); } catch { /* none yet */ }
+    } else {
+      const n = range === 'month' ? 30 : 7;
+      const nowMs = Date.now();
+      for (let i = n - 1; i >= 0; i--) {
+        const date = new Date(nowMs - i * 86400000).toISOString().slice(0, 10);
+        try { models.push(JSON.parse(readFileSync(join(dir, `daily-report-${date}.json`), 'utf8'))); } catch { /* skip missing day */ }
+      }
+    }
+    sendJson(res, 200, { range, model: aggregateRange(models) });
     return;
   }
 
@@ -2346,8 +2387,8 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
   // -----------------------------------------------------------------------
 
   if (req.method === 'GET') {
-    // Map / to index.html
-    const assetPath = pathname === '/' ? '/index.html' : pathname;
+    // Map / to board2.html (the dashboard; the legacy index.html/app.js was removed).
+    const assetPath = pathname === '/' ? '/board2.html' : pathname;
 
     // Reject traversal attempts (%2e, double-dot, etc.)
     if (assetPath.includes('..') || assetPath.includes('\0')) {
@@ -2546,7 +2587,7 @@ function loadOrCreatePersistedToken(meshRoot) {
   return fresh;
 }
 
-export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync }) {
+export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir }) {
   // Resolve auth token. Precedence:
   //   1. Explicit `token` arg (tests inject deterministic tokens)
   //   2. Persisted token at <meshRoot>/.agent-mesh/dashboard-token (so a CLI
@@ -2672,7 +2713,9 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
       rotationManager,
       // Locate-in-Explorer action — injectable so tests record instead of spawn.
       spawnLocate: spawnLocate ?? defaultSpawnLocate,
-      scheduler: sched
+      scheduler: sched,
+      dailyReportPath,
+      dailyReportDir
     }).catch((err) => {
       applySecurityHeaders(res);
       try {

@@ -9,12 +9,12 @@
 //   node scripts/daily-report.mjs --selftest                    # wiring, no gh
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { realpathSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { realpathSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aggregate } from '../src/report/aggregate.js';
-import { renderMarkdown, dailyMarker, findDatedCommentId } from '../src/report/render.js';
+import { renderMarkdown, renderModel, dailyMarker, findDatedCommentId } from '../src/report/render.js';
 import { readLocalLogs, fetchGhActivity, fetchCiUsage } from '../src/report/sources.js';
 
 const sh = promisify(execFile);
@@ -29,6 +29,19 @@ const REPO = process.env.DEV_SOCIETY_REPO || '';
 const LABEL = process.env.DAILY_REPORT_LABEL || 'mesh:daily-report';
 const TITLE = process.env.DAILY_REPORT_TITLE || '📊 Daily Mesh Report';
 const logDir = resolve(repoRoot, process.env.AGENT_MESH_LOG_DIR || '.agent-mesh/logs');
+// Where the dashboard's Daily tab reads the report from (the same model the issue renders).
+const CACHE = process.env.AGENT_MESH_DAILY_REPORT_CACHE || join(repoRoot, '.dev-society', 'daily-report.json');
+
+function writeCache(report) {
+  try {
+    mkdirSync(dirname(CACHE), { recursive: true });
+    const payload = JSON.stringify({ ...renderModel(report), generatedAt: new Date().toISOString() }, null, 2);
+    writeFileSync(CACHE, payload);                                            // latest (dashboard /api/daily)
+    writeFileSync(join(dirname(CACHE), `daily-report-${report.date}.json`), payload);  // per-date (token ranges)
+  } catch (e) {
+    console.error('daily-report cache write failed (non-fatal):', e.message);
+  }
+}
 
 function yesterdayUTC() {
   const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -88,6 +101,7 @@ async function main() {
 
   const report = aggregate({ date, ...activity, localRecords, ciRecords });
   const body = renderMarkdown(report);
+  writeCache(report);  // feed the dashboard Daily tab (both dry-run and post paths)
 
   if (flag('--dry-run') || !flag('--post')) { process.stdout.write(body + '\n'); return; }
   const issueNumber = await findOrCreateIssue();
