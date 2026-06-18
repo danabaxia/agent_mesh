@@ -330,5 +330,16 @@
       "source": "PR #81 (2026-06-18): [codex] harden dev mesh OAuth runtime and sync",
       "ts": "2026-06-18"
     }
+  },
+  "integration-ref-trunk-staleness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "INTEGRATION_REF must track main under trunk-based dev — stale branch silently validates dead code for all nightly tiers.",
+    "l1": "PR #100: INTEGRATION_REF was pinned to v0.4-development, which was 188 commits behind main — the nightly L1/L2/L3/L4 tiers had been validating long-stale code for an extended period without any alert. Under trunk-based development, main is the single living line; retiring feature/development branches but leaving INTEGRATION_REF pointing at them means every nightly scorecard result (behavior evals, adversarial battery, perf benchmark) quietly tests the wrong code. The 188-commit gap was only discovered by inspection, not by a CI alert.",
+    "value": "Checklist when retiring a feature/development branch under trunk-based development:\n\n1. INTEGRATION_REF → main: update it in the same PR that retires the branch. A stale INTEGRATION_REF never causes an error or alert — all nightly jobs succeed but each validates dead code.\n2. Lint-encode the target ref: the integration-workflow.test.js assertion on `INTEGRATION_REF: main` (landed with PR #100) makes any future change a deliberate, test-gated act. Every CI pipeline variable naming a branch should have a hermetic lint equivalent.\n3. Align the schedule trigger: the nightly fires from the default branch (`main`) and checks out INTEGRATION_REF explicitly. If those diverge, a workflow_dispatch from main still tests the stale ref while the schedule appears to work. Verify both always name the same living line.\n4. Scope-check stale refs after ANY branch cleanup: grep all workflow files for retired branch refs immediately after the cleanup — INTEGRATION_REF is a silent misconfiguration until the next nightly run.\n\nProvenance: PR #100 (2026-06-18): chore(integration): retarget the nightly to main (trunk-based development).",
+    "provenance": {
+      "source": "PR #100: chore(integration): retarget the nightly to main (trunk-based development)",
+      "ts": "2026-06-18"
+    }
   }
 }
