@@ -4,17 +4,18 @@ import assert from 'node:assert/strict';
 import {
   isEligible, selectTask, branchName, a2aMessage, coderPrompt, reviewerPrompt,
   taskText, taskOutcome, taskSucceeded, ledgerRecord, shouldOpenPR,
-  ROUTE_LABEL, APPROVED, IN_PROGRESS,
+  ROUTE_LABEL, APPROVED, IN_PROGRESS, PR_IN_REVIEW,
 } from '../src/dev-society/core.js';
 
 const issue = (n, labels, extra = {}) => ({ number: n, title: `t${n}`, body: 'b', labels, ...extra });
 
-test('isEligible: approved ∧ route:a2a ∧ not in-progress/blocked', () => {
+test('isEligible: approved ∧ route:a2a ∧ not in-progress/blocked/pr:in-review', () => {
   assert.equal(isEligible(issue(1, [APPROVED, ROUTE_LABEL])), true);
   assert.equal(isEligible(issue(2, [APPROVED])), false, 'needs route:a2a');
   assert.equal(isEligible(issue(3, [ROUTE_LABEL])), false, 'needs approved');
   assert.equal(isEligible(issue(4, [APPROVED, ROUTE_LABEL, IN_PROGRESS])), false, 'already claimed');
   assert.equal(isEligible(issue(5, [APPROVED, ROUTE_LABEL, 'blocked'])), false, 'blocked');
+  assert.equal(isEligible(issue(6, [APPROVED, ROUTE_LABEL, PR_IN_REVIEW])), false, 'already in review');
 });
 
 test('isEligible: accepts label objects ({name}) as well as strings', () => {
@@ -76,10 +77,10 @@ test('taskOutcome / taskText / taskSucceeded', () => {
   assert.equal(taskSucceeded({ metadata: { 'agentmesh/status': 'TASK_STATE_COMPLETED', 'agentmesh/error_code': 'timeout' } }), false);
 });
 
-test('shouldOpenPR: needs success + changed files + green tests', () => {
+test('shouldOpenPR: needs success + changed files + green tests; fail-closed on null tests', () => {
   assert.equal(shouldOpenPR({ coderTask: okTask, tests: { passed: true } }), true);
   assert.equal(shouldOpenPR({ coderTask: okTask, tests: { passed: false } }), false);
-  assert.equal(shouldOpenPR({ coderTask: okTask, tests: null }), true, 'no tests run → gated only on success+changes');
+  assert.equal(shouldOpenPR({ coderTask: okTask, tests: null }), false, 'null tests → fail-closed, no PR');
   const noChange = { metadata: { 'agentmesh/status': 'TASK_STATE_COMPLETED', 'agentmesh/files_changed': [] } };
   assert.equal(shouldOpenPR({ coderTask: noChange, tests: { passed: true } }), false, 'no files changed');
 });

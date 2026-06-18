@@ -68,9 +68,13 @@ const rmLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '-
 
 // ── A2A: drive the real mesh on a worktree (Coder do, Reviewer ask) ─────────────
 function registryFor(worktree) {
-  const env = { AGENT_MESH_ENABLED_MODES: 'ask,do' };
-  const peer = (name) => ({ root: worktree, command: 'node', args: [BIN, 'serve-a2a', worktree], cwd: worktree, env });
-  return { peers: { coder: peer('coder'), reviewer: peer('reviewer') } };
+  const mkPeer = (env) => ({ root: worktree, command: 'node', args: [BIN, 'serve-a2a', worktree], cwd: worktree, env });
+  return {
+    peers: {
+      coder: mkPeer({ AGENT_MESH_ENABLED_MODES: 'ask,do' }),
+      reviewer: mkPeer({ AGENT_MESH_ENABLED_MODES: 'ask' }),
+    },
+  };
 }
 
 async function runOneTask(issue) {
@@ -112,7 +116,8 @@ async function runOneTask(issue) {
 
       // 4) Driver does the trusted writes: commit → push → PR (only if green).
       if (core.shouldOpenPR({ coderTask, tests })) {
-        await git(['-c', 'commit.gpgsign=false', 'commit', '-aqm',
+        await git(['add', '-A'], wt);
+        await git(['-c', 'commit.gpgsign=false', 'commit', '-qm',
           `${issue.title}\n\nCloses #${issue.number}\n\nAuthored by the A2A dev-society (Coder over A2A do).`], wt);
         await git(['push', '-u', 'origin', branch, '--force-with-lease'], wt);
         const body = `Closes #${issue.number}\n\nAuthored by the **A2A dev-society** — Coder agent over the A2A \`do\` wire, then suite-checked by the daemon.\n\n### Reviewer (A2A \`ask\`)\n${review.slice(0, 4000)}`;
