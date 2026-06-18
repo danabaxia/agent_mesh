@@ -1,19 +1,22 @@
 // test/report-sources.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { readLocalLogs, fetchGhActivity, fetchCiUsage } from '../src/report/sources.js';
 
 test('readLocalLogs reads + dedupes the date-grouped delegate log', async () => {
   const calls = [];
+  const logDir = join('/x', '.agent-mesh', 'logs');
   const recs = await readLocalLogs({
-    logDir: '/x/.agent-mesh/logs',
+    logDir,
     date: '2026-06-18',
     readRecords: async (p) => { calls.push(p); return [
       { id: 'a', route: 'coder', usage: { input_tokens: 1 } },
       { id: 'a', route: 'coder', usage: { input_tokens: 5 } }, // final wins
     ]; },
   });
-  assert.equal(calls[0], '/x/.agent-mesh/logs/delegate-2026-06-18.jsonl');
+  // Build the expected path with join() too, so the OS separator matches on Windows.
+  assert.equal(calls[0], join(logDir, 'delegate-2026-06-18.jsonl'));
   assert.equal(recs.length, 1);
   assert.equal(recs[0].usage.input_tokens, 5);
 });
