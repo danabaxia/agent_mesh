@@ -297,5 +297,16 @@
       "source": "PR #79: fix: L3 adversarial battery I3/I5/I6 security invariant failures",
       "ts": "2026-06-18"
     }
+  },
+  "pr-janitor-gap-classes": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "A PR janitor handles the three gap classes no sweep catches: scope drift, UNKNOWN mergeability, unlabelled bot PRs.",
+    "l1": "memory-automerge, mergefix, and autofix all filter on label/merge-state — a PR failing the wrong precondition accumulates forever. PR #81: (1) memory:promote PRs with non-memory files → close with diagnostic (automerge's file-scope guard silently skips them); (2) PRs stuck UNKNOWN >1h → push empty commit to nudge GitHub (mergefix only touches DIRTY); (3) unlabelled bot PRs >24h → open needs-triage issue (all sweeps filter by label). Three reversible actions; never merges.",
+    "value": "Add a PR janitor (scheduled cron, offset from other sweeps — e.g. '20,50 * * * *', never on push) that handles the gap classes no specialized sweep catches:\n\n1. Scope drift: for label-scoped PRs (e.g. memory:promote) that include files outside the expected path prefix — the domain sweep's file-scope guard silently skips them. Action: gh pr view N --json files --jq '.files[].path', grep -vE '^expected/path/', close with structured diagnostic comment explaining drift files and how to re-emit a clean PR.\n\n2. UNKNOWN mergeability stuck >1h: mergefix only handles DIRTY (conflicted) PRs; automerge only handles MERGEABLE PRs; an UNKNOWN PR is invisible to both. Action: push an empty commit (git commit --allow-empty -m 'chore: nudge [janitor]', git push) to trigger GitHub recompute. Preferred over close+reopen — preserves approvals. Measure age from updatedAt epoch (not createdAt).\n\n3. Unlabelled bot PRs >24h: backlog/automerge/mergefix all filter by label; a bot PR with no labels is invisible. Action: open a needs-triage issue linking the PR (do NOT close — work may be valid). Dedup: search existing issues by title 'in:title PR #N' before creating. Scope to bot authors only (*[bot], claude*, github-actions*, dependabot*).\n\nSafety invariants: never merges, never force-pushes. Use DEV_MESH_PAT || GITHUB_TOKEN for empty-commit pushes (GITHUB_TOKEN cannot push refs that update workflow files). concurrency group: cancel-in-progress: false. Related: ci-sweep-silent-skip-antipattern, event-driven-polling-backstop. Provenance: PR #81 (2026-06-18), fixing Issue #76.",
+    "provenance": {
+      "source": "PR #81 (2026-06-18): [codex] harden dev mesh OAuth runtime and sync",
+      "ts": "2026-06-18"
+    }
   }
 }
