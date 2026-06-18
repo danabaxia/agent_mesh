@@ -21,7 +21,7 @@ const names = (issue) => (issue?.labels || []).map((l) => (typeof l === 'string'
 /** Is this issue eligible for the A2A society? approved ∧ route:a2a ∧ not already claimed. */
 export function isEligible(issue) {
   const ls = names(issue);
-  return ls.includes(APPROVED) && ls.includes(ROUTE_LABEL) && !ls.includes(IN_PROGRESS) && !ls.includes(BLOCKED);
+  return ls.includes(APPROVED) && ls.includes(ROUTE_LABEL) && !ls.includes(IN_PROGRESS) && !ls.includes(BLOCKED) && !ls.includes(PR_IN_REVIEW);
 }
 
 /** Pick the next task (lowest issue number = FIFO) from a list of issues, or null. */
@@ -121,5 +121,5 @@ export function ledgerRecord({ issue, coderTask, reviewerTask, tests, prNumber, 
 export function shouldOpenPR({ coderTask, tests }) {
   const c = taskOutcome(coderTask);
   const changed = Array.isArray(c.filesChanged) && c.filesChanged.length > 0;
-  return taskSucceeded(coderTask) && changed && (!tests || tests.passed === true);
+  return taskSucceeded(coderTask) && changed && (!!tests && tests.passed === true);
 }

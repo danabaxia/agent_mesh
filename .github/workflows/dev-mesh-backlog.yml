@@ -26,6 +26,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Hard gate: never run on route:a2a issues (those belong to the A2A dev-society daemon).
+    # The prompt also notes this, but a YAML condition is the authoritative enforcement.
+    if: ${{ github.event_name != 'issues' || !contains(github.event.issue.labels.*.name, 'route:a2a') }}
     steps:
       - uses: actions/checkout@v4
         with:
