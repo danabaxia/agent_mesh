@@ -139,11 +139,12 @@ jobs:
                  with a `[mergefix]` message (never force-push, never merge the PR).
                  Comment a one-line summary on PR #${{ steps.pick.outputs.number }}.
                  Do NOT push — the push is handled automatically after this step.
-      - name: Verify the agent actually worked (green != healthy)
+      - name: Verify the agent worked + capture usage
         if: always() && steps.claude.outcome != 'skipped'
-        env:
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: node scripts/assert-run-healthy.mjs
+        uses: ./.github/actions/agent-postrun
+        with:
+          execution_file: ${{ steps.claude.outputs.execution_file }}
+          advisory_blocked: "false"
       - name: Push resolved merge
         if: steps.pick.outputs.none != 'true' && env.CONFLICTS_FOUND == 'true' && steps.claude.outcome == 'success'
         run: |
