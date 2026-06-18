@@ -102,7 +102,7 @@ jobs:
           now_epoch=$(date -u +%s)
           mapfile -t rows < <(gh pr list --state open \
             --json number,headRefName,isCrossRepository,mergeStateStatus,updatedAt \
-            --jq '.[] | select(.isCrossRepository==false and .mergeStateStatus=="UNKNOWN") | "\(.number)|\(.headRefName)|\(.updatedAt)"')
+            --jq '.[] | select(.isCrossRepository==false and .mergeStateStatus=="UNKNOWN") | "\(.number)\t\(.headRefName)\t\(.updatedAt)"')
           if [ "${#rows[@]}" -eq 0 ]; then
             echo "no UNKNOWN PRs"
             exit 0
@@ -112,7 +112,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           for row in "${rows[@]}"; do
-            IFS='|' read -r pr head updated <<<"$row"
+            IFS=$'\t' read -r pr head updated <<<"$row"
             upd_epoch=$(date -u -d "$updated" +%s 2>/dev/null || gdate -u -d "$updated" +%s 2>/dev/null || echo 0)
             age=$(( now_epoch - upd_epoch ))
             if [ "$age" -lt 3600 ]; then

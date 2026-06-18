@@ -89,6 +89,24 @@ test('runRepoSyncOnce returns skip_detached when symbolic-ref throws (detached H
   assert.equal(records[0].action, 'skip_detached');
 });
 
+test('runRepoSyncOnce returns skip_not_git when repoPath is not a git worktree', async () => {
+  const records = [];
+  const rec = await runRepoSyncOnce({
+    repoPath: '/not/a/repo',
+    now: () => new Date('2026-06-17T00:00:00.000Z'),
+    log: (r) => records.push(r),
+    git: async (_repoPath, args) => {
+      const key = args.join(' ');
+      if (key === 'rev-parse --is-inside-work-tree') throw new Error('fatal: not a git repository');
+      throw new Error(`unexpected git call: ${key}`);
+    },
+  });
+
+  assert.equal(rec.action, 'skip_not_git');
+  assert.equal(rec.repoPath, '/not/a/repo');
+  assert.equal(records.length, 1);
+});
+
 test('runRepoSyncOnce returns skip_dirty when working tree has non-ignored changes', async () => {
   const records = [];
   const outputs = new Map([

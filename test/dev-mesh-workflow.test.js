@@ -289,3 +289,11 @@ test('janitor: NO auto-merge (NEVER merges, human holds the gate)', () => {
     'janitor must not auto-merge (contents:write + schedule = elevated risk)',
   );
 });
+
+test('janitor: every PR query filters out cross-repository (fork) PRs (§F4 runtime guard)', () => {
+  // The complementary defense to the trigger guard: the janitor pushes commits to
+  // PR head branches, so it must never act on a fork PR. Both jq filters (UNKNOWN
+  // nudge + unlabelled escalate) must carry isCrossRepository==false.
+  const count = (janitor.match(/isCrossRepository==false/g) || []).length;
+  assert.ok(count >= 2, `expected isCrossRepository==false in every PR query, found ${count}`);
+});
