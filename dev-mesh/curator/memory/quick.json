@@ -330,5 +330,16 @@
       "source": "PR #81 (2026-06-18): [codex] harden dev mesh OAuth runtime and sync",
       "ts": "2026-06-18"
     }
+  },
+  "reviewer-sticky-changes-requested": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GitHub CHANGES_REQUESTED is sticky — always have an APPROVE path or PR stays red after clean passes.",
+    "l1": "PR #101: dev-mesh-review.yml had no APPROVE path — every follow-up pass downgraded to COMMENT, never clearing the sticky state. CI went green, review stayed red forever. Fix: binary verdict per commit — BLOCKING finding → REQUEST_CHANGES, no blocking → APPROVE with nits as optional notes. 'CI green + APPROVED' is now the true merge-ready signal, preventing review loops.",
+    "value": "Classify each review finding as BLOCKING or non-blocking before submitting. Emit exactly one verdict per commit: (1) gh pr review --request-changes if any blocking finding; (2) gh pr review --approve with nits as optional notes if none. This clears sticky CHANGES_REQUESTED — COMMENT-only follow-ups never clear it. Merge-ready definition: CI green AND latest review = APPROVED AND no unresolved blocking threads. Non-blocking nits must not withhold approval and must not be re-raised (loop prevention). Apply to any autonomous reviewer using gh pr review. Provenance: PR #101 (2026-06-18).",
+    "provenance": {
+      "source": "PR #101: fix(dev-mesh): reviewer emits an explicit approve verdict (fix red-but-merge-ready)",
+      "ts": "2026-06-18"
+    }
   }
 }
