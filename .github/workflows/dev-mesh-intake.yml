@@ -9,6 +9,9 @@ on:
     types: [opened, edited, labeled]
   issue_comment:
     types: [created]
+  schedule:
+    - cron: '5,35 * * * *' # poll: advance stuck pre-approval issues toward spec:in-review
+  workflow_dispatch:
 
 # Discuss + draft specs + manage labels. May open a spec PR (pull-requests: write)
 # but must NOT push code to the repo — read-only repo contents keeps the approval
@@ -19,7 +22,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: dev-mesh-intake-${{ github.event.issue.number }}
+  group: dev-mesh-intake-${{ github.event.issue.number || 'poll' }}
   cancel-in-progress: true # dedupe: opening an issue *with* a label fires opened+labeled
 
 jobs:
@@ -58,14 +61,26 @@ jobs:
             (idea → discussing → spec:draft → spec:in-review → approved → …). The label
             conventions live in `dev-mesh/backlog.md`.
 
-            Issue #${{ github.event.issue.number }} just changed. Move it forward by one
-            honest step: clarify/discuss an `idea`, or — when scope is clear — write a
-            ready-for-review spec (skill `write-spec`) and open a spec PR labeled
-            `spec:in-review`. Update the lifecycle label to match reality.
+            DETERMINE SCOPE:
+            - Event-triggered: act on issue #${{ github.event.issue.number }} (the one that
+              changed).
+            - Scheduled poll / manual dispatch (no specific issue): run
+              `gh issue list --state open --json number,title,labels` and select OPEN issues
+              still in a PRE-APPROVAL state (`idea`, `discussing`, `spec:draft`). Advance up to
+              3 of them (FIFO by number) this run — this is the continuous pump that moves the
+              backlog to the human approval gate without anyone nudging each issue.
+
+            For each in-scope issue, move it forward by ONE honest step toward review:
+            `idea` → clarify/scope it (`discussing`); `discussing`/`spec:draft` → when scope is
+            clear, write a ready spec (skill `write-spec`) and set `spec:in-review`. First
+            DEDUPE against other open/closed issues; if an issue is a duplicate or clearly not
+            worth pursuing, label it `rejected`, close it with a one-line reason, and move on.
+            Always leave each issue's lifecycle label matching reality.
 
             HARD RULE (approval gate, §5.3): do NOT implement anything. No code edits, no
-            code branch, no `approved` label — only a human grants approval. You produce
-            discussion, specs, and label transitions only.
+            code branch, NEVER set `approved` — only a human grants approval. You produce
+            discussion, specs, label transitions, and dupe/dead-idea rejections only. The only
+            thing that should reach a human is an issue at `spec:in-review`.
       - name: Verify the agent actually worked (green != healthy)
         if: always()
         env:
