@@ -309,6 +309,17 @@
       "ts": "2026-06-18"
     }
   },
+  "jq-tab-delimiter-safety": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "jq output joined by '|' silently corrupts IFS read when PR titles contain '|' — use '\\t' as the multi-field delimiter.",
+    "l1": "PR #96 review: dev-mesh-pr-janitor.yml Step 2 used '|' to join number/headRefName/updatedAt. A PR title like 'feat: foo|bar' splits into 4 fields instead of 3 — $head received the wrong value, nudging the wrong branch. All three janitor gh pr list steps now use '\\t' as the join delimiter and IFS=$'\\t' read -r in bash. The failure is silent: no error, wrong branch nudged.",
+    "value": "Pattern: when jq outputs multiple fields for shell consumption, always use the tab character as the join delimiter. Never use '|', ',', or ':' — these appear in PR titles, commit messages, branch names, and other user-controlled strings.\n\njq side: `jq -r '[.number, .headRefName, .updatedAt] | join(\"\\t\")'`\nShell side: `IFS=$'\\t' read -r pr head updated <<<\"$row\"`\n\nWhy '|' fails silently: the shell does NOT error on extra fields — excess content is appended to the last variable (or discarded), so $head receives 'branch-name|rest-of-title\\t...' instead of the branch name alone. The wrong branch is then fetched/pushed.\n\nAlso from PR #96: the fork-PR guard (isCrossRepository==false) must appear in EVERY gh pr list query that drives a write action (close, push, open issue). Assert the guard appears >= N times in the workflow YAML (N = number of acting pr list steps) so adding a step forces a deliberate update.\n\nProvenance: PR #96 (2026-06-18), review fix for pipe-delimiter fragility in janitor Step 2.",
+    "provenance": {
+      "source": "PR #96: Port #81 to main — review fix for pipe-delimiter fragility in janitor Step 2",
+      "ts": "2026-06-18"
+    }
+  },
   "pr-janitor-gap-classes": {
     "status": "active",
     "valid_to": null,
