@@ -1,0 +1,37 @@
+# .github/actions/agent-postrun/action.yml
+# Post-run seam for every Dev-mesh agent workflow: run the honesty gate AND
+# capture the run's token usage as an artifact for the Daily Mesh Report.
+# The gate's pass/fail is authoritative; usage capture is best-effort.
+name: agent-postrun
+description: Honesty-gate the agent run and capture its token usage as an artifact.
+inputs:
+  execution_file:
+    description: Path to the claude execution output JSON (steps.claude.outputs.execution_file)
+    required: true
+  advisory_blocked:
+    description: Pass --advisory-blocked (light ask/comment roles)
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - name: Verify the agent worked + capture usage (best-effort)
+      if: always()
+      shell: bash
+      env:
+        CLAUDE_EXECUTION_FILE: ${{ inputs.execution_file }}
+        MESH_USAGE_OUT: ${{ runner.temp }}/mesh-usage.json
+      run: |
+        node scripts/assert-run-healthy.mjs ${{ inputs.advisory_blocked == 'true' && '--advisory-blocked' || '' }} || EXIT=$?
+        # assert-run-healthy writes MESH_USAGE_OUT before its own fatal exit, so the
+        # file exists even when the gate fails; the upload step (always()) still captures it.
+        [ -f "$MESH_USAGE_OUT" ] && echo "captured usage at $MESH_USAGE_OUT" || echo "no usage captured"
+        exit ${EXIT:-0}   # preserve the gate's verdict so the job still fails on real unhealth
+    - name: Upload usage artifact
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: mesh-usage-${{ github.run_id }}
+        path: ${{ runner.temp }}/mesh-usage.json
+        retention-days: 7
+        if-no-files-found: ignore
