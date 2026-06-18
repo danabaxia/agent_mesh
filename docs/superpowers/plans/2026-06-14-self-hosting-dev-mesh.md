@@ -103,7 +103,7 @@ execution (tests/eval/git/act) runs as **workflow steps**, never model `Bash`
 
 - [x] Phase-1 materialization wired in `dev-mesh-dogfood.yml`: `doctor dev-mesh --apply` builds the **real** Dev-mesh, then drives the **Maintainer** headlessly (delegation over `serve-a2a`/peer-bridge).
 - [x] Depth budget set to `AGENT_MESH_DEPTH=4` to cover Maintainer→Triager→Coder→Tester (one onward hop each).
-- [x] Coder `do`-confinement (edits only its worktree) is the existing `demo-e2e` net's invariant; the dogfood exercises it live. _Live e2e confirmation happens on the nightly real-`claude` run (needs `ANTHROPIC_API_KEY`)._
+- [x] Coder `do`-confinement (edits only its worktree) is the existing `demo-e2e` net's invariant; the dogfood exercises it live. _Live e2e confirmation happens on the nightly real-`claude` run (needs `CLAUDE_CODE_OAUTH_TOKEN`)._
 
 ### Task 8: Phase-2 self-evolution ✅ DONE
 

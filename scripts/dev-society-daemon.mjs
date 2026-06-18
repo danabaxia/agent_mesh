@@ -66,13 +66,6 @@ const issueComment = (n, body) => gh(['issue', 'comment', String(n), '--repo', c
 const addLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--add-label', l]).catch(() => {});
 const rmLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--remove-label', l]).catch(() => {});
 
-// ── A2A: drive the real mesh on a worktree (Coder do, Reviewer ask) ─────────────
-function registryFor(worktree) {
-  const env = { AGENT_MESH_ENABLED_MODES: 'ask,do' };
-  const peer = (name) => ({ root: worktree, command: 'node', args: [BIN, 'serve-a2a', worktree], cwd: worktree, env });
-  return { peers: { coder: peer('coder'), reviewer: peer('reviewer') } };
-}
-
 async function runOneTask(issue) {
   const branch = core.branchName(issue.number);
   const wt = join(cfg.workRoot, `issue-${issue.number}`);
@@ -85,7 +78,7 @@ async function runOneTask(issue) {
   await git(['fetch', 'origin', cfg.base, '-q'], repoRoot);
   await git(['worktree', 'add', '-f', '-B', branch, wt, `origin/${cfg.base}`], repoRoot);
 
-  const client = await createA2AClient(registryFor(wt), { requestTimeoutMs: cfg.timeoutMs });
+  const client = await createA2AClient(core.registryFor(wt, { binPath: BIN }), { requestTimeoutMs: cfg.timeoutMs });
   let coderTask, reviewerTask = null, tests = null, prNumber = null;
   try {
     // 1) Coder (top-level do) authors the change in the worktree (path-guard confined).

@@ -1,6 +1,7 @@
 // test/dev-society.test.js — hermetic tests for the A2A Dev-Society pure core (P1).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import * as devCore from '../src/dev-society/core.js';
 import {
   isEligible, selectTask, branchName, a2aMessage, coderPrompt, reviewerPrompt,
   taskText, taskOutcome, taskSucceeded, ledgerRecord, shouldOpenPR,
@@ -103,4 +104,18 @@ test('ledgerRecord: captures delegation edges + outcomes for the perf ledger', (
   assert.equal(rec.edges[1].mode, 'ask');
   assert.equal(rec.tests.passed, true);
   assert.equal(rec.coder_run_id, 'r1');
+});
+
+test('registryFor: launches A2A peers with the current node binary', () => {
+  assert.equal(typeof devCore.registryFor, 'function');
+  const registry = devCore.registryFor('/tmp/dev-society-worktree', {
+    binPath: '/repo/bin/agent-mesh.js',
+    nodePath: '/usr/local/Cellar/node/25.2.1/bin/node',
+  });
+
+  assert.equal(registry.peers.coder.command, '/usr/local/Cellar/node/25.2.1/bin/node');
+  assert.equal(registry.peers.reviewer.command, '/usr/local/Cellar/node/25.2.1/bin/node');
+  assert.deepEqual(registry.peers.coder.args, ['/repo/bin/agent-mesh.js', 'serve-a2a', '/tmp/dev-society-worktree']);
+  assert.equal(registry.peers.coder.cwd, '/tmp/dev-society-worktree');
+  assert.deepEqual(registry.peers.coder.env, { AGENT_MESH_ENABLED_MODES: 'ask,do' });
 });

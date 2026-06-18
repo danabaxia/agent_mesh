@@ -2,6 +2,7 @@
 .DS_Store
 .codex/
 .superpowers/
+.dev-society/
 # Per-folder run logs / denial logs (AGENT_MESH_LOG_DIR default), incl. under examples/
 .agent-mesh/
 
