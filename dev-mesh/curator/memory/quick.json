@@ -297,5 +297,16 @@
       "source": "PR #79: fix: L3 adversarial battery I3/I5/I6 security invariant failures",
       "ts": "2026-06-18"
     }
+  },
+  "trunk-release-cut-model": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Trunk + release-cut closes deployment drift: main = single living line; releases are tags/branches cut from main.",
+    "l1": "PR #86 (P1 A2A dev-society on main): v0.5-development was a long-lived parallel branch requiring constant sync with main — deployment drift was inevitable. Fix: main = trunk developed 24/7 by the mesh; deployments are releases cut from main when mature (git tag v1.0 or a v1.0 branch). Upgrade = cut a new release from main and redeploy. The parallel branch becomes redundant. Also: when a persistent daemon adopts an issue class via a new label (route:a2a), add a 'skip if has label' guard in every other workflow to prevent double-building.",
+    "value": "Adopt main as the single trunk for any automated development society. Automation (mesh, daemon, scheduled jobs) develops it continuously. Release model: cut a tag (git tag vX.Y) or a branch (vX.Y-stable) from main when stable enough; deploy THAT, not main directly. Upgrade = cut a new release from the current trunk state.\n\nNever keep a long-lived parallel branch (e.g. vN-development) in sync with main — each sync is manual overhead and divergence accumulates silently until you have two de facto trunks.\n\nWhen a new automation path (daemon, scheduled poller) adopts an issue class via a new label (e.g. route:a2a): immediately add a 'skip if label present' guard in every OTHER workflow that would otherwise build the same issue — prevents double-builds and conflicting concurrent runs.\n\nProvenance: PR #86 (2026-06-18).",
+    "provenance": {
+      "source": "PR #86: feat(dev-society): land P1 on main (single trunk line) + trunk/release model",
+      "ts": "2026-06-18"
+    }
   }
 }
