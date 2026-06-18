@@ -162,3 +162,86 @@ test('runRepoSyncOnce returns skip_no_upstream when upstream lookup throws', asy
   assert.equal(rec.branch, 'main');
   assert.equal(records.length, 1);
 });
+
+test('runRepoSyncOnce returns skip_ahead and does not fast-forward when branch is ahead', async () => {
+  const mergeCalls = [];
+  const outputs = new Map([
+    ['rev-parse --is-inside-work-tree', 'true\n'],
+    ['symbolic-ref --quiet --short HEAD', 'main\n'],
+    ['rev-parse --abbrev-ref --symbolic-full-name @{u}', 'origin/main\n'],
+    ['config branch.main.remote', 'origin\n'],
+    ['fetch --prune origin -q', ''],
+    ['status --porcelain=v1 -z', ''],
+    ['rev-list --left-right --count HEAD...origin/main', '3\t0\n'],
+  ]);
+  const rec = await runRepoSyncOnce({
+    repoPath: '/repo',
+    now: () => new Date('2026-06-17T00:00:00.000Z'),
+    log: () => {},
+    git: async (_repoPath, args) => {
+      if (args[0] === 'merge') mergeCalls.push(args);
+      const key = args.join(' ');
+      if (!outputs.has(key)) throw new Error(`unexpected git call: ${key}`);
+      return outputs.get(key);
+    },
+  });
+
+  assert.equal(rec.action, 'skip_ahead');
+  assert.equal(rec.ahead, 3);
+  assert.equal(mergeCalls.length, 0, 'merge must not be called when branch is ahead');
+});
+
+test('runRepoSyncOnce returns skip_diverged and does not fast-forward when branch has diverged', async () => {
+  const mergeCalls = [];
+  const outputs = new Map([
+    ['rev-parse --is-inside-work-tree', 'true\n'],
+    ['symbolic-ref --quiet --short HEAD', 'main\n'],
+    ['rev-parse --abbrev-ref --symbolic-full-name @{u}', 'origin/main\n'],
+    ['config branch.main.remote', 'origin\n'],
+    ['fetch --prune origin -q', ''],
+    ['status --porcelain=v1 -z', ''],
+    ['rev-list --left-right --count HEAD...origin/main', '2\t3\n'],
+  ]);
+  const rec = await runRepoSyncOnce({
+    repoPath: '/repo',
+    now: () => new Date('2026-06-17T00:00:00.000Z'),
+    log: () => {},
+    git: async (_repoPath, args) => {
+      if (args[0] === 'merge') mergeCalls.push(args);
+      const key = args.join(' ');
+      if (!outputs.has(key)) throw new Error(`unexpected git call: ${key}`);
+      return outputs.get(key);
+    },
+  });
+
+  assert.equal(rec.action, 'skip_diverged');
+  assert.equal(rec.ahead, 2);
+  assert.equal(rec.behind, 3);
+  assert.equal(mergeCalls.length, 0, 'merge must not be called when branch has diverged');
+});
+
+test('runRepoSyncOnce propagates a git merge --ff-only failure (failure is data upstream)', async () => {
+  const outputs = new Map([
+    ['rev-parse --is-inside-work-tree', 'true\n'],
+    ['symbolic-ref --quiet --short HEAD', 'main\n'],
+    ['rev-parse --abbrev-ref --symbolic-full-name @{u}', 'origin/main\n'],
+    ['config branch.main.remote', 'origin\n'],
+    ['fetch --prune origin -q', ''],
+    ['status --porcelain=v1 -z', ''],
+    ['rev-list --left-right --count HEAD...origin/main', '0\t2\n'],
+  ]);
+  await assert.rejects(
+    runRepoSyncOnce({
+      repoPath: '/repo',
+      now: () => new Date('2026-06-17T00:00:00.000Z'),
+      log: () => {},
+      git: async (_repoPath, args) => {
+        const key = args.join(' ');
+        if (key === 'merge --ff-only origin/main') throw new Error('fatal: Not possible to fast-forward, aborting.');
+        if (!outputs.has(key)) throw new Error(`unexpected git call: ${key}`);
+        return outputs.get(key);
+      },
+    }),
+    /fast-forward/,
+  );
+});

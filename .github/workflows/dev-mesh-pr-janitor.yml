@@ -107,6 +107,10 @@ jobs:
             echo "no UNKNOWN PRs"
             exit 0
           fi
+          # Set identity for the empty commits once (idempotent; hoisted out of the
+          # loop). Use bot identity so the [janitor] commit doesn't look human-authored.
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           for row in "${rows[@]}"; do
             IFS='|' read -r pr head updated <<<"$row"
             upd_epoch=$(date -u -d "$updated" +%s 2>/dev/null || gdate -u -d "$updated" +%s 2>/dev/null || echo 0)
@@ -116,10 +120,6 @@ jobs:
               continue
             fi
             echo "::group::PR #$pr nudge (stuck $((age / 60))min)"
-            # Set identity for the empty commit. Use bot identity so the [janitor]
-            # commit doesn't look human-authored.
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git config user.name "github-actions[bot]"
             git fetch origin "$head" --depth 2 -q
             git checkout -B "_janitor_$pr" "origin/$head"
             git commit --allow-empty -m "chore: nudge GitHub mergeable recalc [janitor]" \
