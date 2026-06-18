@@ -204,10 +204,13 @@ async function loadTokens() {
   setText('tk-big', fmt(total));
   root.querySelector('#tk-sub').innerHTML = `<span class="am">$${(m.cost || 0).toFixed(2)}</span> spend · ${m.runs || 0} runs · ${m.days || 0}d`;
   setText('tk-in', fmt(m.input)); setText('tk-out', fmt(m.output)); setText('tk-turns', m.turns || 0); setText('tk-runs', m.runs || 0);
-  const loPct = local + ci > 0 ? local / (local + ci) * 100 : 0;
-  root.querySelector('#sp-lo').style.width = loPct + '%'; root.querySelector('#sp-ci').style.width = (100 - loPct) + '%';
+  const hasSplit = local + ci > 0;            // empty bar when there's no usage (don't imply 100% CI)
+  const loPct = hasSplit ? local / (local + ci) * 100 : 0;
+  root.querySelector('#sp-lo').style.width = loPct + '%'; root.querySelector('#sp-ci').style.width = (hasSplit ? 100 - loPct : 0) + '%';
   setText('sp-lov', fmt(local)); setText('sp-civ', fmt(ci)); setText('sp-cost', '$' + (m.cost || 0).toFixed(2));
-  const cons = (m.byConsumer || []).slice(0, 8), cmax = cons[0] ? cons[0].tokens : 1;
+  // Only show consumers that actually used tokens; guard cmax against div-by-zero.
+  const cons = (m.byConsumer || []).filter((c) => (c.tokens || 0) > 0).slice(0, 8);
+  const cmax = Math.max(1, cons[0] ? cons[0].tokens : 1);
   root.querySelector('#tk-top').innerHTML = cons.length ? cons.map((c) => {
     const col = c.kind === 'ci' ? 'var(--teal2)' : agentColor(c.name), p = total ? (c.tokens / total * 100).toFixed(0) : 0;
     return `<div class="crow" data-n="${esc(c.name)}" data-c="${col}" data-v="${fmt(c.tokens)}" data-p="${p}"><span class="nm" style="color:${col}">${esc(c.name)}</span><span class="tr"><span class="fl" style="width:${(c.tokens / cmax * 100).toFixed(0)}%;background:${col}"></span></span><span class="vv">${fmt(c.tokens)}</span></div>`;
