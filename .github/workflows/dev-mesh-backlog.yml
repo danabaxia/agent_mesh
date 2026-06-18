@@ -87,8 +87,9 @@ jobs:
             Issue (`Closes #<number>`), then move the label `in-progress → pr:in-review`.
             Do NOT merge — a human holds the merge gate (auto-merge is off). CI (`ci.yml`)
             on your PR is the authoritative test gate.
-      - name: Verify the agent actually worked (green != healthy)
+      - name: Verify the agent worked + capture usage
         if: always()
-        env:
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: node scripts/assert-run-healthy.mjs
+        uses: ./.github/actions/agent-postrun
+        with:
+          execution_file: ${{ steps.claude.outputs.execution_file }}
+          advisory_blocked: "false"

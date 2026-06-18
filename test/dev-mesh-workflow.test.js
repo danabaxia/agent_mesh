@@ -155,7 +155,9 @@ test('HONESTY GATE: every agent workflow fails on an errored/no-op model run', (
   // (claude-code-action reports success even when the model errored instantly).
   for (const n of NAMES) {
     assert.match(wf[n], /id:\s*claude/, `${n}: action step needs id: claude for the gate`);
-    assert.match(wf[n], /assert-run-healthy\.mjs/, `${n}: must run the per-run honesty gate`);
+    // The honesty gate now runs via the agent-postrun composite action (which invokes
+    // scripts/assert-run-healthy.mjs internally and also captures token usage).
+    assert.match(wf[n], /agent-postrun/, `${n}: must run the per-run honesty gate (agent-postrun)`);
   }
 });
 
@@ -204,15 +206,16 @@ test('CURATOR GATE: curate validates quick.json caps (belt-and-suspenders backst
   // already happened inside the action), not before the push. It fails the curate run
   // if the gate was skipped, but the memory:promote PR is already open at that point.
   // Ordering: must appear after `id: claude` (so it reads the committed file) and
-  // before assert-run-healthy (so a cap violation shows up before the honesty gate).
+  // before the honesty gate (so a cap violation shows up before it). The gate now runs
+  // via the agent-postrun composite step.
   assert.match(wf.curate, /validate-quick-memory\.mjs.*quick\.json/,
     'curate: must call validate-quick-memory.mjs on the curator quick.json');
   const ls = wf.curate.split('\n');
   const clIdx = ls.findIndex((l) => /id:\s*claude/.test(l));
   const vaIdx = ls.findIndex((l) => /validate-quick-memory\.mjs/.test(l));
-  const hhIdx = ls.findIndex((l) => /assert-run-healthy\.mjs/.test(l));
+  const hhIdx = ls.findIndex((l) => /agent-postrun/.test(l));
   assert.ok(clIdx < vaIdx, 'validate step must come after id: claude');
-  assert.ok(vaIdx < hhIdx, 'validate step must come before assert-run-healthy');
+  assert.ok(vaIdx < hhIdx, 'validate step must come before the honesty gate (agent-postrun)');
 });
 
 test('each workflow drives its own role via dev-mesh/<role>', () => {

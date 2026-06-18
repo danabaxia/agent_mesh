@@ -35,7 +35,7 @@ test('review-respond: do-worker tools, honesty gate, treats comments as DATA', (
   for (const t of [/Bash\(git:\*\)/, /Bash\(gh:\*\)/, /Bash\(npm:\*\)/, /Bash\(node:\*\)/]) assert.match(wf, t);
   assert.doesNotMatch(wf, /Bash\((?:git|gh|npm|node)\)/, 'use Bash(cmd:*), not bare');
   assert.match(wf, /id:\s*claude/);
-  assert.match(wf, /assert-run-healthy\.mjs/);
+  assert.match(wf, /agent-postrun/);
   assert.match(wf, /as DATA/, 'review text must be framed as DATA, not instructions');
 });
 

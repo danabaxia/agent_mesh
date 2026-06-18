@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const wfPath = fileURLToPath(new URL('../.github/workflows/integration.yml', import.meta.url));
@@ -96,4 +96,17 @@ test('integration workflow: L3/L4 eval scripts are present on this ref', () => {
     'scripts/eval-adversarial.mjs must exist for L3 to gate the nightly');
   assert.ok(existsSync(fileURLToPath(new URL('../scripts/eval-perf.mjs', import.meta.url))),
     'scripts/eval-perf.mjs must exist for L4 to run');
+});
+
+test('every workflow that runs an agent uses agent-postrun (gate + usage capture)', () => {
+  const dir = new URL('../.github/workflows/', import.meta.url);
+  const files = readdirSync(dir).filter((f) => f.endsWith('.yml'));
+  for (const f of files) {
+    const body = readFileSync(new URL(f, dir), 'utf8');
+    if (!body.includes('steps.claude.outputs.execution_file')) continue;   // not an agent workflow
+    assert.ok(body.includes('uses: ./.github/actions/agent-postrun'),
+      `${f} runs an agent but does not use agent-postrun`);
+    assert.ok(!/run: node scripts\/assert-run-healthy\.mjs/.test(body),
+      `${f} still calls assert-run-healthy directly; route it through agent-postrun`);
+  }
 });
