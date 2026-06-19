@@ -58,6 +58,7 @@ export function aggregate({ date, prs = [], openPrs = [], issues = [], openIssue
       opened: issues.filter((i) => inWin(i.createdAt, fromMs, toMs)).map(slimIssue),
       closed: issues.filter((i) => inWin(i.closedAt, fromMs, toMs)).map(slimIssue),
       openByLabel,
+      openNow: openIssues.length,
     },
     tokens: {
       local: { ...reshape(local), byRoute: local.byKey },

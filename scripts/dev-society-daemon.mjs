@@ -71,6 +71,20 @@ if (!once && !selftest) {
       repo: cfg.repo,
       writeCache: (records) => { mkdirSync(dirname(ghActivityPath), { recursive: true }); writeFileSync(ghActivityPath, JSON.stringify(records)); },
     }),
+    // Refresh the Daily Mesh Report cache the dashboard's /api/daily reads (incl.
+    // issues.openNow). Runs the existing script, which writeCache()s unconditionally
+    // (no --post, so no rolling-issue write). Keeps the dashboard from going stale.
+    'daily-report-refresh': async () => {
+      try {
+        await sh('node', [join(repoRoot, 'scripts', 'daily-report.mjs')], {
+          env: { ...process.env, DEV_SOCIETY_REPO: cfg.repo },
+          maxBuffer: 1 << 24,
+        });
+        return { status: 'ok', output: 'daily report cache refreshed' };
+      } catch (e) {
+        return { status: 'fail', error: e?.message || String(e) };
+      }
+    },
   };
   sched = createScheduler({ meshRoot: SCHED_MESH_ROOT, builtins });
   sched.start();

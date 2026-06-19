@@ -257,7 +257,7 @@ async function loadDaily() {
   setText('gv-k-prs', `${(prs.merged || []).length} merged · ${prs.openNow ?? 0} open total`);
   setText('gv-k-iss', `${(iss.opened || []).length} / ${(iss.closed || []).length}`);
   const labels = Object.entries(iss.openByLabel || {}).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(' · ') || '—';
-  setText('gv-k-isss', labels);
+  setText('gv-k-isss', `${iss.openNow ?? 0} open total · ${labels}`);
   const t = r.tokens && r.tokens.total ? (r.tokens.total.input || 0) + (r.tokens.total.output || 0) : 0;
   setText('gv-k-tok', fmt(t));
   setText('gv-k-toks', `$${(r.tokens?.local?.costUsd || 0).toFixed(2)} — detail below ↓`);
