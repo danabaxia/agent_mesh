@@ -16,7 +16,57 @@ export const IN_PROGRESS = 'in-progress';
 export const PR_IN_REVIEW = 'pr:in-review';
 export const BLOCKED = 'blocked';
 
+export const IDEA = 'idea';
+export const QUESTION = 'question';
+export const BUG = 'bug';
+export const ENHANCEMENT = 'enhancement';
+export const DOCUMENTATION = 'documentation';
+export const DISCUSSING = 'discussing';
+export const SPEC_DRAFT = 'spec:draft';
+export const SPEC_IN_REVIEW = 'spec:in-review';
+export const DONE = 'done';
+export const REJECTED = 'rejected';
+export const WONTFIX = 'wontfix';
+export const DUPLICATE = 'duplicate';
+export const INVALID = 'invalid';
+
+const TERMINAL = [DONE, REJECTED, WONTFIX, DUPLICATE, INVALID];
+const HUMAN_GATED = [SPEC_IN_REVIEW, PR_IN_REVIEW, BLOCKED, DISCUSSING];
+const CODE_TYPES = [BUG, ENHANCEMENT, DOCUMENTATION];
+const CI_PREFIX = /^(flake|real_bug|infra_auth|out_of_scope):/;
+
 const names = (issue) => (issue?.labels || []).map((l) => (typeof l === 'string' ? l : l?.name)).filter(Boolean);
+
+/** Normalized label names of an issue (string | {name}). */
+export function labelNames(issue) { return names(issue); }
+
+/**
+ * Decide where an open issue goes. First match wins. Returns { target, mode, reason }
+ * plus optional { advance } (label to add), { spec } (use the spec-PR path), { clear }
+ * (label to remove first). target=null means "skip this tick".
+ *   opts.liveBuilds  — issue numbers with a build running right now (skip).
+ *   opts.staleClaims — in-progress issue numbers whose claim is stale → reclaim.
+ */
+export function routeFor(issue, { liveBuilds = new Set(), staleClaims = new Set() } = {}) {
+  const ls = names(issue);
+  const has = (l) => ls.includes(l);
+  const n = issue?.number;
+  if (TERMINAL.some(has)) return { target: null, reason: 'terminal' };
+  if (HUMAN_GATED.some(has)) return { target: null, reason: 'human-gated' };
+  if (has(IN_PROGRESS)) {
+    if (!liveBuilds.has(n) && staleClaims.has(n)) {
+      return { target: 'coder', mode: 'do', reason: 'stale-reclaim', clear: IN_PROGRESS };
+    }
+    return { target: null, reason: 'building' };
+  }
+  if (has(IDEA) && !has(APPROVED)) return { target: null, reason: 'idea-needs-approval' };
+  if (CI_PREFIX.test(String(issue?.title || ''))) return { target: 'triager', mode: 'ask', reason: 'ci-failure' };
+  if (has(SPEC_DRAFT)) return { target: 'analyst', mode: 'ask', reason: 'spec-finalize', spec: true };
+  if (has(IDEA)) return { target: 'analyst', mode: 'ask', reason: 'idea-draft', advance: SPEC_DRAFT };
+  if (has(QUESTION)) return { target: 'analyst', mode: 'ask', reason: 'question' };
+  if (CODE_TYPES.some(has)) return { target: 'coder', mode: 'do', reason: 'code' };
+  return { target: 'triager', mode: 'ask', reason: 'triage' };
+}
 
 /** Is this issue eligible for the A2A society? approved ∧ route:a2a ∧ not already claimed. */
 export function isEligible(issue) {

@@ -122,3 +122,61 @@ test('registryFor: launches A2A peers with the current node binary', () => {
   // S1 (#86 review): the reviewer peer is ask-only — never granted `do`.
   assert.deepEqual(registry.peers.reviewer.env, { AGENT_MESH_ENABLED_MODES: 'ask' });
 });
+
+import {
+  routeFor, labelNames,
+  IDEA, QUESTION, BUG, ENHANCEMENT, DOCUMENTATION,
+  SPEC_DRAFT, SPEC_IN_REVIEW, DISCUSSING, DONE, BLOCKED,
+} from '../src/dev-society/core.js';
+
+test('routeFor: terminal + human-gated labels are skipped', () => {
+  for (const l of [DONE, 'rejected', 'wontfix', 'duplicate', 'invalid']) {
+    assert.equal(routeFor(issue(1, [l])).target, null, `${l} terminal`);
+  }
+  for (const l of [SPEC_IN_REVIEW, PR_IN_REVIEW, BLOCKED, DISCUSSING]) {
+    assert.equal(routeFor(issue(1, [l])).target, null, `${l} human-gated`);
+  }
+});
+
+test('routeFor: idea needs approval; approved idea → analyst draft (advance spec:draft)', () => {
+  assert.equal(routeFor(issue(1, [IDEA])).target, null, 'idea without approval skipped');
+  const r = routeFor(issue(2, [IDEA, APPROVED]));
+  assert.equal(r.target, 'analyst');
+  assert.equal(r.mode, 'ask');
+  assert.equal(r.advance, SPEC_DRAFT);
+});
+
+test('routeFor: spec:draft → analyst finalize (spec PR)', () => {
+  const r = routeFor(issue(3, [SPEC_DRAFT]));
+  assert.equal(r.target, 'analyst');
+  assert.equal(r.mode, 'ask');
+  assert.equal(r.spec, true);
+});
+
+test('routeFor: question → analyst; code types → coder; CI title → triager; else → triager', () => {
+  assert.equal(routeFor(issue(4, [QUESTION])).target, 'analyst');
+  for (const l of [BUG, ENHANCEMENT, DOCUMENTATION]) {
+    const r = routeFor(issue(5, [l]));
+    assert.equal(r.target, 'coder', l);
+    assert.equal(r.mode, 'do', l);
+  }
+  assert.equal(routeFor({ number: 6, title: 'infra_auth: nightly broke', labels: [] }).target, 'triager');
+  assert.equal(routeFor({ number: 7, title: 'flake: foo', labels: [] }).target, 'triager');
+  assert.equal(routeFor(issue(8, ['help wanted'])).target, 'triager', 'unrecognized → triage');
+});
+
+test('routeFor: code build is autonomous (no approved/route:a2a needed)', () => {
+  assert.equal(routeFor(issue(9, [BUG])).target, 'coder');
+});
+
+test('routeFor: in-progress skipped unless stale → coder reclaim', () => {
+  assert.equal(routeFor(issue(10, [IN_PROGRESS])).target, null, 'fresh build in flight');
+  assert.equal(routeFor(issue(10, [IN_PROGRESS]), { liveBuilds: new Set([10]) }).target, null, 'live build');
+  const r = routeFor(issue(10, [IN_PROGRESS]), { staleClaims: new Set([10]) });
+  assert.equal(r.target, 'coder');
+  assert.equal(r.clear, IN_PROGRESS);
+});
+
+test('labelNames: returns normalized label strings', () => {
+  assert.deepEqual(labelNames(issue(1, [{ name: BUG }, 'enhancement'])), [BUG, 'enhancement']);
+});
