@@ -15,6 +15,7 @@ test('daemon registers the issue-sweep builtin and routes via routeFor', () => {
   assert.match(d, /listAllOpen/, 'lists all open issues');
   assert.doesNotMatch(d, /async function tick\(/, 'old tick() loop retired');
   assert.doesNotMatch(d, /async function listEligible\(/, 'old listEligible removed');
+  assert.match(d, /issue-sweep'[\s\S]{0,200}status: 'ok'/, 'issue-sweep builtin returns a status object');
 });
 
 test('maintainer schedules issue-sweep every 10 minutes', () => {

@@ -87,7 +87,9 @@ if (!once && !selftest) {
         return { status: 'fail', error: e?.message || String(e) };
       }
     },
-    'issue-sweep': () => sweep().catch((e) => log('issue-sweep error:', e.message)),
+    'issue-sweep': () => sweep()
+      .then(() => ({ status: 'ok', output: 'issue-sweep complete' }))
+      .catch((e) => { log('issue-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
   };
   sched = createScheduler({ meshRoot: SCHED_MESH_ROOT, builtins });
   sched.start();
@@ -155,6 +157,7 @@ const issueComment = (n, body) => gh(['issue', 'comment', String(n), '--repo', c
 const addLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--add-label', l]).catch(() => {});
 const rmLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--remove-label', l]).catch(() => {});
 
+// All open issues, intentionally UNFILTERED by label — routeFor does all gating/skip logic.
 async function listAllOpen() {
   const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
     '--limit', '100', '--json', 'number,title,body,labels']);
@@ -199,7 +202,7 @@ async function runSpecTask(issue) {
       await issueComment(issue.number, '🤖 A2A society Analyst did not produce a usable spec — needs a human.');
       return;
     }
-    const slug = String(issue.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || `issue-${issue.number}`;
+    const slug = String(issue.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '') || `issue-${issue.number}`;
     const date = new Date().toISOString().slice(0, 10);
     const rel = `docs/superpowers/specs/${date}-${slug}-design.md`;
     mkdirSync(join(wt, dirname(rel)), { recursive: true });
@@ -302,6 +305,10 @@ async function sweep() {
   const issues = await listAllOpen();
   const state = readDispatchState();
   const now = Date.now();
+  // liveBuilds stays empty by design: the scheduler runs one issue-sweep at a time
+  // per agent (in-memory lock) and runOneTask is awaited within the tick, so no build
+  // is ever concurrent. Stale-reclaim therefore relies on STALE_MS, which MUST exceed
+  // the A2A build timeout (cfg.timeoutMs) so a still-running build is never re-claimed.
   const liveBuilds = new Set();
   const staleClaims = new Set(
     issues
