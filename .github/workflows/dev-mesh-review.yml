@@ -59,14 +59,29 @@ jobs:
             `security-review` against the PROJECT.md invariants — anti-spoof surface, no
             Bash in `do`, single writable root + path-guard canonicalization, external
             content treated as data, failure-is-data, and fork-PR safety in any workflow
-            changes. Post specific, actionable comments; request changes on any violation.
+            changes.
 
-            You COMMENT only. Do NOT edit files and do NOT merge — CI (ci.yml) is the
-            authoritative gate and a human holds the merge.
-      - name: Verify the agent actually worked (green != healthy)
+            Classify every finding as BLOCKING or non-blocking:
+              • BLOCKING = a security-invariant violation, a correctness bug, or a
+                missing/failing test for changed behavior.
+              • non-blocking = style, wording, docs, naming, or optional suggestions.
+
+            Then submit EXACTLY ONE verdict for the CURRENT commit, so the PR carries an
+            honest signal instead of being stuck in a sticky CHANGES_REQUESTED:
+              • If there is ANY blocking finding → `gh pr review <PR> --request-changes`
+                with the blocking items (and any nits).
+              • If there are NO blocking findings → `gh pr review <PR> --approve`. Put any
+                non-blocking nits in the body as OPTIONAL suggestions — they must never
+                withhold approval. An approval here clears a prior CHANGES_REQUESTED, so
+                "green CI + this approval" is the all-clear that makes the PR merge-ready.
+            Do NOT re-raise non-blocking nits already noted in an earlier pass: once the
+            blocking set is empty, APPROVE and stop, so review converges instead of looping.
+
+            You never edit files and never merge — CI (ci.yml) is the authoritative gate and
+            a human performs the merge. Your job is the honest verdict, nothing more.
+      - name: Verify the agent worked + capture usage
         if: always()
-        env:
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        # --advisory-blocked: this is a light comment/ask role (no git/general
-        # shell granted), so probing a denied command is benign noise, not a failure.
-        run: node scripts/assert-run-healthy.mjs --advisory-blocked
+        uses: ./.github/actions/agent-postrun
+        with:
+          execution_file: ${{ steps.claude.outputs.execution_file }}
+          advisory_blocked: "true"

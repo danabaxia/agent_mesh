@@ -67,19 +67,19 @@ test('spawnFile timeout kills the whole process tree, not just the direct child'
 
   // Ordering matters: the grandchild must RECORD its pid before the timeout-driven
   // kill reaps the tree, else the pidfile never appears and the assert below is
-  // unwinnable. A short (1.2s) timeout raced TWO cold Node starts (parent →
-  // grandchild) plus the pid write on loaded Windows CI runners — the tree was
-  // killed before the grandchild wrote its pid, so the test flaked (the old 15s
-  // pidfile wait only delayed the inevitable failure, since the tree was already
-  // dead). Fix: poll for the pidfile with a generous startup budget, CONFIRM the
-  // tree is up, and only then await the timeout-driven kill — which is the
-  // behavior this test actually verifies.
+  // unwinnable. The flake (twice on Windows CI, 2026-06-18): the startup budget was
+  // SHORTER than the kill timeout (5s vs 7s), so a 5–7s cold start on a loaded
+  // Windows runner tripped `recorded === false` at the 5s budget even though the
+  // kill mechanism worked fine and the grandchild WOULD have recorded by ~6s.
   //
-  // Keep STARTUP_BUDGET_MS and KILL_TIMEOUT_MS as separate named constants so
-  // the required ordering (startup < kill) stays explicit and can't silently
-  // break if either value is changed in isolation.
-  const STARTUP_BUDGET_MS = 5000; // generous: two cold Node starts on a loaded Windows runner
-  const KILL_TIMEOUT_MS = STARTUP_BUDGET_MS + 2000; // kill always fires AFTER the startup budget
+  // Fix: the pid-wait budget must cover essentially the whole pre-kill window, so any
+  // startup that finishes before the kill (the precondition for the test to be
+  // meaningful at all) is detected — never falsely failed. Make KILL_TIMEOUT_MS
+  // generous enough to clear two cold Node starts on the slowest observed runner, and
+  // poll for the pid right up to (just shy of) that kill. The test's duration is
+  // ~KILL_TIMEOUT_MS regardless, since the tree lives until the timeout reaps it.
+  const KILL_TIMEOUT_MS = 15000; // generous: clears two cold Node starts on a loaded Windows CI runner
+  const STARTUP_BUDGET_MS = KILL_TIMEOUT_MS - 500; // poll for the pid across the whole pre-kill window
   const pending = spawnFile(process.execPath, [parent], {
     env: { ...process.env, PID_FILE: pidFile },
     timeoutMs: KILL_TIMEOUT_MS,

@@ -44,15 +44,19 @@ import { createSessionLive } from './session-live.js';
 import { parseTranscriptLine, redactSessionEvent } from './session-events.js';
 import { readSessionId, writeSessionId } from './session-store.js';
 import { readRunLogRecords, dedupeRunRecords } from '../log.js';
+import { aggregateRange } from '../report/tokens-range.js';
 import { MAX_TASK_CHARS, DEFAULT_AUTOSYNC_DEBOUNCE_MS, readPositiveInt } from '../config.js';
 import { createAutoSync } from './auto-sync.js';
 import { doctor } from '../builder/doctor.js';
 import { fetchRemoteImage, defaultPinnedFetch } from './img-proxy.js';
-import { createScheduler } from './scheduler.js';
-import { validateCadence, describeCadence } from './schedule-cadence.js';
+import { createScheduler } from '../schedule/scheduler.js';
+import { validateCadence, describeCadence } from '../schedule/schedule-cadence.js';
+import { listAllSchedules } from '../schedule/list-all.js';
 import { createRotationManager } from './rotation.js';
 import { runDigest } from '../digest.js';
 import { buildResumeCommand } from './resume-command.js';
+import { readActivity } from '../activity-log/log.js';
+import { filterEvents } from '../activity-log/event.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -131,7 +135,7 @@ function isSafeArtifactId(id) {
   return typeof id === 'string' && ARTIFACT_ID_RE.test(id) && !id.includes('..');
 }
 
-// Schedule storage (Phase-5 contract, mirrors src/dashboard/scheduler.js):
+// Schedule storage (Phase-5 contract, mirrors src/schedule/scheduler.js):
 // job definitions at <agentRoot>/.agent/schedule.json { jobs:[…] } (git-tracked
 // intent), runtime state at <agentRoot>/.agent-mesh/schedule-state.json (never
 // in git). Missing/corrupt defs are tolerated as empty.
@@ -531,6 +535,17 @@ async function loadActivitySnapshot(meshRoot) {
       .slice(-ACTIVITY_RUNS_PER_AGENT);
     for (const r of agentRecords) records.push({ ...r, agent: agent.name });
   }
+
+  // Append GitHub-Actions activity (written by the orchestrator's gh-activity-poll
+  // builtin). Records are pre-shaped to buildActivity's contract; keep agent/from/to
+  // as-is (do NOT re-tag like per-agent logs). Missing/corrupt cache → local-only.
+  const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY
+    || resolve(meshRoot, '..', '.dev-society', 'gh-activity.json');
+  try {
+    const gh = JSON.parse(await readFile(ghActivityPath, 'utf8'));
+    if (Array.isArray(gh)) for (const r of gh) records.push(r);
+  } catch { /* no cache / unreadable → local activity only */ }
+
   return buildActivity(records);
 }
 
@@ -622,7 +637,7 @@ function consoleErrorStatus(code) {
 // Route handling
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler }) {
+async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dashboardOwnsScheduler }) {
   applySecurityHeaders(res);
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenerPort}`);
@@ -676,6 +691,86 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     view.sessionLogEnabled = sessionLogEnabled; // gate the session-log view (list/transcript)
     view.chatEnabled = !!chatEnabled;           // gate the in-dashboard chat composer (off by default)
     sendJson(res, 200, view);
+    return;
+  }
+
+  // GET /api/daily → the latest cached Daily Mesh Report model (mesh-wide
+  // PR/Issue/Token digest), written by scripts/daily-report.mjs each run. A
+  // read-only file read — never shells gh on page load. `{ available:false }`
+  // when no report has been generated yet (so the tab shows an empty state).
+  if (pathname === '/api/daily' && req.method === 'GET') {
+    const cachePath = dailyReportPath
+      || process.env.AGENT_MESH_DAILY_REPORT_CACHE
+      || resolve(meshRoot, '..', '.dev-society', 'daily-report.json');
+    try {
+      const report = JSON.parse(readFileSync(cachePath, 'utf8'));
+      sendJson(res, 200, { available: true, report });
+    } catch {
+      sendJson(res, 200, { available: false });
+    }
+    return;
+  }
+
+  // GET /api/tokens?range=today|week|month → the token-consumption panel model,
+  // aggregated from the per-date daily-report caches. today = the latest report;
+  // week/month = sum the last 7/30 dated caches (missing days skipped).
+  if (pathname === '/api/tokens' && req.method === 'GET') {
+    const range = url.searchParams.get('range') || 'today';
+    const dir = dailyReportDir || process.env.AGENT_MESH_DAILY_REPORT_DIR
+      || resolve(meshRoot, '..', '.dev-society');
+    const latest = dailyReportPath || join(dir, 'daily-report.json');
+    const models = [];
+    if (range === 'today') {
+      try { models.push(JSON.parse(readFileSync(latest, 'utf8'))); } catch { /* none yet */ }
+    } else {
+      const n = range === 'month' ? 30 : 7;
+      const nowMs = Date.now();
+      for (let i = n - 1; i >= 0; i--) {
+        const date = new Date(nowMs - i * 86400000).toISOString().slice(0, 10);
+        try { models.push(JSON.parse(readFileSync(join(dir, `daily-report-${date}.json`), 'utf8'))); } catch { /* skip missing day */ }
+      }
+    }
+    sendJson(res, 200, { range, model: aggregateRange(models) });
+    return;
+  }
+
+  // GET /api/schedules → mesh-wide read-only view of every agent's scheduled
+  // jobs (defs + runtime state). The daemon owns execution; this is a window.
+  if (pathname === '/api/schedules' && req.method === 'GET') {
+    const { jobs } = await listAllSchedules({ meshRoot });
+    const schedulerOwner = dashboardOwnsScheduler ? 'dashboard' : (jobs.length ? 'daemon' : 'none');
+    sendJson(res, 200, { schedulerOwner, jobs });
+    return;
+  }
+
+  // GET /api/health → read-only heartbeat snapshot written by the daemon.
+  // Degrades to an empty health object (never 500) when the file is missing or
+  // corrupt — mirrors the gh-activity cache read pattern in loadActivitySnapshot.
+  if (pathname === '/api/health' && req.method === 'GET') {
+    const file = process.env.AGENT_MESH_HEARTBEAT_FILE || resolve(meshRoot, '..', '.dev-society', 'heartbeat.json');
+    let snap = { generatedAt: null, summary: { ok: 0, failing: 0, overdue: 0, stuck: 0, escalated: 0 }, findings: [], openEscalations: [] };
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf8'));
+      if (parsed && typeof parsed === 'object') snap = parsed;
+    } catch { /* missing/corrupt snapshot → empty health */ }
+    sendJson(res, 200, snap);
+    return;
+  }
+
+  // GET /api/activity-log → recent daemon activity events (newest-first), with
+  // filter facets for dropdown population. Reads from .dev-society/activity-*.jsonl.
+  // Tolerant: missing dir → empty 200, never 500. Override dir via env var.
+  if (pathname === '/api/activity-log' && req.method === 'GET') {
+    const dir = process.env.AGENT_MESH_ACTIVITY_DIR || resolve(meshRoot, '..', '.dev-society');
+    const base = readActivity({ dir, since: url.searchParams.get('since') || undefined, limit: 500 });
+    const agents = [...new Set(base.map((e) => e.agent).filter(Boolean))].sort();
+    const types = [...new Set(base.map((e) => e.type).filter(Boolean))].sort();
+    const events = filterEvents(base, {
+      agent: url.searchParams.get('agent') || undefined,
+      type: url.searchParams.get('type') || undefined,
+      level: url.searchParams.get('level') || undefined,
+    }).slice(0, Number(url.searchParams.get('limit')) || 200);
+    sendJson(res, 200, { events, agents, types });
     return;
   }
 
@@ -2346,8 +2441,8 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
   // -----------------------------------------------------------------------
 
   if (req.method === 'GET') {
-    // Map / to index.html
-    const assetPath = pathname === '/' ? '/index.html' : pathname;
+    // Map / to board2.html (the dashboard; the legacy index.html/app.js was removed).
+    const assetPath = pathname === '/' ? '/board2.html' : pathname;
 
     // Reject traversal attempts (%2e, double-dot, etc.)
     if (assetPath.includes('..') || assetPath.includes('\0')) {
@@ -2546,7 +2641,7 @@ function loadOrCreatePersistedToken(meshRoot) {
   return fresh;
 }
 
-export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync }) {
+export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir }) {
   // Resolve auth token. Precedence:
   //   1. Explicit `token` arg (tests inject deterministic tokens)
   //   2. Persisted token at <meshRoot>/.agent-mesh/dashboard-token (so a CLI
@@ -2672,7 +2767,10 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
       rotationManager,
       // Locate-in-Explorer action — injectable so tests record instead of spawn.
       spawnLocate: spawnLocate ?? defaultSpawnLocate,
-      scheduler: sched
+      scheduler: sched,
+      dailyReportPath,
+      dailyReportDir,
+      dashboardOwnsScheduler: schedulerOwned
     }).catch((err) => {
       applySecurityHeaders(res);
       try {

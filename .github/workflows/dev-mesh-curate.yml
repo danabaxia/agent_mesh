@@ -67,8 +67,9 @@ jobs:
             review-gated by design.
       - name: Validate quick.json caps (belt-and-suspenders backstop)
         run: node scripts/validate-quick-memory.mjs dev-mesh/curator/memory/quick.json
-      - name: Verify the agent actually worked (green != healthy)
+      - name: Verify the agent worked + capture usage
         if: always()
-        env:
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        run: node scripts/assert-run-healthy.mjs
+        uses: ./.github/actions/agent-postrun
+        with:
+          execution_file: ${{ steps.claude.outputs.execution_file }}
+          advisory_blocked: "false"

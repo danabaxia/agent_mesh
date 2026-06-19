@@ -123,7 +123,7 @@ issue" into "we measured the mesh doing it."
 
 ## 7. Host / daemon requirements
 
-- Always-on host (small VM/container): Node ≥ 20, `claude` CLI authed (subscription or API key),
+- Always-on host (small VM/container): Node ≥ 20, `claude` CLI authed with OAuth/subscription auth,
   a repo clone, and a `workflow`-less GitHub PAT (reuse the `DEV_MESH_PAT` pattern; the daemon does
   the pushes/PRs).
 - Runs the existing **dashboard** (`agent-mesh dashboard <mesh-root> --allow-shell`) for live

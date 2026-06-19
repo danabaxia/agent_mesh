@@ -27,7 +27,7 @@ test('ci-sweep: subscription auth (sanitized + fail-fast), model var, do-worker 
   for (const t of [/Bash\(git:\*\)/, /Bash\(gh:\*\)/, /Bash\(npm:\*\)/, /Bash\(node:\*\)/]) assert.match(wf, t);
   assert.doesNotMatch(wf, /Bash\((?:git|gh|npm|node)\)/, 'use Bash(cmd:*), not bare');
   assert.match(wf, /id:\s*claude/);
-  assert.match(wf, /assert-run-healthy\.mjs/);
+  assert.match(wf, /agent-postrun/);
 });
 
 test('ci-sweep: shares the [autofix] budget, injection-safe, never force-push/self-merge', () => {

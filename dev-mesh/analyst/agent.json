@@ -3,11 +3,37 @@
   "name": "analyst",
   "description": "Owns idea intake; researches similar OSS projects and synthesizes ideas; drafts ready-for-review specs and shepherds approval. Proposes only; never implements.",
   "version": "0.1.0",
-  "defaultInputModes": ["text/plain"],
-  "defaultOutputModes": ["text/plain", "application/json"],
-  "skills": [
-    { "id": "research-landscape", "name": "Research landscape", "description": "Survey similar OSS projects (deep research) and absorb cited findings.", "tags": ["research", "ideation"] },
-    { "id": "write-spec", "name": "Write spec", "description": "Draft a ready-for-review design spec from a discussed idea.", "tags": ["spec", "design"] }
+  "defaultInputModes": [
+    "text/plain"
   ],
-  "x-agentmesh": { "modes": ["ask"] }
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "research-landscape",
+      "name": "Research landscape",
+      "description": "Survey similar OSS projects (deep research) and absorb cited findings.",
+      "tags": [
+        "research",
+        "ideation"
+      ]
+    },
+    {
+      "id": "write-spec",
+      "name": "Write spec",
+      "description": "Draft a ready-for-review design spec from a discussed idea.",
+      "tags": [
+        "spec",
+        "design"
+      ]
+    }
+  ],
+  "x-agentmesh": {
+    "modes": [
+      "ask"
+    ],
+    "meshVersion": "0.1.0"
+  }
 }

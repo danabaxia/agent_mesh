@@ -98,9 +98,9 @@ Skip guard for the not-yet-built tiers:
 
 The feasibility gate, confirmed available (a secret can be added):
 
-- **Secret:** `ANTHROPIC_API_KEY` (or the `claude` OAuth token var) added to the
-  repo's Actions secrets by the maintainer. The workflow exposes it as an env to
-  the claude-spawning steps only.
+- **Secret:** `CLAUDE_CODE_OAUTH_TOKEN` added to the repo's Actions secrets by
+  the maintainer. The workflow sanitizes it and exposes it as an env to the
+  claude-spawning steps only.
 - **Install:** `npm i -g @anthropic-ai/claude-code` in `setup-claude`; verify
   with `claude --version`. The harnesses honor `AGENT_MESH_CLAUDE` and otherwise
   find `claude` on PATH.
@@ -157,5 +157,5 @@ A YAML workflow can't be unit-tested like the harnesses, so:
 3. One workflow with parallel tier-jobs (proposed) vs. a single sequential job
    (simpler logs, slower). Proposed: parallel jobs sharing a `setup-claude`
    composite, for isolation + independent artifacts.
-4. Secret form — `ANTHROPIC_API_KEY` vs. a `claude` OAuth token; pick whichever
-   the maintainer's account uses. Proposed: `ANTHROPIC_API_KEY`.
+4. Secret form — resolved: this repo uses `CLAUDE_CODE_OAUTH_TOKEN` only for
+   real-`claude` CI auth.

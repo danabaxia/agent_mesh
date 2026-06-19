@@ -1,0 +1,187 @@
+# Dev-mesh · PR janitor — close detection gaps in the mesh.
+# A SCHEDULED sweep that handles three classes of open PRs no other workflow catches:
+#   1. `memory:promote` PRs whose changeset includes non-memory files (scope drift) —
+#      `dev-mesh-memory-automerge.yml` would never merge them anyway, but it silently
+#      skips DIRTY ones, so they accumulate forever. Janitor closes them with a
+#      diagnostic comment so the Curator can re-emit a clean PR.
+#   2. PRs stuck in `mergeStateStatus=UNKNOWN` for >1h. mergefix only acts on DIRTY
+#      and automerge only acts on MERGEABLE, so an UNKNOWN PR sits invisible. The
+#      janitor pushes an empty commit to nudge GitHub to recompute mergeability.
+#   3. Bot-opened PRs >24h old with no labels. backlog/automerge/mergefix all filter
+#      on labels or merge state — an unlabelled PR is invisible. The janitor opens a
+#      `needs-triage` issue linking the PR so a human notices.
+#
+# NEVER merges, NEVER force-pushes, NEVER touches code. Closes drift PRs and pushes
+# empty commits — both are reversible.
+# Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6/§8
+
+name: dev-mesh-pr-janitor
+
+on:
+  schedule:
+    - cron: '20,50 * * * *' # every 30 min, offset from other sweeps
+  workflow_dispatch:
+
+permissions:
+  contents: write       # push empty nudge commits
+  issues: write         # open needs-triage issues
+  pull-requests: write  # comment + close
+
+concurrency:
+  group: dev-mesh-pr-janitor
+  cancel-in-progress: false
+
+jobs:
+  janitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Push via DEV_MESH_PAT so the nudge empty commit can land on a PR branch
+          # whose head sha is referenced by a workflow file (rare, but the Actions
+          # GITHUB_TOKEN cannot push to refs that update workflow files). Falls back.
+          token: ${{ secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN }}
+
+      # ─── 1. Memory scope drift ──────────────────────────────────────────────────
+      # `memory:promote` PR that touches anything outside dev-mesh/*/memory/ is
+      # automerge-rejected forever. Close it so Curator regenerates clean.
+      - name: Close memory:promote PRs with scope drift
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mapfile -t prs < <(gh pr list --state open --label memory:promote \
+            --json number,isCrossRepository --jq '.[] | select(.isCrossRepository==false) | .number')
+          if [ "${#prs[@]}" -eq 0 ]; then
+            echo "no open memory:promote PRs"
+            exit 0
+          fi
+          for pr in "${prs[@]}"; do
+            echo "::group::PR #$pr scope check"
+            # List CHANGED files (not just diff lines) — gh's files endpoint covers any size.
+            files=$(gh pr view "$pr" --json files --jq '.files[].path')
+            drift=$(printf '%s\n' "$files" | grep -vE '^dev-mesh/[^/]+/memory/' || true)
+            if [ -z "$drift" ]; then
+              echo "PR #$pr — memory-only, leave for automerge"
+              echo "::endgroup::"
+              continue
+            fi
+            echo "PR #$pr — DRIFT detected:"
+            echo "$drift" | sed 's/^/  - /'
+            # Close with a structured comment so the Curator's next run can see
+            # why and rebuild a clean PR. Trim the file list at 25 to keep the comment short.
+            preview=$(echo "$drift" | head -25 | sed 's/^/  - /')
+            extra=$(echo "$drift" | tail -n +26 | wc -l | tr -d ' ')
+            extra_line=""
+            if [ "$extra" -gt 0 ]; then extra_line="  - (… ${extra} more)"; fi
+            body=$(printf '%s\n' \
+              "🤖 dev-mesh janitor: closing — scope drift." \
+              "" \
+              "This \`memory:promote\` PR includes files outside \`dev-mesh/*/memory/\`:" \
+              "${preview}" \
+              "${extra_line}" \
+              "" \
+              "\`dev-mesh-memory-automerge.yml\` will never accept this PR (its file-scope guard" \
+              "rejects any non-memory path). Curator should re-emit a clean memory-only PR." \
+              "" \
+              "If the drift is intentional, retitle and relabel the PR so backlog/review picks it up.")
+            gh pr close "$pr" --comment "$body"
+            echo "::endgroup::"
+          done
+
+      # ─── 2. UNKNOWN merge state nudge ───────────────────────────────────────────
+      # mergeStateStatus=UNKNOWN means GitHub hasn't computed mergeability yet — for
+      # >1h that's stuck. Push an empty commit to force recompute. (close+reopen is
+      # an alternative but loses approvals; empty commit preserves them.)
+      - name: Nudge UNKNOWN PRs (>1h stuck)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Threshold: PR last updated >1h ago AND mergeStateStatus=UNKNOWN.
+          # Using ISO timestamps from gh + date math; bash date arith via epoch.
+          now_epoch=$(date -u +%s)
+          mapfile -t rows < <(gh pr list --state open \
+            --json number,headRefName,isCrossRepository,mergeStateStatus,updatedAt \
+            --jq '.[] | select(.isCrossRepository==false and .mergeStateStatus=="UNKNOWN") | "\(.number)\t\(.headRefName)\t\(.updatedAt)"')
+          if [ "${#rows[@]}" -eq 0 ]; then
+            echo "no UNKNOWN PRs"
+            exit 0
+          fi
+          # Set identity for the empty commits once (idempotent; hoisted out of the
+          # loop). Use bot identity so the [janitor] commit doesn't look human-authored.
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          for row in "${rows[@]}"; do
+            IFS=$'\t' read -r pr head updated <<<"$row"
+            upd_epoch=$(date -u -d "$updated" +%s 2>/dev/null || gdate -u -d "$updated" +%s 2>/dev/null || echo 0)
+            age=$(( now_epoch - upd_epoch ))
+            if [ "$age" -lt 3600 ]; then
+              echo "PR #$pr UNKNOWN but only ${age}s old — leaving alone"
+              continue
+            fi
+            echo "::group::PR #$pr nudge (stuck $((age / 60))min)"
+            git fetch origin "$head" --depth 2 -q
+            git checkout -B "_janitor_$pr" "origin/$head"
+            git commit --allow-empty -m "chore: nudge GitHub mergeable recalc [janitor]" \
+              -m "PR #$pr stuck in mergeStateStatus=UNKNOWN for $((age / 60))min."
+            git push origin "_janitor_$pr:$head"
+            git checkout - >/dev/null 2>&1
+            gh pr comment "$pr" --body "🤖 dev-mesh janitor: pushed an empty commit to nudge GitHub's mergeable recalc. If the state stays UNKNOWN after a few minutes, this PR likely needs a human."
+            echo "::endgroup::"
+          done
+
+      # ─── 3. Unlabelled bot PRs > 24h ─────────────────────────────────────────────
+      # backlog/automerge/mergefix all filter on labels. A bot-opened PR that
+      # forgot to add labels falls through. Open a needs-triage issue so a human
+      # surfaces it; do NOT close (it may be valid work).
+      - name: Escalate unlabelled bot PRs (>24h)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          now_epoch=$(date -u +%s)
+          mapfile -t rows < <(gh pr list --state open \
+            --json number,title,author,labels,isCrossRepository,createdAt,url \
+            --jq '.[] | select(.isCrossRepository==false and (.labels | length)==0) | "\(.number)\t\(.author.login)\t\(.createdAt)\t\(.url)\t\(.title)"')
+          if [ "${#rows[@]}" -eq 0 ]; then
+            echo "no unlabelled PRs"
+            exit 0
+          fi
+          for row in "${rows[@]}"; do
+            IFS=$'\t' read -r pr login created url title <<<"$row"
+            crt_epoch=$(date -u -d "$created" +%s 2>/dev/null || gdate -u -d "$created" +%s 2>/dev/null || echo 0)
+            age=$(( now_epoch - crt_epoch ))
+            if [ "$age" -lt 86400 ]; then
+              echo "PR #$pr unlabelled but only $((age / 3600))h old — leaving alone"
+              continue
+            fi
+            # Only escalate bot PRs (humans should label their own PRs).
+            case "$login" in
+              *"[bot]"|claude*|github-actions*|dependabot*) ;;
+              *)
+                echo "PR #$pr by human $login — not escalating"
+                continue
+                ;;
+            esac
+            # Open at most one needs-triage issue per PR. Search by title to dedupe.
+            existing=$(gh issue list --state open --label needs-triage \
+              --search "in:title PR #$pr" --json number --jq '.[0].number // empty')
+            if [ -n "$existing" ]; then
+              echo "PR #$pr already has needs-triage issue #$existing"
+              continue
+            fi
+            echo "Escalating PR #$pr (by $login, $((age / 3600))h old, unlabelled)"
+            body=$(printf '%s\n' \
+              "🤖 dev-mesh janitor: an open PR is invisible to backlog/automerge/mergefix because it has no labels." \
+              "" \
+              "- PR: ${url}" \
+              "- Author: \`${login}\`" \
+              "- Title: ${title}" \
+              "- Age: $((age / 3600))h since open" \
+              "- Janitor action: none (closing without a label may discard real work)" \
+              "" \
+              "Please label it appropriately so the mesh can act, or close manually if it's stale.")
+            gh issue create \
+              --title "needs-triage: PR #$pr unlabelled and stuck" \
+              --label needs-triage \
+              --body "$body"
+          done
