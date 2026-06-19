@@ -63,14 +63,21 @@ jobs:
           # CLAUDE_CODE_OAUTH_TOKEN comes (sanitized) from the preflight via GITHUB_ENV.
           # Depth covers Maintainer → Triager → Coder → Tester (one onward hop each).
           AGENT_MESH_DEPTH: '4'
+          # SECURITY (#145, CWE-78): the workflow_dispatch input and the repo var are passed
+          # as ENV, never inline ${{ }} into the run: script. A ${{ }} expression is rendered
+          # into the script text BEFORE the shell parses it, so a crafted `task` could break
+          # out and run author-controlled shell (exfiltrating CLAUDE_CODE_OAUTH_TOKEN). As an
+          # env var the shell expands it as inert data inside double quotes — no injection.
+          TASK_INPUT: ${{ inputs.task || 'Dry-run the backlog pickup path on a synthetic approved task; confirm routing + confinement without merging.' }}
+          DEV_MESH_MODEL: ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
         run: |
-          TASK="${{ inputs.task || 'Dry-run the backlog pickup path on a synthetic approved task; confirm routing + confinement without merging.' }}"
+          TASK="$TASK_INPUT"
           echo "Driving Maintainer with synthetic approved task: $TASK"
           # Phase 1: serve the Maintainer and drive it headlessly; delegation flows
           # over serve-a2a/peer-bridge. The Coder's do-mode edits stay inside its
           # path-guarded worktree (single writable root) — proven by the e2e net.
           claude -p "You are the Maintainer of dev-mesh. Read dev-mesh/maintainer/AGENT.md. $TASK Do NOT push, merge, or mutate the repo — this is an observability dogfood." \
-            --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }} --output-format json > dogfood-run.json || echo "::warning::dogfood run exited non-zero (captured for triage)"
+            --model "$DEV_MESH_MODEL" --output-format json > dogfood-run.json || echo "::warning::dogfood run exited non-zero (captured for triage)"
       - name: Upload run logs (artifact, non-gating)
         if: always()
         uses: actions/upload-artifact@v4
