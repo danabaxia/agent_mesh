@@ -155,7 +155,7 @@ async function saveJobArtifact({ agentRoot, agentName, job, output, when }) {
 // createScheduler
 // ---------------------------------------------------------------------------
 
-export function createScheduler({ meshRoot, runJob, builtins = {}, intervalMs = DEFAULT_INTERVAL_MS, now = () => new Date() }) {
+export function createScheduler({ meshRoot, runJob, builtins = {}, onJobResult, intervalMs = DEFAULT_INTERVAL_MS, now = () => new Date() }) {
   const root = resolve(meshRoot);
   const run = runJob || createDelegateRunJob(root);
   const runningAgents = new Set();   // in-memory one-job-at-a-time lock, per agent
@@ -217,6 +217,10 @@ export function createScheduler({ meshRoot, runJob, builtins = {}, intervalMs = 
         consecutiveFailures: ok ? 0 : ((after[job.id]?.consecutiveFailures || 0) + 1),
       };
       await writeJson(statePath(agent.root), after);
+
+      if (typeof onJobResult === 'function') {
+        try { onJobResult({ agentName: agent.name, jobId: job.id, job, status: ok ? 'ok' : 'fail', summary: summarySource }); } catch { /* a logging hook must never break the tick */ }
+      }
     } catch { /* state IO failure — swallow; next tick retries */ }
     finally { runningAgents.delete(agent.name); }
   }
