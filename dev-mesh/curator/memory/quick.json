@@ -429,5 +429,38 @@
       "source": "PR #126: feat(mesh): unified activity log + filterable dashboard panel (Phase 1)",
       "ts": "2026-06-19"
     }
+  },
+  "intake-poll-lifecycle": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Multi-step label pipelines stall without a poll — events fire once but never re-trigger intermediate state advances.",
+    "l1": "dev-mesh-intake.yml was event-only (issues/issue_comment) so once the Analyst moved an issue to 'discussing' or 'spec:draft', nothing re-triggered it — issues stalled mid-pipeline needing human nudges. PR #91 added a 30-min poll (cron: '5,35 * * * *') + workflow_dispatch. Poll mode advances up to 3 pre-approval issues/run (FIFO). Concurrency group must use github.event.issue.number||'poll' — event.issue.number is null in scheduled runs.",
+    "value": "For any GitHub Actions workflow that manages a multi-step label lifecycle (e.g. idea → discussing → spec:draft → spec:in-review):\n\n(1) Retain event triggers (issues, issue_comment) for immediate response on new activity.\n(2) Add a schedule (e.g. '5,35 * * * *') as the advancement pump for stuck intermediate states — the cron runs even when no new event fires.\n(3) Cap the batch size in poll mode (≤3 issues/run) to avoid timeouts on large backlogs.\n(4) Use github.event.issue.number||'poll' in the concurrency group key — event.issue.number is null in schedule/workflow_dispatch runs and a null-derived group key produces unexpected concurrency behavior.\n(5) In poll mode, list open issues in pre-approval states, sort FIFO by number, and advance each by one honest step.\n\nDistinct from event-driven-polling-backstop (which guards against missed webhook delivery) — here the issue is that no re-triggering event exists at all after the initial state change; the schedule is the only driver. Provenance: PR #91 (2026-06-18).",
+    "provenance": {
+      "source": "PR #91: feat(dev-mesh): intake polls to auto-advance the pre-approval pipeline",
+      "ts": "2026-06-18"
+    }
+  },
+  "integration-ref-trunk-staleness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "INTEGRATION_REF must track main under trunk-based dev — stale branch silently validates dead code for all nightly tiers.",
+    "l1": "PR #100: INTEGRATION_REF was pinned to v0.4-development, which was 188 commits behind main — the nightly L1/L2/L3/L4 tiers had been validating long-stale code for an extended period without any alert. Under trunk-based development, main is the single living line; retiring feature/development branches but leaving INTEGRATION_REF pointing at them means every nightly scorecard result (behavior evals, adversarial battery, perf benchmark) quietly tests the wrong code. The 188-commit gap was only discovered by inspection, not by a CI alert.",
+    "value": "Checklist when retiring a feature/development branch under trunk-based development:\n\n1. INTEGRATION_REF → main: update it in the same PR that retires the branch. A stale INTEGRATION_REF never causes an error or alert — all nightly jobs succeed but each validates dead code.\n2. Lint-encode the target ref: the integration-workflow.test.js assertion on `INTEGRATION_REF: main` (landed with PR #100) makes any future change a deliberate, test-gated act. Every CI pipeline variable naming a branch should have a hermetic lint equivalent.\n3. Align the schedule trigger: the nightly fires from the default branch (`main`) and checks out INTEGRATION_REF explicitly. If those diverge, a workflow_dispatch from main still tests the stale ref while the schedule appears to work. Verify both always name the same living line.\n4. Scope-check stale refs after ANY branch cleanup: grep all workflow files for retired branch refs immediately after the cleanup — INTEGRATION_REF is a silent misconfiguration until the next nightly run.\n\nProvenance: PR #100 (2026-06-18): chore(integration): retarget the nightly to main (trunk-based development).",
+    "provenance": {
+      "source": "PR #100: chore(integration): retarget the nightly to main (trunk-based development)",
+      "ts": "2026-06-18"
+    }
+  },
+  "cached-report-compute-and-schedule": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Cached report: each KPI needs both aggregation AND a refresh schedule — script without scheduler goes stale.",
+    "l1": "PR #120: issues.openNow absent from aggregate.js despite openIssues being passed (prs.openNow existed). AND daily-report-refresh had no scheduler despite PR #108 shipping the script — cache stuck 2 days old. Fix: one-line aggregation + builtin at 00:10 on the orchestrator. Symmetric parallel KPIs (prs/issues) are a completeness hint: if one is tracked, the other must be too.",
+    "value": "Pattern for adding a new KPI to a cached report:\n\n(1) Aggregation: if a parallel metric exists (e.g. prs.openNow), its counterpart (issues.openNow) must also be computed. The input param may already be passed but not projected into the output. Symptom: wrong count on dashboard — structurally absent, not stale.\n\n(2) Schedule wiring: a report script without a refresh schedule produces correct data once and goes stale. Wire a builtin on the orchestrator (e.g. daily-report-refresh at 00:10) — same pattern as gh-activity-poll. Symptom: cache age >> expected cadence.\n\n(3) Verify both: run the script manually (--cache-only, no --post) to confirm the new field appears; confirm daemon selftest exits cleanly; confirm dashboard renders the live total.\n\nRed flag: cache age >> expected period implies scheduler not wired — check script has a builtin before debugging aggregation logic.\n\nSymmetry hint: parallel KPI pairs (PRs/Issues, open/closed, pass/fail) must be tracked at the same aggregation depth. A one-sided pair is almost always a missed step.\n\nProvenance: PR #120 (2026-06-19).",
+    "provenance": {
+      "source": "PR #120 (2026-06-19): fix(report): correct open-issue count on the dashboard + schedule the daily report",
+      "ts": "2026-06-19"
+    }
   }
 }
