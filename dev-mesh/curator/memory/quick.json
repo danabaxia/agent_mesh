@@ -583,5 +583,16 @@
       "source": "PR #158: feat(self-healing): close terminal issues + escalate stuck PRs (no silent hangs)",
       "ts": "2026-06-19"
     }
+  },
+  "sandbox-host-cli-parity": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Add project CLI verbs for ops the sandbox agent can't run — shared vocabulary for agent and human, no round-trip paste.",
+    "l1": "When a sandboxed agent can't access `gh` (auth/PATH), a round-trip paste loop emerges: agent asks → human runs → pastes output → agent continues. Fix: add project CLI verbs wrapping those ops. Both sandbox agent and human share one command vocabulary — no divergent interfaces. Side benefit: lazy-import verb modules at dispatch so the hot entrypoint (serve-peer-bridge) stays cheap. PR #153 shipped dev-society status/ledger + issue label as Phase 1 (read-mostly); write/restart deferred to Phase 2 to limit blast radius.",
+    "value": "Pattern for closing the sandbox–host interface gap:\n\n(1) Identify the gap: list ops the sandboxed agent frequently needs but can't run directly (e.g. `gh issue list`, `cat .dev-society/ledger.jsonl`, `ls .dev-society/work/`). Any op requiring auth tokens not available in the sandbox, or tools not on the sandbox PATH, is a round-trip candidate.\n\n(2) Add project CLI verbs wrapping them: use the existing project binary (e.g. `agent-mesh`) to add a `<namespace> <verb>` surface. Both the sandbox agent (permitted to run `node ./bin/agent-mesh.js ...` in its Bash tool) and the host human use the same commands. Examples from PR #153:\n  - `agent-mesh dev-society status [--repo OWNER/REPO]` — daemon log + ledger + active worktrees + queue\n  - `agent-mesh dev-society ledger [--last N]` — pretty-printed ledger with edges and timing\n  - `agent-mesh issue label <num> [--add L]... [--remove L]...` — wrapper over `gh issue edit`\n\n(3) Lazy-import the verb module: inside the CLI dispatch (e.g. `src/cli.js`), import the subcommand module lazily inside the case handler. This keeps the hot-path entrypoint cheap on every other invocation (e.g. serve-peer-bridge cost stays at ~7ms).\n\n(4) Phase writes separately: Phase 1 = read-mostly verbs (status, ledger, label flip). Phase 2 = write/restart verbs (daemon restart, pr nudge, workflow run). Starting read-only limits blast radius and validates the architecture before adding write authority.\n\n(5) --repo flag for auth-gated ops: verbs calling `gh` need a `--repo OWNER/REPO` arg (or derive from git remote — see git-remote-envvar-fallback). Read-only paths (daemon log, ledger) work without auth.\n\nSymptom of the gap: human pastes raw `gh issue list` or `cat ledger.jsonl` into chat so the agent can process it. Fix: project CLI verb the agent invokes directly. Provenance: PR #153 (2026-06-19).",
+    "provenance": {
+      "source": "PR #153: feat(cli): phase-1 unified mesh ops (dev-society + issue verbs)",
+      "ts": "2026-06-19"
+    }
   }
 }
