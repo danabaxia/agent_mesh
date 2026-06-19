@@ -183,6 +183,7 @@ for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.st
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
 const git = (args, cwd) => sh('git', args, { cwd, maxBuffer: 1 << 24 });
 
+const issueClose = (n, body) => gh(['issue', 'close', String(n), '--repo', cfg.repo, '--comment', body]).catch((e) => log('  (close failed)', e.message));
 const issueComment = (n, body) => gh(['issue', 'comment', String(n), '--repo', cfg.repo, '--body', body]).catch((e) => log('  (comment failed)', e.message));
 const addLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--add-label', l]).catch(() => {});
 const rmLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--remove-label', l]).catch(() => {});
@@ -386,6 +387,12 @@ async function runOneTask(issue) {
 async function sweep() {
   if (!cfg.repo) { log('sweep: set DEV_SOCIETY_REPO'); return; }
   const issues = await listAllOpen();
+  // Self-heal: an open issue carrying a terminal label (done/rejected/wontfix/duplicate/
+  // invalid) never gets closed by anything else — close it so it stops hanging open.
+  for (const i of issues.filter((x) => core.isTerminalState(x))) {
+    log(`  ✓ closing terminal issue #${i.number} (${core.labelNames(i).join(',')})`);
+    await issueClose(i.number, '🤖 dev-mesh: closing — issue is in a terminal state (done/rejected/wontfix/duplicate/invalid).');
+  }
   const state = readDispatchState();
   const now = Date.now();
   // liveBuilds stays empty by design: the scheduler runs one issue-sweep at a time

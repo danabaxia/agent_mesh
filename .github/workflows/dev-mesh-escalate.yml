@@ -1,0 +1,53 @@
+# Dev-mesh · escalate — surface stale-STUCK PRs so nothing hangs invisibly.
+# The repair loops (review-respond / autofix / mergefix) are bounded to 2 attempts and
+# then go quiet; the merge gate also leaves CLEAN-but-unreviewed PRs sitting. This
+# scheduled sweep opens a dedup'd `needs-triage` issue for any open PR that's been stuck
+# past its repair window (DIRTY/UNKNOWN/UNSTABLE, CHANGES_REQUESTED, or CLEAN-without-
+# APPROVED) — which then flows into the issue automation (routed to the triager). It
+# self-cleans: closes its own escalation once the PR is no longer stuck.
+#
+# Default-OFF: no-ops unless repo variable AUTOMERGE_ENABLED == 'true' (same family).
+# Decision logic is pure: src/automerge/escalation.js.
+# Spec: docs/superpowers/specs/2026-06-19-mesh-self-healing-gaps-design.md
+name: dev-mesh-escalate
+
+on:
+  schedule:
+    - cron: '12,42 * * * *' # every 30 min, offset from the other sweeps
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Decide escalations without opening/closing issues'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: dev-mesh-escalate
+  cancel-in-progress: false
+
+jobs:
+  escalate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Ensure the needs-triage label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create needs-triage \
+            --repo "$GITHUB_REPOSITORY" \
+            --color D93F0B \
+            --description "Surfaced by the mesh for a human to triage" 2>/dev/null || true
+      - name: sweep
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOMERGE_ENABLED: ${{ vars.AUTOMERGE_ENABLED }}
+        run: node scripts/escalation-sweep.mjs ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
