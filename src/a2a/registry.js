@@ -51,17 +51,28 @@ async function normalizePeer(name, peer, sourcePath) {
     throw new Error(`registry peer "${name}" must be an object.`);
   }
 
+  // HTTP peer: declared via a `url` field (no spawn command needed).
+  const url = peer.url;
+  if (typeof url === 'string' && url.length > 0) {
+    if (!/^https?:\/\//i.test(url)) {
+      throw new Error(`registry peer "${name}" url must begin with http:// or https://.`);
+    }
+    const env = peer.env && typeof peer.env === 'object' && !Array.isArray(peer.env) ? peer.env : {};
+    return { type: 'http', name, url, env };
+  }
+
+  // Stdio peer: declared via a spawn command.
   const spawn = peer.spawn || peer;
   const command = spawn.command;
   if (typeof command !== 'string' || command.length === 0) {
-    throw new Error(`registry peer "${name}" requires a spawn command.`);
+    throw new Error(`registry peer "${name}" requires either a url (HTTP peer) or a spawn command (stdio peer).`);
   }
 
   const args = Array.isArray(spawn.args) ? spawn.args.map(String) : [];
   const root = peer.root ? await realpath(resolveRelative(sourcePath, peer.root)) : null;
   const env = peer.env && typeof peer.env === 'object' && !Array.isArray(peer.env) ? peer.env : {};
 
-  return { name, root, command, args, env };
+  return { type: 'stdio', name, root, command, args, env };
 }
 
 function resolveRelative(sourcePath, path) {

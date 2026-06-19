@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { MAX_LINE_CHARS } from '../config.js';
 import { normalizeRegistry } from './registry.js';
+import { HttpClientSession } from './http-client.js';
 
 // A client-side ceiling so a peer that stays alive but never replies (a dropped
 // or corrupted response frame) cannot wedge the caller forever. It sits ABOVE
@@ -52,7 +53,10 @@ function getSession({ peerName, peers, sessions, env, requestTimeoutMs, protecte
   const peer = peers[peerName];
   if (!peer) throw new Error(`Unknown A2A peer: ${peerName}`);
   if (!sessions.has(peerName)) {
-    sessions.set(peerName, new StdioClientSession(peer, env, requestTimeoutMs, protectedEnv));
+    const session = peer.type === 'http'
+      ? new HttpClientSession(peer, env, requestTimeoutMs)
+      : new StdioClientSession(peer, env, requestTimeoutMs, protectedEnv);
+    sessions.set(peerName, session);
   }
   return sessions.get(peerName);
 }

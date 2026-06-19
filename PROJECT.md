@@ -63,7 +63,7 @@ This line is normative — A & B (and any agent) must stay on their side of it.
 
 | Framework provides | Integrator / agent author provides |
 |---|---|
-| Transport adapter (stdio v1; HTTP later) speaking A2A JSON-RPC | The agent's `AGENT.md` + `agent.json` (`AgentCard`) |
+| Transport adapter (stdio v1; HTTP v1) speaking A2A JSON-RPC | The agent's `AGENT.md` + `agent.json` (`AgentCard`) |
 | Guard pipeline: input validation, cycle, depth, mode, boundary | The actual work executor plugged into the runner SPI |
 | Runner SPI + per-folder serialization + timeout/process-tree kill | Caller-side static registry wiring |
 | Path-guard enforcement (realpath ⊂ B's root) | — |
@@ -323,11 +323,10 @@ conformance pass rate, never against the demo's prose.
 
 ## 1.11 Non-Goals
 
-No HTTP server in v1 (stdio binding only); no federated/untrusted-peer profile
-in v1 (trusted same-owner workspaces first); no automatic FS discovery; no
-central broker; no parallel fan-out; no post-timeout rollback; no kernel-sandbox
-claim (folder safety = cwd + limited tool surface + realpath checks +
-path-guard).
+No federated/untrusted-peer profile in v1 (trusted same-owner workspaces
+first); no automatic FS discovery; no central broker; no parallel fan-out; no
+post-timeout rollback; no kernel-sandbox claim (folder safety = cwd + limited
+tool surface + realpath checks + path-guard).
 
 ### Merge policy (gated auto-merge)
 
@@ -517,7 +516,6 @@ simpler `do` happy cell on the non-MCP axis (the validated real-`claude` E2E).
 
 ## Future Work
 
-- HTTP(S) JSON-RPC binding — the standard interop path & conformance milestone.
 - Richer A2A lifecycle: `message/stream` (SSE), `tasks/get`, `tasks/cancel`,
   push notifications.
 - Federated/untrusted profile: `securitySchemes`, OS sandbox before any shell.
@@ -525,6 +523,7 @@ simpler `do` happy cell on the non-MCP axis (the validated real-`claude` E2E).
 
 ## Changelog
 
+- 2026-06-19 — **HTTP/JSON-RPC transport binding (v1 unlock)**: `serve-a2a-http` CLI verb and `createA2AHttpServer` add the standard A2A JSON-RPC over HTTP(S) binding alongside the stdio custom binding. Recursion state (call-path, depth) threads via `X-AgentMesh-Path`/`X-AgentMesh-Depth` request headers; the server caps incoming depth to its own configured maximum so untrusted callers cannot expand the recursion budget. `url:` peer entries in `registry.json` resolve through `HttpClientSession` (stateless fetch, per-request recursion headers). Spec: docs/superpowers/specs/2026-06-19-http-transport-design.md.
 - 2026-06-19 — **do-mode peer delegation (v2 unlock)**: resolved both blockers from the onward-delegation v1 deferral. BLOCKER-1: new `src/a2a/do-lock.js` advisory file lock (`<peer-root>/.agent-mesh/do.lock`, atomic `O_CREAT|O_EXCL`, PID-liveness stale detection) serializes concurrent `do→do` bridge processes on the same peer root. BLOCKER-2: bridge result now includes `peer_changes: { peer, files_changed, best_effort }` for do→do delegations; `delegate.js` reads the bridge's per-run downstream log and surfaces all peer writes as `agentmesh/downstream_changes` in the parent Task metadata. Mode policy: `ask→do` refused as `readonly_parent` (laundering prevention); `do→do` allowed with lock; `do→ask` allowed as downgrade. `buildBridgeEnv` threads the parent task mode into `AGENT_MESH_MODE` so the bridge enforces the correct policy. Added `lock_timeout` to the `agentmesh/error_code` closed set. Spec: docs/superpowers/specs/2026-06-18-do-mode-peer-delegation-design.md (note: spec was drafted in issue #97 comments; implementation is the authoritative record).
 - 2026-06-13 — managed-wiring auto-sync: the dashboard auto-runs doctor in a new Managed-only mode (registry.json + peer-bridge .mcp.json only) on startup and on a debounced watcher change, keeping wiring current after code updates / new agents; atomic config writes (temp+rename); Seeded/Authored stay propose-only; the framework applies, never an agent (mesh-manager stays propose-only). Opt out: AGENT_MESH_NO_AUTOSYNC=1. Spec: docs/superpowers/specs/2026-06-13-managed-wiring-autosync-design.md.
 - 2026-06-13 — review-first session management: copy resume-commands replace dashboard terminal spawning (EDR-proof by construction; /open-terminal deprecated in place), provenance-complete spawn tagging (worker:<route> create events at the delegateTask chokepoint — both modes), deterministic auto-follow of the user's live CLI session (pin/badge, sticky), per-agent transcript-storage transparency, stitched cross-session canvas timeline (seal-on-switch, seams, lazy history). Spec: docs/superpowers/specs/2026-06-13-review-first-session-management-design.md.

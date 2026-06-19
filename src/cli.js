@@ -11,6 +11,7 @@ function usage() {
     'Usage:',
     '  agent-mesh serve <folder>',
     '  agent-mesh serve-a2a <folder>',
+    '  agent-mesh serve-a2a-http <folder> [--port N] [--host H]',
     '  agent-mesh init-mesh <folder>',
     '  agent-mesh add <mesh-root> <agent-folder> [--name X] [--modes ask,do] [--role "..."] [--apply] [--force]',
     '  agent-mesh join <mesh-root> <name-or-folder>',
@@ -448,6 +449,40 @@ export async function main(argv, env = process.env) {
       const { createMeshHealthServer } = await import('./mesh-health/server.js');
       const server = createMeshHealthServer({ meshRoot, env });
       await server.start(process.stdin, process.stdout);
+    } catch (err) {
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (command === 'serve-a2a-http') {
+    const folderArg = argv[1];
+    if (!folderArg) {
+      process.stderr.write(`${usage()}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    const httpRoot = await realpath(folderArg);
+    let port = 4747;
+    let host = '127.0.0.1';
+    for (let i = 2; i < argv.length; i++) {
+      const arg = argv[i];
+      if (arg === '--port' && argv[i + 1]) { port = parseInt(argv[++i], 10); continue; }
+      if (arg.startsWith('--port=')) { port = parseInt(arg.slice('--port='.length), 10); continue; }
+      if (arg === '--host' && argv[i + 1]) { host = argv[++i]; continue; }
+      if (arg.startsWith('--host=')) { host = arg.slice('--host='.length); continue; }
+    }
+    try {
+      const { createA2AHttpServer } = await import('./a2a/http-server.js');
+      const server = await createA2AHttpServer({ root: httpRoot, port, host, env });
+      await server.start();
+      process.stdout.write(`A2A HTTP server listening at ${server.url}\n`);
+      await new Promise((resolve_) => {
+        process.on('SIGINT', resolve_);
+        process.on('SIGTERM', resolve_);
+      });
+      await server.close();
     } catch (err) {
       process.stderr.write(`error: ${err.message}\n`);
       process.exitCode = 1;
