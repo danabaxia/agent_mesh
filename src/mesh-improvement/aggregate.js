@@ -4,7 +4,7 @@ import { METRICS } from './metrics.js';
 
 const SCHEMA = 'mesh-improvement-report/v1';
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9:_-]+/g, '-').replace(/^-+|-+$/g, '');
-const cellId = (cell) => (cell ? `${cell.peers}x-${cell.overlap}` : 'overall');
+const cellId = (cell) => (cell ? slug(`${cell.peers}x-${cell.overlap}`) : 'overall');
 // Soft perf metrics surfaced per scenario cell. precision/recall read `mean`, the rest `p50`.
 const PERF_SOFT = [
   { name: 'precision', stat: 'mean' }, { name: 'recall', stat: 'mean' },
