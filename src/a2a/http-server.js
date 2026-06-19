@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { MAX_LINE_CHARS } from '../config.js';
+import { DEFAULT_DEPTH, MAX_LINE_CHARS } from '../config.js';
 import { delegateTask } from '../delegate.js';
 import { describeFolder } from '../description.js';
 import { SerialQueue } from '../lock.js';
@@ -62,7 +62,19 @@ export async function createA2AHttpServer({ root, port = DEFAULT_PORT, host = DE
     const requestEnv = { ...env };
     for (const [header, envKey] of Object.entries(RECURSION_ENV)) {
       const val = req.headers[header];
-      if (val !== undefined) requestEnv[envKey] = val;
+      if (val === undefined) continue;
+      if (envKey === 'AGENT_MESH_DEPTH') {
+        // Cap incoming depth to the server's own configured maximum so an
+        // untrusted HTTP caller cannot expand the recursion budget by injecting
+        // an inflated X-AgentMesh-Depth header (same invariant as the stdio
+        // path where PROTECTED_ENV blocks peer.env overrides).
+        const serverRaw = parseInt(env.AGENT_MESH_DEPTH, 10);
+        const serverMax = Number.isFinite(serverRaw) && serverRaw >= 0 ? serverRaw : DEFAULT_DEPTH;
+        const incoming = parseInt(val, 10);
+        requestEnv[envKey] = String(Number.isFinite(incoming) && incoming >= 0 ? Math.min(incoming, serverMax) : serverMax);
+      } else {
+        requestEnv[envKey] = val;
+      }
     }
 
     let body = '';
@@ -99,13 +111,13 @@ export async function createA2AHttpServer({ root, port = DEFAULT_PORT, host = DE
       return;
     }
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
     // JSON-RPC notifications (id === undefined) produce null from handleMessage —
     // return an empty 204 rather than writing "null".
     if (response === null) {
       res.writeHead(204);
       res.end();
     } else {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(response));
     }
   });

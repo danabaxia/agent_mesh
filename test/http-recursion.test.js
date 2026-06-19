@@ -106,6 +106,47 @@ test('createA2AClient dispatches to HTTP peer via url field', async () => {
   }
 });
 
+test('HTTP server caps inflated X-AgentMesh-Depth to server DEFAULT_DEPTH', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-http-cap-'));
+  await writeFile(join(root, 'AGENT.md'), 'Owns depth cap tests.');
+  const fakeClaude = join(root, 'fake-claude.mjs');
+  // Emit AGENT_MESH_DEPTH so we can assert the child saw a capped value.
+  await writeFile(fakeClaude, "#!/usr/bin/env node\nconsole.log('depth:' + (process.env.AGENT_MESH_DEPTH ?? 'unset'));\n");
+  await chmod(fakeClaude, 0o755);
+  // No AGENT_MESH_DEPTH in server env → DEFAULT_DEPTH (3) is the server's cap.
+  const { server, url } = await startHttpServer(root, { AGENT_MESH_CLAUDE: fakeClaude });
+  try {
+    const res = await rpcPost(
+      url,
+      {
+        jsonrpc: '2.0',
+        id: 5,
+        method: 'SendMessage',
+        params: {
+          message: {
+            messageId: 'm-cap',
+            role: 'ROLE_USER',
+            parts: [{ text: 'what is your depth?' }],
+            metadata: { 'agentmesh/mode': 'ask' }
+          }
+        }
+      },
+      { 'X-AgentMesh-Depth': '99' }
+    );
+    const task = res.result.task;
+    // Depth 99 was capped to DEFAULT_DEPTH (3), so 3 > 0 — task completes.
+    assert.equal(task.status.state, 'TASK_STATE_COMPLETED');
+    // After cap (min(99,3)=3) and decrement in enterCallContext (3−1=2),
+    // the child AGENT_MESH_DEPTH must be ≤ 2, never 98.
+    const text = task.status.message?.parts?.[0]?.text ?? '';
+    const m = text.match(/depth:(\d+)/);
+    assert.ok(m, `Expected depth:N in summary, got: "${text}"`);
+    assert.ok(parseInt(m[1], 10) <= 2, `Capped depth propagated ${m[1]} — exceeds DEFAULT_DEPTH − 1`);
+  } finally {
+    await server.close();
+  }
+});
+
 test('HttpClientSession threads caller recursion env in headers', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-mesh-http-hdr-'));
   await writeFile(join(root, 'AGENT.md'), 'Owns header threading tests.');

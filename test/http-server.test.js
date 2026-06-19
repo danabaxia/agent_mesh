@@ -124,6 +124,23 @@ test('HTTP server rejects non-POST requests with 405', async () => {
   }
 });
 
+test('HTTP server returns 204 for JSON-RPC notification (no id)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-http-'));
+  await writeFile(join(root, 'AGENT.md'), 'Owns HTTP notification tests.');
+  const { server, url } = await startHttpServer(root);
+  try {
+    // JSON-RPC notification: same structure as a request but no `id` field.
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'ping', params: {} })
+    });
+    assert.equal(res.status, 204);
+  } finally {
+    await server.close();
+  }
+});
+
 test('HTTP server mode_disabled gate: capability gate from agent.json', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-mesh-http-'));
   await writeFile(join(root, 'AGENT.md'), 'Owns HTTP tests.');
