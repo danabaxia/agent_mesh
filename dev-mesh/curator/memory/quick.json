@@ -385,5 +385,16 @@
       "source": "PR #124: feat(mesh): gated auto-merge sweep (Phase 1, default-OFF)",
       "ts": "2026-06-19"
     }
+  },
+  "scheduler-builtin-return-shape": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon scheduler builtins must return {status:'ok'} — void/undefined breaks onJobResult.",
+    "l1": "PR #127 final review caught a Critical: the `issue-sweep` builtin initially returned void (sweep() is async with no explicit return). The scheduler executor's onJobResult reads `.status` from the return — undefined.status silently miscategorises the run. Fixed by wrapping: `.then(() => ({status:'ok', output:'issue-sweep complete'})).catch(e => ({status:'fail', error:e.message}))`. Every `kind:builtin` entry in schedule.json must return `{status:'ok'}` or `{status:'fail', error}` — never void.",
+    "value": "Apply when registering any new builtin in the dev-society daemon scheduler:\n\n(1) Always return an explicit status object. Pattern:\n`builtins['name'] = () => work().then(() => ({status:'ok', output:'...'})).catch(e => ({status:'fail', error:e.message}));`\nFor async/await style: `builtins['name'] = async () => { await work(); return {status:'ok'}; }`\n\n(2) When wrapping an existing async sweep function (e.g. sweep() returns void): do NOT assign directly as `builtins['x'] = sweep` — the void return propagates. Wrap with `.then`/`catch` or an async wrapper that ends with `return {status:'ok'}`.\n\n(3) The executor's onJobResult logs `status === 'ok'` as info and everything else as warn. A void return means status is `undefined`, not 'fail' — the run appears to succeed while the job result is silently wrong.\n\nSymptom: job-run log entries show `undefined` as the status instead of 'ok' or 'fail'.\n\nThis was caught only by the final code review of PR #127 (2026-06-19) — there is no runtime validation of the return shape at registration time. Provenance: PR #127.",
+    "provenance": {
+      "source": "PR #127: feat(dev-society): label-aware 10-min issue sweep (maintainer-owned)",
+      "ts": "2026-06-19"
+    }
   }
 }
