@@ -30,12 +30,13 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, appendFileSync, rmSync, existsSync, realpathSync } from 'node:fs';
+import { mkdirSync, appendFileSync, rmSync, existsSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createA2AClient } from '../src/a2a/stdio-client.js';
 import * as core from '../src/dev-society/core.js';
 import { createScheduler } from '../src/schedule/scheduler.js';
+import { pollGhActivity } from '../src/dev-society/gh-activity.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -58,7 +59,15 @@ const SCHED_MESH_ROOT = process.env.DEV_SOCIETY_MESH_ROOT || join(repoRoot, 'dev
 // Skipped in --once/--selftest (those paths exit early; scheduler must not start).
 let sched = null;
 if (!once && !selftest) {
-  sched = createScheduler({ meshRoot: SCHED_MESH_ROOT });
+  const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY || join(repoRoot, '.dev-society', 'gh-activity.json');
+  const builtins = {
+    'gh-activity-poll': () => pollGhActivity({
+      gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      writeCache: (records) => { mkdirSync(dirname(ghActivityPath), { recursive: true }); writeFileSync(ghActivityPath, JSON.stringify(records)); },
+    }),
+  };
+  sched = createScheduler({ meshRoot: SCHED_MESH_ROOT, builtins });
   sched.start();
   log('scheduler started — meshRoot=' + SCHED_MESH_ROOT);
 }
