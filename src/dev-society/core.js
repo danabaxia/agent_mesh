@@ -68,6 +68,30 @@ export function routeFor(issue, { liveBuilds = new Set(), staleClaims = new Set(
   return { target: 'triager', mode: 'ask', reason: 'triage' };
 }
 
+/** FIFO pick (lowest issue number) from an already-filtered list. */
+export function selectCoderTask(issues = []) {
+  return issues.slice().sort((a, b) => (a?.number || 0) - (b?.number || 0))[0] || null;
+}
+
+/** Order-independent fingerprint of an issue's labels. */
+export function labelsHash(issue) {
+  return names(issue).slice().sort().join(',');
+}
+
+/** Re-dispatch only on first sight, a target change, or a label change. */
+export function shouldDispatch(issue, route, state = {}) {
+  const prev = state[issue?.number];
+  if (!prev) return true;
+  if (prev.target !== route.target) return true;
+  return prev.labelsHash !== labelsHash(issue);
+}
+
+/** Record a dispatch decision (mutates + returns state). */
+export function recordDispatch(state, issue, route, ts) {
+  state[issue?.number] = { target: route.target, labelsHash: labelsHash(issue), dispatchedAt: ts };
+  return state;
+}
+
 /** Is this issue eligible for the A2A society? approved ∧ route:a2a ∧ not already claimed. */
 export function isEligible(issue) {
   const ls = names(issue);

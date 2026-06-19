@@ -180,3 +180,26 @@ test('routeFor: in-progress skipped unless stale → coder reclaim', () => {
 test('labelNames: returns normalized label strings', () => {
   assert.deepEqual(labelNames(issue(1, [{ name: BUG }, 'enhancement'])), [BUG, 'enhancement']);
 });
+
+import { selectCoderTask, labelsHash, shouldDispatch, recordDispatch } from '../src/dev-society/core.js';
+
+test('selectCoderTask: FIFO lowest number, null on empty', () => {
+  assert.equal(selectCoderTask([issue(9, []), issue(3, []), issue(5, [])]).number, 3);
+  assert.equal(selectCoderTask([]), null);
+});
+
+test('labelsHash: order-independent', () => {
+  assert.equal(labelsHash(issue(1, ['b', 'a'])), labelsHash(issue(1, ['a', 'b'])));
+});
+
+test('shouldDispatch/recordDispatch: fire once until target or labels change', () => {
+  const state = {};
+  const i = issue(1, [QUESTION]);
+  const r = { target: 'analyst' };
+  assert.equal(shouldDispatch(i, r, state), true, 'first time');
+  recordDispatch(state, i, r, 1000);
+  assert.equal(shouldDispatch(i, r, state), false, 'already dispatched, unchanged');
+  assert.equal(shouldDispatch(i, { target: 'triager' }, state), true, 'target changed');
+  assert.equal(shouldDispatch(issue(1, [QUESTION, 'help wanted']), r, state), true, 'labels changed');
+  assert.equal(state[1].dispatchedAt, 1000);
+});
