@@ -385,5 +385,16 @@
       "source": "PR #124: feat(mesh): gated auto-merge sweep (Phase 1, default-OFF)",
       "ts": "2026-06-19"
     }
+  },
+  "fail-safe-observability-daemon": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon observability calls must be fail-safe: log writes that throw are an availability bug, not a logging bug.",
+    "l1": "PR #126: recordActivity wraps all file I/O in try/catch, no re-throw — a filesystem error must never crash the daemon loop. Three complementary invariants: (1) mode guard suppresses emits under --selftest/--once (single-pass must not produce side-effect files); (2) the read-API route returns [] / 2xx on error, never 500; (3) event strings are HTML-escaped before render. Activity log is the daily-rotating journal; run logs remain the per-run detail layer.",
+    "value": "Four invariants for adding cross-cutting observability to a daemon service:\n\n(1) Fail-safe emit: wrap every log-write in try/catch with no re-throw. Filesystem errors (full disk, bad permissions, missing dir) must never propagate into the daemon loop — a crash in the logger is a service outage. Pattern: `try { await appendFile(path, line); } catch { /* swallow */ }`\n\n(2) Mode guard: gate ALL emits on `!opts.selftest && !opts.once` — single-pass invocations (health checks, one-shot runs) must exit cleanly without producing side-effect log files. Assert in tests: run `--selftest`, verify no activity files created.\n\n(3) Tolerant read route: the observability API (GET /api/activity-log) must catch all errors and return [] / 2xx, never a 500. A broken log reader must not disable the dashboard that depends on it.\n\n(4) XSS-safe render: pass every event field (summary, agent, ref, detail) through an HTML-escape fn before innerHTML. Event payloads are service-generated but may relay user-originated strings — treat as untrusted.\n\nTwo-layer separation: activity log = high-level event stream (issue.picked / delegate.done / job.run); per-agent run logs = granular detail, linked by `ref`. Don't collapse them.\n\nProvenance: PR #126 (2026-06-19).",
+    "provenance": {
+      "source": "PR #126: feat(mesh): unified activity log + filterable dashboard panel (Phase 1)",
+      "ts": "2026-06-19"
+    }
   }
 }
