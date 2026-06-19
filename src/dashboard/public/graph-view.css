@@ -120,6 +120,32 @@
 #view-graph td.age{font:11px var(--mono);color:var(--idle);white-space:nowrap}
 #view-graph .gv-empty{padding:16px;color:var(--idle);font-size:12.5px}
 
+/* health panel header pills */
+#view-graph .hpill{font:600 10px var(--mono);padding:2px 9px;border-radius:999px;border:1px solid var(--line)}
+#view-graph .hpill-ok{background:#eaf6ee;color:var(--good);border-color:#cfe8d6}
+#view-graph .hpill-warn{background:var(--amber-bg);color:var(--amber);border-color:#f3e2bf}
+#view-graph .hpill-err{background:#fdecec;color:#b91c1c;border-color:#f4cccc}
+/* health panel escalated badge */
+#view-graph .hesc{font:600 9px var(--mono);padding:1px 7px;border-radius:4px;background:#ede9fe;color:#5b21b6;margin-left:6px;vertical-align:middle}
+/* calm healthy empty state */
+#view-graph .gv-empty.health-ok{color:var(--good)}
+
+/* activity log panel */
+#view-graph .act-filters{display:flex;gap:8px;padding:10px 14px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#view-graph .act-sel{font:600 11px var(--mono);padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink2);cursor:pointer;outline:none}
+#view-graph .act-sel:hover{border-color:var(--teal);color:var(--teal)}
+#view-graph .act-type{font:600 10px var(--mono);color:var(--ink2);letter-spacing:.3px}
+#view-graph .act-src{font:600 10px var(--mono);color:var(--idle)}
+#view-graph .act-ref{font:600 10px var(--mono);padding:1px 6px;border-radius:4px;background:var(--amber-bg);color:var(--amber);margin-left:5px;vertical-align:middle}
+/* level pills */
+#view-graph .act-lvl{font:600 9px var(--mono);padding:2px 7px;border-radius:999px;border:1px solid var(--line)}
+#view-graph .act-lvl-info{background:#eef6f4;color:var(--teal);border-color:#cde3de}
+#view-graph .act-lvl-warn{background:var(--amber-bg);color:var(--amber);border-color:#f3e2bf}
+#view-graph .act-lvl-error{background:#fdecec;color:#b91c1c;border-color:#f4cccc}
+/* row tinting by level */
+#view-graph .act-row-warn td{background:#fffbf3}
+#view-graph .act-row-error td{background:#fff5f5}
+
 /* shared hover tooltip (appended to body) */
 .gv-tip{position:fixed;z-index:9999;display:none;pointer-events:none;background:var(--ink);color:#fff;font:600 11px var(--mono);padding:5px 9px;border-radius:7px;box-shadow:0 5px 16px rgba(31,61,56,.28);white-space:nowrap}
 .gv-tip .v{color:var(--teal2)} .gv-tip .am{color:#fbbf5a}

@@ -385,5 +385,27 @@
       "source": "PR #116 (2026-06-19): [codex] add scheduled dev-mesh security agent",
       "ts": "2026-06-19"
     }
+  },
+  "default-off-three-layer-kill-switch": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Default-OFF automation: fail-closed predicate + env-flag CLI + YAML vars gate; operator flip activates, nothing else.",
+    "l1": "PR #124 (gated auto-merge sweep): isAutoMergeable is a pure fail-closed fn — undefined/garbage → not mergeable; `enabled !== true` → empty list. CLI: `enabled = ENV === 'true'` (string-exact, not truthy). YAML: `if: vars.AUTOMERGE_ENABLED == 'true'`. All three default OFF. Hold-label check catches both object shapes and raw strings. Merging the code is safe; feature stays inert until the operator explicitly sets the repo variable. Hermetic tests cover all paths without a real merge.",
+    "value": "Three-layer kill-switch pattern for default-OFF automation:\n\n(1) Pure fail-closed predicate: function returns [] / false for ALL missing or non-true inputs. Type-check strictly (`=== false`, `=== true`) — undefined/null/garbage → not eligible. Hold labels: check both object shape (`.name`) and raw string so the same code handles both API shapes. `enabled !== true` → early-return empty, so even partial env values cannot activate the sweep.\n\n(2) CLI gate: `const enabled = process.env.FLAG === 'true'` — pass `enabled` as an explicit arg into the pure function. Never use truthy coercion (`!!flag` vs `flag === 'true'`). Document the exact activation command: `gh variable set AUTOMERGE_ENABLED --body true`.\n\n(3) YAML gate: `if: vars.FLAG == 'true'` in the job-level condition. GitHub Actions vars context is always a string; `== 'true'` is correct (not `!= 'false'` or truthy). Unset variable → condition is false → job skipped entirely, no gh calls at all.\n\nAll three layers independently default OFF — defense in depth means no single layer's misconfiguration triggers behavior.\n\nVerify coverage: (a) hermetic unit tests exercise pure predicate with all partial/corrupt input combinations — no real merge needed; (b) `--dry-run` CLI flag validates eligibility logic live without merging; (c) unset or `'false'` YAML var → job skips, observable in Actions UI.\n\nDeactivation is instant: set the variable to false or delete it. Provenance: PR #124 (2026-06-19).",
+    "provenance": {
+      "source": "PR #124: feat(mesh): gated auto-merge sweep (Phase 1, default-OFF)",
+      "ts": "2026-06-19"
+    }
+  },
+  "scheduler-builtin-return-shape": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon scheduler builtins must return {status:'ok'} — void/undefined breaks onJobResult.",
+    "l1": "PR #127 final review caught a Critical: the `issue-sweep` builtin initially returned void (sweep() is async with no explicit return). The scheduler executor's onJobResult reads `.status` from the return — undefined.status silently miscategorises the run. Fixed by wrapping: `.then(() => ({status:'ok', output:'issue-sweep complete'})).catch(e => ({status:'fail', error:e.message}))`. Every `kind:builtin` entry in schedule.json must return `{status:'ok'}` or `{status:'fail', error}` — never void.",
+    "value": "Apply when registering any new builtin in the dev-society daemon scheduler:\n\n(1) Always return an explicit status object. Pattern:\n`builtins['name'] = () => work().then(() => ({status:'ok', output:'...'})).catch(e => ({status:'fail', error:e.message}));`\nFor async/await style: `builtins['name'] = async () => { await work(); return {status:'ok'}; }`\n\n(2) When wrapping an existing async sweep function (e.g. sweep() returns void): do NOT assign directly as `builtins['x'] = sweep` — the void return propagates. Wrap with `.then`/`catch` or an async wrapper that ends with `return {status:'ok'}`.\n\n(3) The executor's onJobResult logs `status === 'ok'` as info and everything else as warn. A void return means status is `undefined`, not 'fail' — the run appears to succeed while the job result is silently wrong.\n\nSymptom: job-run log entries show `undefined` as the status instead of 'ok' or 'fail'.\n\nThis was caught only by the final code review of PR #127 (2026-06-19) — there is no runtime validation of the return shape at registration time. Provenance: PR #127.",
+    "provenance": {
+      "source": "PR #127: feat(dev-society): label-aware 10-min issue sweep (maintainer-owned)",
+      "ts": "2026-06-19"
+    }
   }
 }

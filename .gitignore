@@ -32,3 +32,4 @@ eval-adversarial-results/
 # local Claude Code settings (machine-specific paths — never publish)
 **/.claude/settings.json
 **/.claude/settings.local.json
+sdd/

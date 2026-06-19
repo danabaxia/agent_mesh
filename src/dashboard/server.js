@@ -55,6 +55,8 @@ import { listAllSchedules } from '../schedule/list-all.js';
 import { createRotationManager } from './rotation.js';
 import { runDigest } from '../digest.js';
 import { buildResumeCommand } from './resume-command.js';
+import { readActivity } from '../activity-log/log.js';
+import { filterEvents } from '../activity-log/event.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -738,6 +740,37 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     const { jobs } = await listAllSchedules({ meshRoot });
     const schedulerOwner = dashboardOwnsScheduler ? 'dashboard' : (jobs.length ? 'daemon' : 'none');
     sendJson(res, 200, { schedulerOwner, jobs });
+    return;
+  }
+
+  // GET /api/health → read-only heartbeat snapshot written by the daemon.
+  // Degrades to an empty health object (never 500) when the file is missing or
+  // corrupt — mirrors the gh-activity cache read pattern in loadActivitySnapshot.
+  if (pathname === '/api/health' && req.method === 'GET') {
+    const file = process.env.AGENT_MESH_HEARTBEAT_FILE || resolve(meshRoot, '..', '.dev-society', 'heartbeat.json');
+    let snap = { generatedAt: null, summary: { ok: 0, failing: 0, overdue: 0, stuck: 0, escalated: 0 }, findings: [], openEscalations: [] };
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf8'));
+      if (parsed && typeof parsed === 'object') snap = parsed;
+    } catch { /* missing/corrupt snapshot → empty health */ }
+    sendJson(res, 200, snap);
+    return;
+  }
+
+  // GET /api/activity-log → recent daemon activity events (newest-first), with
+  // filter facets for dropdown population. Reads from .dev-society/activity-*.jsonl.
+  // Tolerant: missing dir → empty 200, never 500. Override dir via env var.
+  if (pathname === '/api/activity-log' && req.method === 'GET') {
+    const dir = process.env.AGENT_MESH_ACTIVITY_DIR || resolve(meshRoot, '..', '.dev-society');
+    const base = readActivity({ dir, since: url.searchParams.get('since') || undefined, limit: 500 });
+    const agents = [...new Set(base.map((e) => e.agent).filter(Boolean))].sort();
+    const types = [...new Set(base.map((e) => e.type).filter(Boolean))].sort();
+    const events = filterEvents(base, {
+      agent: url.searchParams.get('agent') || undefined,
+      type: url.searchParams.get('type') || undefined,
+      level: url.searchParams.get('level') || undefined,
+    }).slice(0, Number(url.searchParams.get('limit')) || 200);
+    sendJson(res, 200, { events, agents, types });
     return;
   }
 
