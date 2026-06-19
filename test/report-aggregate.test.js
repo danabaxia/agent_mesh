@@ -35,6 +35,7 @@ test('aggregate buckets PRs/issues by in-window timestamps', () => {
   assert.deepEqual(r.issues.opened.map((i) => i.number), [5]);
   assert.deepEqual(r.issues.closed.map((i) => i.number), [6]);
   assert.deepEqual(r.issues.openByLabel, { approved: 2, blocked: 1 });
+  assert.equal(r.issues.openNow, 2);   // parallel to prs.openNow — live open-issue total
 });
 
 test('aggregate sums local tokens by route and CI tokens by workflow', () => {
