@@ -214,6 +214,22 @@ function defaultSpawnLocate(fullPath) {
   spawn('explorer.exe', ['/select,' + fullPath], { detached: true, stdio: 'ignore' }).unref();
 }
 
+// Default Daily Mesh Report regenerator for POST /api/daily/refresh: run
+// scripts/daily-report.mjs (no --post — rebuild the cache only, like the
+// daily-report-refresh builtin), inheriting env so gh auth/DEV_SOCIETY_REPO apply.
+// Injectable via createDashboardServer({ regenerateDaily }) so tests stub it.
+// Resolves on exit 0; rejects on non-zero, spawn error, or a 120s timeout.
+function defaultRegenerateDaily(meshRoot) {
+  const repoRoot = resolve(meshRoot, '..');
+  const script = join(repoRoot, 'scripts', 'daily-report.mjs');
+  return new Promise((res, rej) => {
+    const child = spawn(process.execPath, [script], { cwd: repoRoot, stdio: 'ignore', env: process.env });
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* already gone */ } rej(new Error('daily-report timed out')); }, 120000);
+    child.on('error', (e) => { clearTimeout(timer); rej(e); });
+    child.on('exit', (code) => { clearTimeout(timer); code === 0 ? res() : rej(new Error(`daily-report exited ${code}`)); });
+  });
+}
+
 // Text MIME types: we serve these as text; everything else → metadata stub
 const TEXT_EXTENSIONS = new Set([
   '.md', '.txt', '.json', '.js', '.mjs', '.cjs', '.ts', '.tsx',
@@ -638,7 +654,7 @@ function consoleErrorStatus(code) {
 // Route handling
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dashboardOwnsScheduler }) {
+async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dailyRefresh, dashboardOwnsScheduler }) {
   applySecurityHeaders(res);
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenerPort}`);
@@ -708,6 +724,33 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
       sendJson(res, 200, { available: true, report });
     } catch {
       sendJson(res, 200, { available: false });
+    }
+    return;
+  }
+
+  // POST /api/daily/refresh → regenerate the Daily Mesh Report cache on demand
+  // (runs daily-report.mjs via the injectable regenerator), then return the fresh
+  // report — the manual ↻ + periodic auto-refresh behind the Token/Issues/PR panels,
+  // which otherwise only update on the daily schedule. Concurrent requests coalesce
+  // onto one in-flight regeneration (dailyRefresh.inflight).
+  if (pathname === '/api/daily/refresh' && req.method === 'POST') {
+    try {
+      if (!dailyRefresh.inflight) {
+        dailyRefresh.inflight = Promise.resolve(dailyRefresh.fn(meshRoot)).finally(() => { dailyRefresh.inflight = null; });
+      }
+      await dailyRefresh.inflight;
+    } catch (err) {
+      sendJson(res, 502, { ok: false, error: { code: 'refresh_failed', message: String(err && err.message || err) } });
+      return;
+    }
+    const cachePath = dailyReportPath
+      || process.env.AGENT_MESH_DAILY_REPORT_CACHE
+      || resolve(meshRoot, '..', '.dev-society', 'daily-report.json');
+    try {
+      const report = JSON.parse(readFileSync(cachePath, 'utf8'));
+      sendJson(res, 200, { ok: true, available: true, report });
+    } catch {
+      sendJson(res, 200, { ok: true, available: false });
     }
     return;
   }
@@ -2674,7 +2717,9 @@ function loadOrCreatePersistedToken(meshRoot) {
   return fresh;
 }
 
-export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir }) {
+export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir, regenerateDaily }) {
+  // Shared in-flight guard so concurrent POST /api/daily/refresh coalesce onto one run.
+  const dailyRefresh = { fn: regenerateDaily ?? defaultRegenerateDaily, inflight: null };
   // Resolve auth token. Precedence:
   //   1. Explicit `token` arg (tests inject deterministic tokens)
   //   2. Persisted token at <meshRoot>/.agent-mesh/dashboard-token (so a CLI
@@ -2803,6 +2848,7 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
       scheduler: sched,
       dailyReportPath,
       dailyReportDir,
+      dailyRefresh,
       dashboardOwnsScheduler: schedulerOwned
     }).catch((err) => {
       applySecurityHeaders(res);
