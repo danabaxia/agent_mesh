@@ -155,6 +155,18 @@ test('isPathInsideRoot blocks backslash-encoded traversal after normalization', 
   assert.equal(await isPathInsideRoot(root, '..\\outside.txt'), false);
 });
 
+test('isProtectedConfigPath treats backslash path separators identically to forward slashes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-guard-'));
+  // Backslash-separated config paths must be protected identically to forward-slash ones.
+  assert.equal(await isProtectedConfigPath(root, 'prompts\\system.md'), true);
+  assert.equal(
+    await isProtectedConfigPath(root, 'prompts\\system.md'),
+    await isProtectedConfigPath(root, 'prompts/system.md')
+  );
+  // Backslash traversal to a config path outside the root must NOT be flagged as protected.
+  assert.equal(await isProtectedConfigPath(root, '..\\prompts\\system.md'), false);
+});
+
 function execHook(root, payload) {
   const result = spawnSync('node', ['hooks/path-guard.js'], {
     cwd: repoRoot,

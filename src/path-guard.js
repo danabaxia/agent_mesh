@@ -1,9 +1,10 @@
 import { realpath } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, resolve, relative } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, posix as pathPosix } from 'node:path';
 
 // Normalize backslashes to forward slashes so comparisons work on Windows and
-// POSIX identically — Windows paths from realpath/relative use \, while callers
-// (and test assertions) may supply / or \.
+// POSIX identically — Windows paths from realpath/canonicalizePossiblyMissing
+// use \, while callers (and test assertions) may supply / or \.
+// Always apply AFTER full canonicalization so symlink resolution sees native paths.
 function toForwardSlash(p) {
   return p.replace(/\\/g, '/');
 }
@@ -15,7 +16,11 @@ export async function isPathInsideRoot(root, candidate) {
     ? normalizedCandidate
     : resolve(canonicalRoot, normalizedCandidate);
   const canonicalCandidate = await canonicalizePossiblyMissing(absoluteCandidate);
-  const rel = toForwardSlash(relative(canonicalRoot, canonicalCandidate));
+  // Normalize both fully-resolved paths to forward slashes before comparison so
+  // Windows native-separator output from realpath/resolve never causes a mismatch.
+  const normRoot = toForwardSlash(canonicalRoot);
+  const normCandidate = toForwardSlash(canonicalCandidate);
+  const rel = pathPosix.relative(normRoot, normCandidate);
   return rel === '' || (!rel.startsWith('..') && rel !== '..' && !rel.includes('../') && !isAbsolute(rel));
 }
 
@@ -39,7 +44,9 @@ export async function isProtectedConfigPath(root, candidate) {
     ? normalizedCandidate
     : resolve(canonicalRoot, normalizedCandidate);
   const canonicalCandidate = await canonicalizePossiblyMissing(absoluteCandidate);
-  const rel = toForwardSlash(relative(canonicalRoot, canonicalCandidate));
+  const normRoot = toForwardSlash(canonicalRoot);
+  const normCandidate = toForwardSlash(canonicalCandidate);
+  const rel = pathPosix.relative(normRoot, normCandidate);
   if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return false;
   const segments = rel.split('/');
   const top = segments[0];
