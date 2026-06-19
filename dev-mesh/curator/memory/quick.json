@@ -385,5 +385,16 @@
       "source": "PR #124: feat(mesh): gated auto-merge sweep (Phase 1, default-OFF)",
       "ts": "2026-06-19"
     }
+  },
+  "deterministic-union-backlog-drain": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Shared-file PRs accumulate faster than LLM mergefix can drain — add deterministic keyed-union in the automerge sweep.",
+    "l1": "PR #130: 12 memory:promote PRs piled up; each touches quick.json; all conflicted; mergefix resolves 1/run via LLM — Curator opens them faster than mergefix drains. Fix: deterministic keyed-union in the automerge sweep (newer provenance.ts wins same-key; ours on tie; LRU cap enforced post-union). exit 3 for any non-memory conflict defers to mergefix. Whole backlog drains in one sweep pass, no LLM needed.",
+    "value": "In the automerge sweep, resolve quick.json deterministically: (1) keyed union — same key → newer provenance.ts wins, tie → ours; (2) LRU evict oldest non-core until under cap; (3) line-union memory *.md; (4) exit 3 on ANY non-memory conflict — defer to mergefix, never auto-merge code. Whole backlog drains in one sweep pass without LLM. Provenance: PR #130 (2026-06-19).",
+    "provenance": {
+      "source": "PR #130: fix(memory-automerge): deterministic in-line union to drain the memory:promote backlog",
+      "ts": "2026-06-19"
+    }
   }
 }
