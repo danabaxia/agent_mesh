@@ -375,6 +375,17 @@
       "ts": "2026-06-18"
     }
   },
+  "new-agent-scaffold-completeness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New agents need 7 scaffold .gitkeeps alongside content — fresh checkout fails validate until doctor seeds them.",
+    "l1": "PR #122: security agent shipped agent.json/AGENT.md/prompts/skills but not the 7 scaffold .gitkeep dirs (.agent/{memories,rules,reference,workflows,artifacts}/, deliverables/, output/). Fresh checkout fails `validate dev-mesh` with 7 missing-directory errors. CI missed it because the hermetic suite runs doctor --apply on a copy first, and the live mesh auto-seeds at runtime — so a missing-scaffold commit appears green in CI while failing on fresh checkout.",
+    "value": "When adding a new agent to the dev-mesh, commit the full scaffold .gitkeeps alongside the real content in the same PR. Required scaffold dirs: .agent/{memories,rules,reference,workflows,artifacts}/, deliverables/, output/ (7 .gitkeep files — same set as every existing agent). Verify before merging: run `node ./bin/agent-mesh.js validate <mesh>` on the branch — must show Conformance: OK. The hermetic CI suite (npm test) runs doctor --apply on a temp copy, so a missing-scaffold PR appears green in CI while failing validate on a fresh checkout. Related: doctor-apply-on-framework-upgrade (run doctor --apply after framework upgrades to resync existing agents). Provenance: PR #122 (2026-06-19).",
+    "provenance": {
+      "source": "PR #122 (2026-06-19): fix(dev-mesh): seed the security agent's missing scaffold dirs",
+      "ts": "2026-06-19"
+    }
+  },
   "default-off-three-layer-kill-switch": {
     "status": "active",
     "valid_to": null,
