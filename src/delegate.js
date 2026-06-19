@@ -396,15 +396,17 @@ async function aggregateDownstreamChanges(root, env, runId) {
   let files;
   try { files = await readdir(logDir); } catch { return null; }
   const a2aFiles = files.filter((f) => f.startsWith('a2a-') && f.endsWith('.jsonl')).sort();
-  const allChanges = [];
-  let found = false;
+  const changes = [];
   for (const f of a2aFiles) {
     const records = await readRunLogRecords(join(logDir, f));
     for (const r of records) {
       if (r.parent_run_id !== runId || r.state !== 'done') continue;
-      found = true;
-      if (Array.isArray(r.peer_changes)) allChanges.push(...r.peer_changes);
+      changes.push({
+        peer: r.to,
+        files_changed: r.peer_changes ?? [],
+        best_effort: r.best_effort ?? false
+      });
     }
   }
-  return found ? [...new Set(allChanges)] : null;
+  return changes.length > 0 ? changes : null;
 }

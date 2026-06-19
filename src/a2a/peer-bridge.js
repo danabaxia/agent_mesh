@@ -188,7 +188,8 @@ export function createBridge({ root, env = process.env, createClient = createA2A
         child_log_path: mapped.log_path || null,
         child_run_id: (taskResult?.metadata || {})['agentmesh/run_id'] || null,
         summary_preview: previewOf(mapped.summary),
-        peer_changes: mapped.peer_changes ?? null
+        peer_changes: mapped.peer_changes ?? null,
+        best_effort: mapped.best_effort || false
       });
       return mapped;
     } catch (err) {
@@ -344,6 +345,7 @@ function mapTask(peer, task) {
     // peer_changes is the v2 explicit name for the same data: files the PEER's
     // worker changed, kept separate from the caller's own files_changed.
     peer_changes: md['agentmesh/files_changed'] ?? null,
+    best_effort: md['agentmesh/best_effort'] ?? false,
     log_path: md['agentmesh/log_path'] ?? '',
     summary: artifactText || statusText || ''
   };
