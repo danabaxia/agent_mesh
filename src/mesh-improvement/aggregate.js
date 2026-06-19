@@ -67,7 +67,7 @@ export function aggregate(inputs, { at, ref }) {
   // SOFT — behavior overall pass rate.
   if (typeof behavior?.aggregate?.passRate === 'number') {
     findings.push(softFinding({
-      id: 'behavior:overall:passRate', cluster: 'behavior-regression',
+      id: 'behavior:overall:pass-rate', cluster: 'behavior-regression',
       name: 'passRate', value: behavior.aggregate.passRate,
     }));
   }

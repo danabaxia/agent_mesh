@@ -37,7 +37,7 @@ test('soft candidate findings carry value + direction, no delta yet', () => {
   assert.equal(prec.metric.deltaPct, null);
   assert.equal(prec.fileable, null);
   assert.deepEqual(prec.weakestCell, { peers: 6, overlap: 'confusable' });
-  const beh = mir.findings.find((f) => f.id === 'behavior:overall:passRate');
+  const beh = mir.findings.find((f) => f.id === 'behavior:overall:pass-rate');
   assert.equal(beh.metric.value, 0.889);
 });
 
