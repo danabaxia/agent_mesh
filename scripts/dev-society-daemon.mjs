@@ -30,13 +30,17 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, appendFileSync, rmSync, existsSync, realpathSync, writeFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, rmSync, existsSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createA2AClient } from '../src/a2a/stdio-client.js';
 import * as core from '../src/dev-society/core.js';
 import { createScheduler } from '../src/schedule/scheduler.js';
 import { pollGhActivity } from '../src/dev-society/gh-activity.js';
+import { runHeartbeat } from '../src/mesh-health/heartbeat-runner.js';
+import { listAllSchedules } from '../src/schedule/list-all.js';
+import { computeNextRun } from '../src/schedule/schedule-cadence.js';
+import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER } from '../src/config.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -58,6 +62,7 @@ const SCHED_MESH_ROOT = process.env.DEV_SOCIETY_MESH_ROOT || join(repoRoot, 'dev
 // Always-on standard scheduler: runs agents' .agent/schedule.json jobs 24/7.
 // Skipped in --once/--selftest (those paths exit early; scheduler must not start).
 let sched = null;
+let heartbeatTimer = null;
 if (!once && !selftest) {
   const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY || join(repoRoot, '.dev-society', 'gh-activity.json');
   const builtins = {
@@ -70,9 +75,60 @@ if (!once && !selftest) {
   sched = createScheduler({ meshRoot: SCHED_MESH_ROOT, builtins });
   sched.start();
   log('scheduler started — meshRoot=' + SCHED_MESH_ROOT);
+
+  // Mesh-level heartbeat: assess schedule health, auto-heal, and escalate via GH issues.
+  const heartbeatFile = process.env.AGENT_MESH_HEARTBEAT_FILE || join(repoRoot, '.dev-society', 'heartbeat.json');
+  const _hbRaw = process.env.AGENT_MESH_HEARTBEAT_INTERVAL_MS;
+  const HB_INTERVAL = (_hbRaw === undefined || _hbRaw === '') ? DEFAULT_HEARTBEAT_INTERVAL_MS : Number(_hbRaw);
+  const hbThresholds = {
+    failThreshold: Number(process.env.AGENT_MESH_HEARTBEAT_FAIL_THRESHOLD) || DEFAULT_HEARTBEAT_FAIL_THRESHOLD,
+    overdueGraceMs: Number(process.env.AGENT_MESH_HEARTBEAT_OVERDUE_GRACE_MS) || DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS,
+    staleMs: Number(process.env.AGENT_MESH_HEARTBEAT_STALE_MS) || DEFAULT_HEARTBEAT_STALE_MS,
+    escalateAfter: Number(process.env.AGENT_MESH_HEARTBEAT_ESCALATE_AFTER) || DEFAULT_HEARTBEAT_ESCALATE_AFTER,
+  };
+
+  const applyHeal = async ({ agent, jobId, action, cadence, now }) => {
+    const statePath = join(SCHED_MESH_ROOT, agent, '.agent-mesh', 'schedule-state.json');
+    let state = {};
+    try { state = JSON.parse(readFileSync(statePath, 'utf8')); } catch { return; }
+    const entry = state[jobId]; if (!entry) return;
+    if (action === 'clear_stale') entry.running = false;
+    if (action === 'rearm' && cadence) { entry.nextRunAt = computeNextRun(cadence, now).toISOString(); entry.running = false; }
+    state[jobId] = entry;
+    mkdirSync(dirname(statePath), { recursive: true });
+    writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n');
+  };
+
+  const openIssue = async ({ key, action, title, body }) => {
+    const found = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open', '--search', `${key} in:body`, '--json', 'number', '--jq', '.[0].number'])
+      .then((r) => r.stdout.trim()).catch(() => '');
+    if (action === 'close') {
+      if (found) await gh(['issue', 'close', found, '--repo', cfg.repo, '--comment', body]).catch((e) => log('  (hb close failed)', e.message));
+      return;
+    }
+    if (found) { await gh(['issue', 'comment', found, '--repo', cfg.repo, '--body', body]).catch((e) => log('  (hb comment failed)', e.message)); return; }
+    await gh(['issue', 'create', '--repo', cfg.repo, '--title', title, '--body', body, '--label', 'mesh-heartbeat']).catch((e) => log('  (hb create failed)', e.message));
+  };
+
+  const heartbeatTick = async () => {
+    const r = await runHeartbeat({
+      meshRoot: SCHED_MESH_ROOT, now: new Date(), thresholds: hbThresholds,
+      listSchedules: (mr) => listAllSchedules({ meshRoot: mr }).then((x) => x.jobs),
+      readSnapshot: async () => { try { return JSON.parse(readFileSync(heartbeatFile, 'utf8')); } catch { return null; } },
+      writeSnapshot: async (snap) => { mkdirSync(dirname(heartbeatFile), { recursive: true }); writeFileSync(heartbeatFile, JSON.stringify(snap, null, 2)); },
+      applyHeal, openIssue,
+    });
+    if (r.status === 'fail') log('heartbeat failed:', r.error);
+    else if (r.summary && (r.summary.failing || r.summary.overdue || r.summary.stuck)) log('heartbeat:', JSON.stringify(r.summary));
+  };
+
+  if (HB_INTERVAL > 0) {
+    heartbeatTimer = setInterval(heartbeatTick, HB_INTERVAL);
+    log('heartbeat started — interval=' + HB_INTERVAL + 'ms');
+  }
 }
 
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.stop(); } catch {} process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.stop(); } catch {} try { clearInterval(heartbeatTimer); } catch {} process.exit(0); });
 
 // ── GitHub shell (impure; uses the `gh` CLI the user authenticates) ─────────────
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
