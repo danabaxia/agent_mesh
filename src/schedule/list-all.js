@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { readManifest } from '../builder/manifest.js';
 import { describeCadence } from './schedule-cadence.js';
+import { describeJob } from './run-now.js';
 
 async function readJsonDefault(path, fallback) {
   try {
@@ -32,6 +33,7 @@ export async function listAllSchedules({ meshRoot, readManifestFn = readManifest
         agent: a.name,
         id: job.id,
         name: job.name ?? job.id,
+        description: describeJob(job),
         cadence: job.cadence ?? null,
         cadenceLabel: job.cadence ? describeCadence(job.cadence) : '',
         enabled: !!job.enabled,

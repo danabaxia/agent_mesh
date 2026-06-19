@@ -120,6 +120,12 @@
 #view-graph td.age{font:11px var(--mono);color:var(--idle);white-space:nowrap}
 #view-graph .gv-empty{padding:16px;color:var(--idle);font-size:12.5px}
 
+/* schedules panel: description + run button */
+#view-graph .sched-desc { color: var(--ink2); font-size: 11px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
+#view-graph .sched-run { font: 11px var(--mono); padding: 1px 7px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--teal); cursor: pointer; }
+#view-graph .sched-run:hover:not(:disabled) { background: var(--amber-bg); }
+#view-graph .sched-run:disabled { color: var(--idle); cursor: default; opacity: .55; }
+
 /* health panel header pills */
 #view-graph .hpill{font:600 10px var(--mono);padding:2px 9px;border-radius:999px;border:1px solid var(--line)}
 #view-graph .hpill-ok{background:#eaf6ee;color:var(--good);border-color:#cfe8d6}

@@ -282,8 +282,20 @@ async function loadSchedules() {
   const el = root.querySelector('#gv-sched');
   if (!d.jobs || !d.jobs.length) { el.innerHTML = '<div class="gv-empty">No scheduled jobs. Add one to an agent’s .agent/schedule.json; the daemon runs them 24/7.</div>'; return; }
   const pill = (s) => s === 'ok' ? '<span class="state done">ok</span>' : s === 'fail' ? '<span class="state block">fail</span>' : '<span class="state open">—</span>';
-  const rows = d.jobs.map((j) => `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span></td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : ''}</td></tr>`).join('');
+  const rows = d.jobs.map((j) => {
+    const desc = j.description ? `<div class="sched-desc" title="${esc(j.description)}">${esc(j.description)}</div>` : '';
+    const canRun = j.enabled && !j.running;
+    const runBtn = `<button class="sched-run" data-run-agent="${esc(j.agent)}" data-run-id="${esc(j.id)}"${canRun ? '' : ' disabled'} title="${j.enabled ? 'run now (≤30s)' : 'enable the job to run it'}">▶ run</button>`;
+    return `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span>${desc}</td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : runBtn}</td></tr>`;
+  }).join('');
   el.innerHTML = `<table><thead><tr><th>agent · job</th><th>cadence</th><th>last</th><th>next run</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.querySelectorAll('.sched-run').forEach((btn) => btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'queued…';
+    try {
+      await fetch('/api/schedules/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: btn.dataset.runAgent, id: btn.dataset.runId }) });
+    } catch { /* transient — next poll reflects state */ }
+    setTimeout(loadSchedules, 1500);
+  }));
 }
 
 async function loadHealth() {

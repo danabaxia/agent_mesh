@@ -3,6 +3,7 @@
     {
       "id": "gh-activity-poll",
       "name": "GitHub activity poll",
+      "description": "Poll GitHub Actions runs into live mesh activity",
       "kind": "builtin",
       "builtin": "gh-activity-poll",
       "cadence": { "kind": "every", "minutes": 5 },
@@ -11,6 +12,7 @@
     {
       "id": "daily-report-refresh",
       "name": "Daily report refresh",
+      "description": "Refresh the daily PR / issue / token report cache",
       "kind": "builtin",
       "builtin": "daily-report-refresh",
       "cadence": { "kind": "daily", "at": "00:10" },
