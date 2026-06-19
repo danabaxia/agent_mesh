@@ -33,6 +33,9 @@ export const DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS = 900_000;  // 15m past nextRunA
 export const DEFAULT_HEARTBEAT_STALE_MS = 1_800_000;        // 30m running → stuck
 export const DEFAULT_HEARTBEAT_ESCALATE_AFTER = 2;          // heartbeats a finding must persist before a GH issue
 
+export const DEFAULT_ACTIVITY_KEEP_DAYS = 30;   // prune activity-*.jsonl older than this
+export const MAX_ACTIVITY_SUMMARY = 240;        // activity event summary char cap
+
 export const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 export const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
 
