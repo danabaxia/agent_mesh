@@ -23,7 +23,7 @@ const inputs = {
 test('hard findings: red test, failed invariant, error/timeout run-log', () => {
   const mir = aggregate(inputs, { at: AT, ref: REF });
   const hard = mir.findings.filter((f) => f.tier === 'hard').map((f) => f.id);
-  assert.ok(hard.includes('test:routing.test.js:red'));
+  assert.ok(hard.includes('test:routing-test-js:red'));
   assert.ok(hard.includes('adversarial:i3-out-of-root-write:failed'));
   assert.ok(hard.includes('runlog:ask:timeout'));
 });
