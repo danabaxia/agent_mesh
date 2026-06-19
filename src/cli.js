@@ -17,7 +17,7 @@ function usage() {
     '  agent-mesh leave <mesh-root> <name>',
     '  agent-mesh validate <mesh-root> [agent]',
     '  agent-mesh doctor <mesh-root> [agent] [--apply]',
-    '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat]',
+    '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat] [--no-replace]',
     '  agent-mesh shell <mesh-root> <agent>   # open native claude in an agent folder',
     '',
     'Environment:',
@@ -314,20 +314,31 @@ export async function main(argv, env = process.env) {
     // a read-only monitor and Claude is driven from the external CLI. Opt in with
     // --enable-chat (or AGENT_MESH_DASHBOARD_CHAT=1) to restore the chat composer.
     let chat = env.AGENT_MESH_DASHBOARD_CHAT === '1';
+    let replace = true;
     for (let i = 0; i < rest.length; i++) {
       const arg = rest[i];
       if (arg === '--no-open') { noOpen = true; continue; }
       if (arg === '--allow-shell') { allowShell = true; continue; }
       if (arg === '--enable-chat') { chat = true; continue; }
+      if (arg === '--no-replace') { replace = false; continue; }
       if (arg === '--port' && rest[i + 1]) { port = parseInt(rest[++i], 10); continue; }
       if (arg.startsWith('--port=')) { port = parseInt(arg.slice('--port='.length), 10); continue; }
     }
+
+    // Import single-instance helpers above the try so both the try and catch
+    // blocks can call removePidfile (the catch runs in a different scope from
+    // where we'd normally destructure inside the try).
+    const { pidfilePath, reapExisting, writePidfile, removePidfile } = await import('./dashboard/single-instance.js');
+    let pidfile = null;
 
     try {
       const { createDashboardServer } = await import('./dashboard/server.js');
       const srv = createDashboardServer({ meshRoot, port, allowShell, chat });
       if (allowShell) process.stdout.write('Native CLI launch: ENABLED (--allow-shell)\n');
       process.stdout.write(`In-dashboard chat: ${chat ? 'ENABLED (--enable-chat)' : 'disabled (read-only; drive Claude from the external CLI)'}\n`);
+      pidfile = pidfilePath(port);
+      await reapExisting({ pidfile, replace, log: (m) => process.stdout.write(m + '\n') });
+      writePidfile(pidfile, { pid: process.pid, port, now: Date.now() });
       await srv.start();
       const bootstrapUrl = srv.bootstrapUrl;
       process.stdout.write(`Dashboard running at: ${srv.url}\n`);
@@ -356,8 +367,13 @@ export async function main(argv, env = process.env) {
         process.on('SIGTERM', resolve_);
       });
       await srv.close();
+      if (pidfile) removePidfile(pidfile);
     } catch (err) {
-      process.stderr.write(`error: ${err.message}\n`);
+      const msg = err.code === 'EADDRINUSE'
+        ? `port ${port} is already in use by another process (not a tracked dashboard); free it or use --port`
+        : err.message;
+      process.stderr.write(`error: ${msg}\n`);
+      if (pidfile) removePidfile(pidfile);
       process.exitCode = 1;
     }
     return;

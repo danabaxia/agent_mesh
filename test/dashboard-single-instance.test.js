@@ -61,3 +61,16 @@ test('writePidfile/removePidfile: round-trip + best-effort (never throw)', () =>
   assert.doesNotThrow(() => writePidfile('p', { pid: 5, port: 7077, now: 1 }, { writeFileSync: () => { throw new Error('EACCES'); } }));
   assert.doesNotThrow(() => removePidfile('p', { rmSync: () => { throw new Error('boom'); } }));
 });
+
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+const cli = readFileSync(fileURLToPath(new URL('../src/cli.js', import.meta.url)), 'utf8');
+
+test('cli dashboard command wires single-instance', () => {
+  assert.match(cli, /single-instance\.js/, 'imports the helper');
+  assert.match(cli, /reapExisting/, 'reaps a prior instance');
+  assert.match(cli, /writePidfile/, 'records its own pidfile');
+  assert.match(cli, /removePidfile/, 'cleans up on exit');
+  assert.match(cli, /--no-replace/, 'has the opt-out flag');
+  assert.match(cli, /EADDRINUSE/, 'gives an actionable port-in-use message');
+});
