@@ -187,7 +187,7 @@ test('soft candidate findings carry value + direction, no delta yet', () => {
   assert.equal(prec.metric.deltaPct, null);
   assert.equal(prec.fileable, null);
   assert.deepEqual(prec.weakestCell, { peers: 6, overlap: 'confusable' });
-  const beh = mir.findings.find((f) => f.id === 'behavior:overall:passRate');
+  const beh = mir.findings.find((f) => f.id === 'behavior:overall:pass-rate');
   assert.equal(beh.metric.value, 0.889);
 });
 
@@ -280,7 +280,7 @@ export function aggregate(inputs, { at, ref }) {
   // SOFT — behavior overall pass rate.
   if (typeof behavior?.aggregate?.passRate === 'number') {
     findings.push(softFinding({
-      id: 'behavior:overall:passRate', cluster: 'behavior-regression',
+      id: 'behavior:overall:pass-rate', cluster: 'behavior-regression',
       name: 'passRate', value: behavior.aggregate.passRate,
     }));
   }
@@ -353,7 +353,7 @@ const mk = (passRate, precision, extraFindings = []) => ({
              adversarial: { invariantsPassed: '7/7', delta: null },
              perf: { quality_per_1k_tokens_p50: 333, wasted_hops_p50: 1, delta: null } },
   findings: [
-    { id: 'behavior:overall:passRate', tier: 'soft', cluster: 'behavior-regression', severity: null,
+    { id: 'behavior:overall:pass-rate', tier: 'soft', cluster: 'behavior-regression', severity: null,
       metric: { name: 'passRate', value: passRate, baseline: null, direction: 'higher_is_better', deltaPct: null },
       weakestCell: null, evidence: {}, fileable: null },
     { id: 'perf:6x-confusable:precision', tier: 'soft', cluster: 'perf-regression', severity: null,
@@ -1100,15 +1100,15 @@ const inputs = {
 const previousMir = {
   schema: 'mesh-improvement-report/v1', at: '2026-06-19T06:30:00Z', ref: { commit: 'prev' },
   summary: { behavior: { passRate: 0.9 } },
-  findings: [{ id: 'behavior:overall:passRate', metric: { name: 'passRate', value: 0.9 } }],
-  ledger: { 'behavior:overall:passRate': { firstSeen: '2026-06-19', lastSeen: '2026-06-19', occurrences: 1, cleanRuns: 0, issueNumber: null } },
+  findings: [{ id: 'behavior:overall:pass-rate', metric: { name: 'passRate', value: 0.9 } }],
+  ledger: { 'behavior:overall:pass-rate': { firstSeen: '2026-06-19', lastSeen: '2026-06-19', occurrences: 1, cleanRuns: 0, issueNumber: null } },
   trend: { passRate: [0.9], quality_per_1k_tokens: [] },
 };
 
 test('buildReport composes into a gated MIR with deltas', () => {
   const mir = buildReport({ inputs, previousMir, at: '2026-06-20T06:30:00Z',
     ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
-  const beh = mir.findings.find((f) => f.id === 'behavior:overall:passRate');
+  const beh = mir.findings.find((f) => f.id === 'behavior:overall:pass-rate');
   assert.equal(beh.metric.baseline, 0.9);
   assert.ok(beh.metric.deltaPct < -10);
   assert.equal(beh.fileable, true);            // regressed past band
@@ -1132,7 +1132,7 @@ test('dry-run never calls gh; live-run creates and records issueNumber', async (
     writeFile, recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
   assert.ok(live.mutations >= 1);
   const persisted = JSON.parse(writes[Object.keys(writes).find((k) => k.endsWith('.json'))]);
-  assert.equal(persisted.ledger['behavior:overall:passRate'].issueNumber, 777);
+  assert.equal(persisted.ledger['behavior:overall:pass-rate'].issueNumber, 777);
 });
 ```
 
