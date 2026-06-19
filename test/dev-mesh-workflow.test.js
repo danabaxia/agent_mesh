@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const dir = fileURLToPath(new URL('../.github/workflows/', import.meta.url));
-const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix'];
+const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix', 'security'];
 const wf = Object.fromEntries(NAMES.map((n) => {
   const p = `${dir}dev-mesh-${n}.yml`;
   return [n, existsSync(p) ? readFileSync(p, 'utf8') : ''];
@@ -36,6 +36,9 @@ test('triggers match the §6 table', () => {
   assert.match(wf.autofix, /check_run:/);           // autofix owns the CI-failure event
   assert.match(wf.triage, /schedule:/);             // triage is the hourly sweep…
   assert.doesNotMatch(wf.triage, /check_run:/);     // …not the event path (no double-run)
+  assert.match(wf.security, /schedule:/);            // security is a scheduled scanner…
+  assert.match(wf.security, /workflow_dispatch:/);   // …and can be run on demand
+  assert.doesNotMatch(wf.security, /^\s*pull_request:/m, 'security must not run on PRs');
   assert.match(wf.review, /^\s*pull_request:/m);
   assert.match(wf.curate, /^\s*pull_request:/m);
   assert.match(wf.curate, /types:\s*\[?\s*closed/, 'curate fires on PR closed');
@@ -69,6 +72,21 @@ test('SECURITY: ask-roles run least-privilege (review never writes repo contents
   assert.match(wf.review, /permissions:/);
   assert.match(wf.review, /contents:\s*read/, 'review must keep contents: read (no pushes)');
   assert.doesNotMatch(wf.review, /contents:\s*write/, 'review must not grant contents: write');
+  assert.match(wf.security, /permissions:/);
+  assert.match(wf.security, /contents:\s*read/, 'security must keep contents: read (no pushes)');
+  assert.match(wf.security, /issues:\s*write/, 'security may open/update alert issues');
+  assert.doesNotMatch(wf.security, /contents:\s*write/, 'security must not grant contents: write');
+});
+
+test('REVIEW VERDICT: reviewer emits an explicit approve/request-changes (the all-clear signal)', () => {
+  // Root-cause fix for the sticky-CHANGES_REQUESTED bug: without an approve path the
+  // first request-changes never clears, so a PR shows red forever while CI is green.
+  // The reviewer must submit ONE verdict per commit and approve when no blocking items
+  // remain — green CI + that approval = merge-ready.
+  assert.match(wf.review, /--approve/, 'reviewer must be able to approve (clears sticky CHANGES_REQUESTED)');
+  assert.match(wf.review, /--request-changes/, 'reviewer must request changes on a blocking finding');
+  assert.match(wf.review, /BLOCKING/, 'reviewer must classify findings as blocking vs non-blocking');
+  // Still ask-only: an approval is not a merge. The NO-AUTO-MERGE test guards `gh pr merge`.
 });
 
 test('CLAIM LOCK: backlog & triage serialize via concurrency (no double-claim)', () => {
@@ -130,7 +148,7 @@ test('autofix: author-controlled branch ref enters via env, never interpolated i
 test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallback), never forces Opus', () => {
   // The action otherwise forces Opus 4.8, which the deploy key can't access (instant
   // is_error/$0 — the loop silently no-ops). The model is a repo variable so it can be
-  // changed without a PR; the fallback is a model an API key reliably has. (dogfood
+  // changed without a PR; the fallback is a broadly available model alias. (dogfood
   // checked separately.) This guard keeps it from regressing back to a forced Opus.
   for (const n of NAMES) {
     assert.match(wf[n], /vars\.DEV_MESH_MODEL/, `${n}: model must come from the DEV_MESH_MODEL repo variable`);
@@ -144,7 +162,9 @@ test('HONESTY GATE: every agent workflow fails on an errored/no-op model run', (
   // (claude-code-action reports success even when the model errored instantly).
   for (const n of NAMES) {
     assert.match(wf[n], /id:\s*claude/, `${n}: action step needs id: claude for the gate`);
-    assert.match(wf[n], /assert-run-healthy\.mjs/, `${n}: must run the per-run honesty gate`);
+    // The honesty gate now runs via the agent-postrun composite action (which invokes
+    // scripts/assert-run-healthy.mjs internally and also captures token usage).
+    assert.match(wf[n], /agent-postrun/, `${n}: must run the per-run honesty gate (agent-postrun)`);
   }
 });
 
@@ -193,24 +213,32 @@ test('CURATOR GATE: curate validates quick.json caps (belt-and-suspenders backst
   // already happened inside the action), not before the push. It fails the curate run
   // if the gate was skipped, but the memory:promote PR is already open at that point.
   // Ordering: must appear after `id: claude` (so it reads the committed file) and
-  // before assert-run-healthy (so a cap violation shows up before the honesty gate).
+  // before the honesty gate (so a cap violation shows up before it). The gate now runs
+  // via the agent-postrun composite step.
   assert.match(wf.curate, /validate-quick-memory\.mjs.*quick\.json/,
     'curate: must call validate-quick-memory.mjs on the curator quick.json');
   const ls = wf.curate.split('\n');
   const clIdx = ls.findIndex((l) => /id:\s*claude/.test(l));
   const vaIdx = ls.findIndex((l) => /validate-quick-memory\.mjs/.test(l));
-  const hhIdx = ls.findIndex((l) => /assert-run-healthy\.mjs/.test(l));
+  const hhIdx = ls.findIndex((l) => /agent-postrun/.test(l));
   assert.ok(clIdx < vaIdx, 'validate step must come after id: claude');
-  assert.ok(vaIdx < hhIdx, 'validate step must come before assert-run-healthy');
+  assert.ok(vaIdx < hhIdx, 'validate step must come before the honesty gate (agent-postrun)');
 });
 
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   // autofix is the one exception: it's a combined Triager+Coder CI-fix role described
   // INLINE in the prompt (it deliberately does NOT read the no-shell Coder AGENT.md).
-  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
+  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator', security: 'security' };
   for (const n of Object.keys(role)) {
     assert.match(wf[n], new RegExp(`dev-mesh/${role[n]}`), `${n}: should reference dev-mesh/${role[n]}`);
   }
+});
+
+test('security scanner covers injection, identity/auth, and token budget controls', () => {
+  assert.match(wf.security, /prompt injection|workflow command injection/i, 'security prompt must cover injection attacks');
+  assert.match(wf.security, /OAuth-only|CLAUDE_CODE_OAUTH_TOKEN|identity/i, 'security prompt must cover identity/auth');
+  assert.match(wf.security, /token budget|\[autofix\]|\[review-fix\]/i, 'security prompt must cover automation token budgets');
+  assert.match(wf.security, /dev-mesh\/security\/AGENT\.md/, 'security workflow must drive the security agent');
 });
 
 // --- Task 9: the nightly dogfood (Phase-1 mesh-native, non-gating) ---
@@ -259,4 +287,43 @@ test('dogfood: real-claude, materializes the real mesh, read-only & non-merging'
   assert.match(dogfood, /contents:\s*read/, 'dogfood must be read-only (no pushes)');
   assert.match(dogfood, /upload-artifact/, 'dogfood artifacts its run logs');
   assert.doesNotMatch(dogfood, /gh pr merge|merge_pull_request|--auto\b/i, 'dogfood never merges');
+});
+
+// --- PR janitor (elevated-permission scheduled sweep) ---
+const janitor = (() => {
+  const p = `${dir}dev-mesh-pr-janitor.yml`;
+  return existsSync(p) ? readFileSync(p, 'utf8') : '';
+})();
+
+test('janitor: scheduled + manual only, never per-PR (fork-PR / pwn-request safety)', () => {
+  assert.ok(janitor, 'dev-mesh-pr-janitor.yml missing');
+  assert.match(janitor, /schedule:/);
+  assert.match(janitor, /workflow_dispatch:/);
+  // §F4: no secrets must flow to fork PRs — push/pull_request/pull_request_target are forbidden.
+  assert.doesNotMatch(janitor, /^\s*push:/m, 'janitor must not run on push');
+  assert.doesNotMatch(janitor, /^\s*pull_request:/m, 'janitor must not run on pull_request');
+  assert.doesNotMatch(janitor, /pull_request_target/, 'janitor: pull_request_target is forbidden');
+});
+
+test('janitor: serialized runs (cancel-in-progress: false)', () => {
+  assert.match(janitor, /concurrency:/);
+  assert.match(janitor, /cancel-in-progress:\s*false/, 'in-flight janitor run must not be cancelled');
+});
+
+test('janitor: NO auto-merge (NEVER merges, human holds the gate)', () => {
+  assert.doesNotMatch(
+    janitor,
+    /enable_pr_auto_merge|enable-auto-merge|--auto\b|gh pr merge|merge_pull_request/i,
+    'janitor must not auto-merge (contents:write + schedule = elevated risk)',
+  );
+});
+
+test('janitor: every PR query filters out cross-repository (fork) PRs (§F4 runtime guard)', () => {
+  // The complementary defense to the trigger guard: the janitor pushes commits to
+  // PR head branches, so it must never act on a fork PR. Both jq filters (UNKNOWN
+  // nudge + unlabelled escalate) must carry isCrossRepository==false.
+  // All three `gh pr list` steps (1 closes PRs, 2 pushes to branches, 3 opens issues)
+  // must carry the guard; >= 3 so dropping it from the highest-stakes Step 1 (PR close) fails.
+  const count = (janitor.match(/isCrossRepository==false/g) || []).length;
+  assert.ok(count >= 3, `expected isCrossRepository==false in every PR query (3), found ${count}`);
 });

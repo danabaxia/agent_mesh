@@ -16,7 +16,7 @@ import { validateManifest } from '../src/builder/manifest.js';
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
 const srcMesh = join(repoRoot, 'dev-mesh');
 
-const ROLES = ['maintainer', 'analyst', 'triager', 'coder', 'tester', 'reviewer', 'curator'];
+const ROLES = ['maintainer', 'analyst', 'triager', 'coder', 'tester', 'reviewer', 'curator', 'orchestrator', 'security'];
 
 test('committed mesh.json is a valid manifest with the right roles/modes/peers', () => {
   const manifest = JSON.parse(readFileSync(join(srcMesh, 'mesh.json'), 'utf8'));
@@ -27,11 +27,15 @@ test('committed mesh.json is a valid manifest with the right roles/modes/peers',
   // do roles vs ask roles
   assert.deepEqual(byName('coder').enabledModes, ['ask', 'do']);
   assert.deepEqual(byName('curator').enabledModes, ['ask', 'do']);
+  assert.deepEqual(byName('security').enabledModes, ['ask']);
   assert.deepEqual(byName('tester').enabledModes, ['ask']);   // reclassified ask (spec §4.1)
+  assert.deepEqual(byName('orchestrator').enabledModes, ['ask']); // ops/observability, ask-only
+  assert.deepEqual(byName('orchestrator').peers, []);             // standalone: owns the gh-activity-poll builtin, no onward delegation
   // peering
-  assert.deepEqual(byName('maintainer').peers.sort(), ['analyst', 'coder', 'curator', 'reviewer', 'triager']);
+  assert.deepEqual(byName('maintainer').peers.sort(), ['analyst', 'coder', 'curator', 'reviewer', 'security', 'triager']);
   assert.deepEqual(byName('coder').peers, ['tester']);
   assert.deepEqual(byName('analyst').peers, []);
+  assert.deepEqual(byName('security').peers, []);
 });
 
 test('each agent folder has AGENT.md + agent.json (card name matches role)', () => {
@@ -49,10 +53,10 @@ test('doctor generates a marked, stdio-A2A topology from the committed content',
     cpSync(srcMesh, ws, { recursive: true });
     await doctor(ws, { apply: true });
 
-    // Maintainer routes to the five specialists; transport is stdio serve-a2a.
+    // Maintainer routes to the specialists; transport is stdio serve-a2a.
     const mreg = JSON.parse(readFileSync(join(ws, 'maintainer', 'registry.json'), 'utf8'));
     assert.equal(mreg['x-agentmesh-generated'], true);
-    assert.deepEqual(Object.keys(mreg.peers).sort(), ['analyst', 'coder', 'curator', 'reviewer', 'triager']);
+    assert.deepEqual(Object.keys(mreg.peers).sort(), ['analyst', 'coder', 'curator', 'reviewer', 'security', 'triager']);
     for (const p of Object.keys(mreg.peers)) {
       assert.ok(mreg.peers[p].args.includes('serve-a2a'), `maintainer->${p} is stdio serve-a2a`);
     }

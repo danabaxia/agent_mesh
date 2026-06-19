@@ -314,6 +314,10 @@ central broker; no parallel fan-out; no post-timeout rollback; no kernel-sandbox
 claim (folder safety = cwd + limited tool surface + realpath checks +
 path-guard).
 
+### Merge policy (gated auto-merge)
+
+A human or the dev-mesh Reviewer still **approves** every code PR. The **merge action** is automated: `dev-mesh-automerge` (a mechanical scheduled sweep) merges any PR that is `mergeStateStatus=CLEAN` AND `reviewDecision=APPROVED`, same-repo (never forks), non-draft, and carries no hold label (`do-not-merge`/`hold`/`wip`). It is **default-OFF** — it no-ops unless the repo variable `AUTOMERGE_ENABLED='true'`. Agents still NEVER self-merge their own PRs (separation of duties); they leave merging to this sweep. `dev-mesh-memory-automerge` remains the separate memory-only path.
+
 ---
 
 # Layer 2 — Reference Implementation (`agent-mesh`, local stdio)

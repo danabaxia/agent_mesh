@@ -707,8 +707,20 @@ export function renderSessionView(body, agent, mesh) {
   }
 
   // ── kickoff ────────────────────────────────────────────────────────────────
-  loadFollow();
-  const refreshTimer = setInterval(() => { if (!destroyed) loadFollow(); }, 4000);
+  // The live-session surface (/session/list, transcript stream) needs a backend
+  // that only exists with --allow-shell; without it the endpoint 403s. Don't
+  // poll a known-disabled capability every 4s — show a disabled state instead.
+  let refreshTimer = null;
+  if (mesh && mesh.sessionLogEnabled) {
+    loadFollow();
+    refreshTimer = setInterval(() => { if (!destroyed) loadFollow(); }, 4000);
+  } else {
+    root.innerHTML =
+      `<div class="scv2-empty">` +
+        `<p>Live session view is off for <b>${esc(agent)}</b>.</p>` +
+        `<p>Start the dashboard with <code>--allow-shell</code> to follow live <code>claude</code> sessions here.</p>` +
+      `</div>`;
+  }
 
   return {
     destroy() {

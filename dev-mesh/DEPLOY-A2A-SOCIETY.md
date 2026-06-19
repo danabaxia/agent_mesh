@@ -29,8 +29,9 @@ judge it ready and redeploy (`git fetch && git checkout v1.1 && restart`). The d
 
 ## Prerequisites (on the host)
 - **Node ≥ 20** and this repo cloned.
-- **`claude` CLI authenticated** (`claude --version` works headlessly). An **API key** is
-  cleaner than a subscription token for an unattended host.
+- **`claude` CLI authenticated** (`claude --version` works headlessly) using
+  OAuth/subscription auth. This repo does not use key-based Anthropic auth for
+  autonomous mesh work.
 - **`gh` CLI authenticated** (`gh auth status`) with push + PR rights to the repo. (A
   fine-grained PAT with `contents`+`pull-requests` works; `workflows` scope too if society
   changes may touch `.github/workflows/**`.)
@@ -52,6 +53,29 @@ node scripts/dev-society-daemon.mjs               # poll forever
 ```
 Keep it alive with your process manager of choice (`systemd`, `pm2`, `tmux`, a `launchd` plist,
 or a `* * * * *` cron of `--once`).
+
+### 24/7 install (recommended)
+`scripts/dev-society-install.sh` packages the always-on setup: it runs the `--selftest`, then
+generates and loads the right unit for your OS — a **launchd LaunchAgent** on macOS (GUI session,
+so it can reach the keychain for `gh`/`claude` OAuth) or a **systemd `--user` service** on Linux
+(with lingering, so it survives logout). Both use `RunAtLoad`/`KeepAlive` (restart on crash,
+start at boot). The unit is generated from detected absolute paths at install time — nothing
+machine-specific is committed.
+
+```sh
+DEV_SOCIETY_REPO=danabaxia/agent_mesh scripts/dev-society-install.sh install   # daemon + daily report
+scripts/dev-society-install.sh install-report  # just the daily-report schedule
+scripts/dev-society-install.sh status      # state / pid
+scripts/dev-society-install.sh logs        # tail .dev-society/daemon.out.log
+scripts/dev-society-install.sh restart     # restart now
+scripts/dev-society-install.sh uninstall   # stop + remove both units
+```
+`install` sets up TWO units: the always-on daemon AND a **daily report** (a calendar-scheduled
+unit — launchd `StartCalendarInterval` / a systemd timer — that runs `scripts/daily-report.mjs
+--post` once a day to post the PR/Issue/Token digest). Logs: `.dev-society/daemon.out.log` /
+`daemon.err.log` for the daemon, `daily-report.out.log` for the report. Reads `DEV_SOCIETY_BASE`
+(default `main`), `DEV_SOCIETY_POLL_MS` (default `60000`), `DAILY_REPORT_HOUR` (default `8`, local
+time), and `AGENT_MESH_CLAUDE` at install time and persists them into the units.
 
 ## How to feed it work
 Label an issue **`approved` + `route:a2a`** (the `route:a2a` label opts it into the A2A society;

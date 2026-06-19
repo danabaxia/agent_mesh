@@ -4,6 +4,20 @@
 import { agentColor, buildKpis, buildCards, buildLane, buildTimeline } from '/board2-model.js';
 import { openWorkspace, closeWorkspace, selectTab, setWorkspaceMesh, launchTerminal } from '/workspace.js';
 import { createNetGraph } from '/net-graph.js';
+import { renderGraphView } from '/graph-view.js';
+
+// ── top-level Graph view (live mesh activity + tokens + issues/PRs) ──────────
+function openGraphView() {
+  document.querySelector('#view-board').classList.remove('on');
+  document.querySelector('#view-ws').classList.remove('on');
+  document.querySelector('#view-graph').classList.add('on');
+  window.__openAgent = (n) => { closeGraphView(); openWorkspace(n); };  // node click → agent workspace
+  renderGraphView(document.querySelector('#view-graph'));
+}
+function closeGraphView() {
+  document.querySelector('#view-graph').classList.remove('on');
+  document.querySelector('#view-board').classList.add('on');
+}
 
 const $ = (s, r = document) => r.querySelector(s);
 let MESH = null, RESOURCES = null, ACTIVITY = null, COLLAB = null, USAGE = null;
@@ -117,6 +131,8 @@ document.addEventListener('click', (e) => {
   }
   if (e.target.closest('#ws-back')) { closeWorkspace(); return; }
   if (e.target.closest('#ws-terminal')) { launchTerminal(); return; }
+  const tv = e.target.closest('[data-topview]');
+  if (tv) { tv.dataset.topview === 'graph' ? openGraphView() : closeGraphView(); return; }
   const wstab = e.target.closest('[data-wstab]');
   if (wstab) { selectTab(wstab.dataset.wstab); return; }
   const bv = e.target.closest('[data-bv]');
