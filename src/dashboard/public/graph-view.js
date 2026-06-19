@@ -16,12 +16,31 @@ let agents = [], byName = {}, nodeEls = {}, peerEls = [], field = null, gArc = n
 let cx = 410, cy = 230, R = 158;
 const seen = new Set();
 let tip, clockTimer;
+let autoRefreshTimer = null, refreshing = false;
+const AUTO_REFRESH_MS = 20 * 60 * 1000;   // regenerate the daily report every 20 min while open
+
+// Regenerate the Daily Mesh Report (live gh + token logs), then reload the panels it
+// feeds (Token / Issues / PR). `manual` is from the ↻ button; auto calls pass false.
+async function refreshDaily(manual) {
+  if (refreshing) return;
+  refreshing = true;
+  const btn = root && root.querySelector('#gv-refresh');
+  if (btn) { btn.textContent = '↻ …'; btn.style.opacity = '0.6'; }
+  try {
+    const res = await fetch('/api/daily/refresh', { method: 'POST', credentials: 'same-origin' });
+    if (res.ok) { await loadDaily(); await loadTokens(); }
+    else if (btn && manual) { btn.title = 'refresh failed — retry'; }
+  } catch { /* transient — next auto-refresh or manual click retries */ }
+  finally { refreshing = false; if (btn) { btn.textContent = '↻ refresh'; btn.style.opacity = ''; } }
+}
 
 const TEMPLATE = `
 <div class="gv-head">
   <span class="logo">agent_mesh</span>
   <span class="bview"><span data-topview="board">▦ board</span><span class="on" data-topview="graph">✦ graph</span></span>
   <span class="spacer" style="flex:1"></span>
+  <span class="pill upd" id="gv-updated" title="data date of the PR / Issues / Token report"></span>
+  <span class="pill rfx" id="gv-refresh" style="cursor:pointer" title="regenerate the PR / Issues / Token report now (live gh + token logs)">↻ refresh</span>
   <span class="pill alive">● <b id="gv-live">live</b> · mesh</span>
   <span class="pill clock" id="gv-clock">--:--:--</span>
 </div>
@@ -97,6 +116,8 @@ function build() {
     sec.classList.toggle('max', willMax); lower.classList.toggle('has-max', willMax);
     if (willMax) { sec.classList.remove('folded'); b.textContent = '⤡'; b.title = 'restore'; }
   }));
+  // manual daily-report refresh
+  root.querySelector('#gv-refresh').addEventListener('click', () => refreshDaily(true));
   // ranges
   root.querySelector('#gv-ranges').addEventListener('click', (e) => {
     const s = e.target.closest('[data-r]'); if (!s) return;
@@ -122,6 +143,10 @@ function loadAll() {
   loadSchedules();
   loadHealth();
   loadActivityLog();
+  // Periodic auto-refresh of the daily report (Token/Issues/PR panels otherwise only
+  // update on the daily schedule). Skipped while the tab is hidden to avoid background
+  // gh queries; the manual ↻ button calls the same path.
+  if (!autoRefreshTimer) autoRefreshTimer = setInterval(() => { if (!document.hidden) refreshDaily(false); }, AUTO_REFRESH_MS);
   if (!es) {
     try { es = new EventSource('/api/events'); es.addEventListener('activity', () => loadActivity()); es.onerror = () => {}; } catch { /* no SSE */ }
   }
@@ -257,6 +282,7 @@ async function loadDaily() {
     return;
   }
   const r = d.report || {}, prs = r.prs || {}, iss = r.issues || {};
+  setText('gv-updated', r.date ? 'data ' + r.date : '');
   // digest
   setText('gv-k-pr', (prs.opened || []).length);
   setText('gv-k-prs', `${(prs.merged || []).length} merged · ${prs.openNow ?? 0} open total`);
