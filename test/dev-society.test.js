@@ -139,6 +139,29 @@ test('routeFor: terminal + human-gated labels are skipped', () => {
   }
 });
 
+test('planLabelRepair: auto-routes dev-mesh security alerts out of blocked', () => {
+  const plan = devCore.planLabelRepair(issue(145, [BLOCKED], {
+    title: 'Dev-mesh security alert',
+    body: '## Dev-mesh scheduled security sweep — BLOCKING finding\n\nShell injection via workflow_dispatch input.',
+  }));
+  assert.equal(plan.reason, 'security-alert-auto-route');
+  assert.deepEqual(plan.remove, [BLOCKED]);
+  assert.deepEqual(plan.add, [APPROVED, ROUTE_LABEL, BUG]);
+  assert.match(plan.comment, /Auto-normalized security alert/);
+});
+
+test('planLabelRepair: keeps human blocked issues blocked while cleaning contradictory workflow labels', () => {
+  const plan = devCore.planLabelRepair(issue(7, [BLOCKED, APPROVED, ROUTE_LABEL, IN_PROGRESS], {
+    title: 'blocked on external dependency',
+    body: 'Waiting for a vendor fix.',
+  }));
+  assert.equal(plan.reason, 'blocked-conflict-cleanup');
+  assert.deepEqual(plan.remove, [APPROVED, ROUTE_LABEL, IN_PROGRESS]);
+  assert.deepEqual(plan.add, []);
+  assert.match(plan.comment, /kept `blocked`/);
+  assert.equal(devCore.planLabelRepair(issue(8, [BLOCKED])), null);
+});
+
 test('routeFor: idea needs approval; approved idea → analyst draft (advance spec:draft)', () => {
   assert.equal(routeFor(issue(1, [IDEA])).target, null, 'idea without approval skipped');
   const r = routeFor(issue(2, [IDEA, APPROVED]));

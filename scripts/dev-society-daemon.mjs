@@ -107,6 +107,9 @@ if (!once && !selftest) {
         return { status: 'fail', error: e?.message || String(e) };
       }
     },
+    'label-repair-sweep': () => labelRepairSweep()
+      .then((r) => ({ status: 'ok', output: `label-repair-sweep complete (${r.repaired} repaired)` }))
+      .catch((e) => { log('label-repair-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
     'issue-sweep': () => sweep()
       .then(() => ({ status: 'ok', output: 'issue-sweep complete' }))
       .catch((e) => { log('issue-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
@@ -189,6 +192,30 @@ async function listAllOpen() {
   const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
     '--limit', '100', '--json', 'number,title,body,labels']);
   return JSON.parse(stdout);
+}
+
+async function labelRepairSweep() {
+  if (!cfg.repo) { log('label-repair-sweep: set DEV_SOCIETY_REPO'); return { repaired: 0 }; }
+  const issues = await listAllOpen();
+  let repaired = 0;
+  for (const issue of issues) {
+    const plan = core.planLabelRepair(issue);
+    if (!plan) continue;
+    for (const label of plan.remove || []) await rmLabel(issue.number, label);
+    for (const label of plan.add || []) await addLabel(issue.number, label);
+    if (plan.comment) await issueComment(issue.number, plan.comment);
+    repaired++;
+    rec({
+      source: 'daemon',
+      type: 'issue.labels.repaired',
+      level: 'info',
+      summary: `#${issue.number}: ${plan.reason}`,
+      ref: `#${issue.number}`,
+    });
+    log(`label-repair-sweep: #${issue.number} ${plan.reason}`);
+  }
+  if (!repaired) log('label-repair-sweep: no repairs');
+  return { repaired };
 }
 
 async function dispatchAdvisory(issue, route) {
@@ -395,7 +422,7 @@ async function main() {
   }
   if (!cfg.repo) { console.error('Set DEV_SOCIETY_REPO=owner/repo'); process.exit(1); }
   mkdirSync(cfg.workRoot, { recursive: true });
-  if (once) { await sweep(); return; }
+  if (once) { await labelRepairSweep(); await sweep(); return; }
   log(`dev-society daemon up — repo=${cfg.repo} base=${cfg.base}; issue-sweep runs via the scheduler every 10m`);
   // Always-on: the scheduler started at module load drives issue-sweep; it keeps the process alive.
 }

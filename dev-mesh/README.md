@@ -80,6 +80,11 @@ the human approval gate fires only after `spec:in-review`. Terminal labels: `blo
 labels: `bug` and `memory:promote`. Labels + PR/issue state are how a stage signals
 the next agent — changing a label is the hand-off.
 
+The local A2A dev-society daemon also runs a `label-repair-sweep` before its
+`issue-sweep`. It auto-normalizes machine-obvious label drift, such as a scheduled
+security alert incorrectly stuck at `blocked`, while keeping arbitrary human-blocked
+issues blocked until a human re-approves them.
+
 ## Safety properties
 
 - **Human merge gate** on all code (no agent self-merges code); `memory:promote` is the
