@@ -529,6 +529,17 @@
       "ts": "2026-06-19"
     }
   },
+  "dashboard-cached-panel-refresh": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Cached dashboard panels: regenerate-on-demand endpoint + manual button + tab-visible auto-refresh.",
+    "l1": "PR #135: Token/Issues/PR panels read a once-daily cached report. Re-reading stale cache on page load = always stale. Fix: POST /api/daily/refresh regenerates (reruns daily-report.mjs live), coalesces concurrent calls onto one in-flight run, 120s timeout, 502 on failure. UI: ↻ button + 20-min auto-refresh; pauses on document.hidden to avoid background gh queries. Header shows data date so freshness is observable.",
+    "value": "Pattern for dashboard panels backed by a generated/cached report:\n\n(1) REGENERATE, don't re-read: POST /api/*/refresh must re-execute the generator script (e.g. daily-report.mjs), not just return the cached file. Re-reading stale bytes on every page load is always stale.\n\n(2) Concurrent coalescing: if a regeneration is already in-flight, coalesce new requests onto it — never spawn N parallel generator processes. Maintain an in-flight promise and return the same result to all callers.\n\n(3) Timeout + error: set a generous timeout (120s for gh-heavy scripts); return 502 with a structured error body on failure. The UI can surface the error and keep the stale data rather than crashing.\n\n(4) Manual ↻ button: placed in the panel header; calls the regenerate endpoint and reloads the affected panels on success. Spinner during regeneration (disable button to prevent double-click).\n\n(5) Periodic auto-refresh: fire every N minutes (e.g. 20 min) while the tab is active. Gate on !document.hidden — visibility-change listener pauses/resumes the timer. Avoids background gh API calls when the user has switched tabs.\n\n(6) Data-date label: display the report's generation timestamp ('data as of: YYYY-MM-DD HH:mm') in the header. Staleness is now observable — users know whether to click ↻ without guessing.\n\nComplements cached-report-compute-and-schedule (backend: aggregation correctness + scheduler wiring) — together they cover the full pipeline: KPI computation → scheduled refresh → on-demand refresh → live UI freshness. Red flag: panels show stale data even after manual refresh → regenerate endpoint is re-reading cache, not re-running the generator. Provenance: PR #135 (2026-06-19).",
+    "provenance": {
+      "source": "PR #135: feat(dashboard): manual ↻ refresh + auto-refresh for Token/Issues/PR panels",
+      "ts": "2026-06-19"
+    }
+  },
   "run-now-state-rearm": {
     "status": "active",
     "valid_to": null,
