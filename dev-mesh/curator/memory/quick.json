@@ -331,6 +331,17 @@
       "ts": "2026-06-18"
     }
   },
+  "reviewer-sticky-changes-requested": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GitHub CHANGES_REQUESTED is sticky — always have an APPROVE path or PR stays red after clean passes.",
+    "l1": "PR #101: dev-mesh-review.yml had no APPROVE path — every follow-up pass downgraded to COMMENT, never clearing the sticky state. CI went green, review stayed red forever. Fix: binary verdict per commit — BLOCKING finding → REQUEST_CHANGES, no blocking → APPROVE with nits as optional notes. 'CI green + APPROVED' is now the true merge-ready signal, preventing review loops.",
+    "value": "Classify each review finding as BLOCKING or non-blocking before submitting. Emit exactly one verdict per commit: (1) gh pr review --request-changes if any blocking finding; (2) gh pr review --approve with nits as optional notes if none. This clears sticky CHANGES_REQUESTED — COMMENT-only follow-ups never clear it. Merge-ready definition: CI green AND latest review = APPROVED AND no unresolved blocking threads. Non-blocking nits must not withhold approval and must not be re-raised (loop prevention). Apply to any autonomous reviewer using gh pr review. Provenance: PR #101 (2026-06-18).",
+    "provenance": {
+      "source": "PR #101: fix(dev-mesh): reviewer emits an explicit approve verdict (fix red-but-merge-ready)",
+      "ts": "2026-06-18"
+    }
+  },
   "doctor-apply-on-framework-upgrade": {
     "status": "active",
     "valid_to": null,
@@ -375,17 +386,6 @@
       "ts": "2026-06-18"
     }
   },
-  "scheduler-builtin-for-native-jobs": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "Scheduler builtin: register native polling fns in-process; no LLM spawn; unknown name → fail-state.",
-    "l1": "PR #114 added a builtin kind to the mesh scheduler: instead of spawning delegateTask (a claude -p subprocess), a builtin runs an in-process function (e.g. pollGhActivity calling gh run list). Name is a key in a fixed registry; unknown name → fail-state record, never throws — consistent with failure-is-data. Delegate jobs unaffected. Guard daemon-started builtins with !opts.once && !opts.selftest (see subsystem-promote-and-daemon-guard). External builtin data should merge tolerantly into API responses: missing/corrupt/non-array cache → degrade to local-only.",
-    "value": "Pattern: when a mesh scheduled job performs native operations (gh run list, git, external API poll) that do NOT require an LLM, implement it as a scheduler `builtin` instead of a `delegateTask`.\n\n(1) Register the function in an in-process builtin registry (not in schedule.json). schedule.json carries { \"kind\": \"builtin\", \"name\": \"my-job-name\" }. The name is a lookup key — the value is never arbitrary code. Unknown builtin name → fail-state job record, never throws and never spawns anything.\n\n(2) Additive: existing delegate jobs are unaffected. The scheduler dispatches to the correct path by kind.\n\n(3) Daemon guard: register builtins inside the `!opts.once && !opts.selftest` block so single-pass sweep/health invocations exit cleanly (see subsystem-promote-and-daemon-guard).\n\n(4) Workflow→agent name convention: when a builtin polls external CI systems (e.g. gh run list), map workflow names to mesh role agents by naming convention (e.g. 'dev-mesh-coder' → coder agent). This lets cloud CI work appear in the live activity graph without those agents writing local run-logs.\n\n(5) Tolerant snapshot merge: data written by a builtin (a cache file) should be merged tolerantly into API responses. Missing file, corrupt JSON, or non-array value → silently degrade to local-only data. Never let a missing cache crash the live API.\n\nTest coverage: (a) known builtin name → calls registered fn, returns result; (b) unknown builtin name → fail-state record, no throw; (c) delegate jobs still route correctly. Hermetic: use dependency injection so the builtin fn is a no-op stub. Provenance: PR #114 (2026-06-19).",
-    "provenance": {
-      "source": "PR #114 (2026-06-19): feat(mesh): Phase 2 — GitHub-Actions activity poller (orchestrator agent)",
-      "ts": "2026-06-19"
-    }
-  },
   "default-off-three-layer-kill-switch": {
     "status": "active",
     "valid_to": null,
@@ -406,6 +406,17 @@
     "provenance": {
       "source": "PR #127: feat(dev-society): label-aware 10-min issue sweep (maintainer-owned)",
       "ts": "2026-06-19"
+    }
+  },
+  "integration-ref-trunk-staleness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "INTEGRATION_REF must track main under trunk-based dev — stale branch silently validates dead code for all nightly tiers.",
+    "l1": "PR #100: INTEGRATION_REF was pinned to v0.4-development, which was 188 commits behind main — the nightly L1/L2/L3/L4 tiers had been validating long-stale code for an extended period without any alert. Under trunk-based development, main is the single living line; retiring feature/development branches but leaving INTEGRATION_REF pointing at them means every nightly scorecard result (behavior evals, adversarial battery, perf benchmark) quietly tests the wrong code. The 188-commit gap was only discovered by inspection, not by a CI alert.",
+    "value": "Checklist when retiring a feature/development branch under trunk-based development:\n\n1. INTEGRATION_REF → main: update it in the same PR that retires the branch. A stale INTEGRATION_REF never causes an error or alert — all nightly jobs succeed but each validates dead code.\n2. Lint-encode the target ref: the integration-workflow.test.js assertion on `INTEGRATION_REF: main` (landed with PR #100) makes any future change a deliberate, test-gated act. Every CI pipeline variable naming a branch should have a hermetic lint equivalent.\n3. Align the schedule trigger: the nightly fires from the default branch (`main`) and checks out INTEGRATION_REF explicitly. If those diverge, a workflow_dispatch from main still tests the stale ref while the schedule appears to work. Verify both always name the same living line.\n4. Scope-check stale refs after ANY branch cleanup: grep all workflow files for retired branch refs immediately after the cleanup — INTEGRATION_REF is a silent misconfiguration until the next nightly run.\n\nProvenance: PR #100 (2026-06-18): chore(integration): retarget the nightly to main (trunk-based development).",
+    "provenance": {
+      "source": "PR #100: chore(integration): retarget the nightly to main (trunk-based development)",
+      "ts": "2026-06-18"
     }
   },
   "new-agent-scaffold-completeness": {
@@ -441,17 +452,6 @@
       "ts": "2026-06-18"
     }
   },
-  "integration-ref-trunk-staleness": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "INTEGRATION_REF must track main under trunk-based dev — stale branch silently validates dead code for all nightly tiers.",
-    "l1": "PR #100: INTEGRATION_REF was pinned to v0.4-development, which was 188 commits behind main — the nightly L1/L2/L3/L4 tiers had been validating long-stale code for an extended period without any alert. Under trunk-based development, main is the single living line; retiring feature/development branches but leaving INTEGRATION_REF pointing at them means every nightly scorecard result (behavior evals, adversarial battery, perf benchmark) quietly tests the wrong code. The 188-commit gap was only discovered by inspection, not by a CI alert.",
-    "value": "Checklist when retiring a feature/development branch under trunk-based development:\n\n1. INTEGRATION_REF → main: update it in the same PR that retires the branch. A stale INTEGRATION_REF never causes an error or alert — all nightly jobs succeed but each validates dead code.\n2. Lint-encode the target ref: the integration-workflow.test.js assertion on `INTEGRATION_REF: main` (landed with PR #100) makes any future change a deliberate, test-gated act. Every CI pipeline variable naming a branch should have a hermetic lint equivalent.\n3. Align the schedule trigger: the nightly fires from the default branch (`main`) and checks out INTEGRATION_REF explicitly. If those diverge, a workflow_dispatch from main still tests the stale ref while the schedule appears to work. Verify both always name the same living line.\n4. Scope-check stale refs after ANY branch cleanup: grep all workflow files for retired branch refs immediately after the cleanup — INTEGRATION_REF is a silent misconfiguration until the next nightly run.\n\nProvenance: PR #100 (2026-06-18): chore(integration): retarget the nightly to main (trunk-based development).",
-    "provenance": {
-      "source": "PR #100: chore(integration): retarget the nightly to main (trunk-based development)",
-      "ts": "2026-06-18"
-    }
-  },
   "cached-report-compute-and-schedule": {
     "status": "active",
     "valid_to": null,
@@ -482,6 +482,17 @@
     "value": "Pattern for adding a security specialist role to an autonomous agent society:\n\n(1) Agent role: create dev-mesh/security with ask-only mode. No Edit, no Write, no Bash(git:*) in allowedTools. No outbound peers in agent.json — security sees all, controls nothing.\n\n(2) Three-lens coverage: (a) Injection — prompt/workflow injection, unsafe shell interpolation (${{ head.ref }} in run:), fork PR secret exposure; (b) Identity/auth — OAuth-only Claude auth, least-privilege GitHub permissions, same-repo guards, credential masking; (c) Token budget — bounded autonomous loops, per-branch retry caps, usage capture, human-visible budget exhaustion paths.\n\n(3) Workflow auth: use CLAUDE_CODE_OAUTH_TOKEN not DEV_MESH_PAT. OAuth cannot push to .github/workflows — a security agent that can self-edit CI is a conflict of interest. Trigger: schedule (cron, e.g. every 6h) + manual dispatch only. Never pull_request — fork PRs can exfiltrate secrets if the trigger runs in the wrong context.\n\n(4) Permissions: `contents: read, issues: write`. Security cannot push. Issues:write only for findings alerts. Never open/close/merge PRs.\n\n(5) Honesty gate: shared assert-run-healthy.mjs with --advisory-blocked (ask-role flag). Read-probe denials are expected noise, not failure (see honesty-gate-role-scoped).\n\n(6) Mesh wiring: route via Maintainer (add Security as peer in maintainer/agent.json). Topology test assertions: Security is ask-only; Maintainer peers include Security; Security has zero outbound peers.\n\n(7) Tests: dev-mesh-agents.test.js guards role set, ask-only flag, peer topology; dev-mesh-workflow.test.js guards schedule trigger, no PR trigger, OAuth sanitation, postrun gate, three security lenses in prompt. Write tests first — they are the living spec.\n\nProvenance: PR #116 (2026-06-19).",
     "provenance": {
       "source": "PR #116 (2026-06-19): [codex] add scheduled dev-mesh security agent",
+      "ts": "2026-06-19"
+    }
+  },
+  "scheduler-builtin-for-native-jobs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Scheduler builtin: register native polling fns in-process; no LLM spawn; unknown name → fail-state.",
+    "l1": "PR #114 added a builtin kind to the mesh scheduler: instead of spawning delegateTask (a claude -p subprocess), a builtin runs an in-process function (e.g. pollGhActivity calling gh run list). Name is a key in a fixed registry; unknown name → fail-state record, never throws — consistent with failure-is-data. Delegate jobs unaffected. Guard daemon-started builtins with !opts.once && !opts.selftest (see subsystem-promote-and-daemon-guard). External builtin data should merge tolerantly into API responses: missing/corrupt/non-array cache → degrade to local-only.",
+    "value": "Pattern: when a mesh scheduled job performs native operations (gh run list, git, external API poll) that do NOT require an LLM, implement it as a scheduler `builtin` instead of a `delegateTask`.\n\n(1) Register the function in an in-process builtin registry (not in schedule.json). schedule.json carries { \"kind\": \"builtin\", \"name\": \"my-job-name\" }. The name is a lookup key — the value is never arbitrary code. Unknown builtin name → fail-state job record, never throws and never spawns anything.\n\n(2) Additive: existing delegate jobs are unaffected. The scheduler dispatches to the correct path by kind.\n\n(3) Daemon guard: register builtins inside the `!opts.once && !opts.selftest` block so single-pass sweep/health invocations exit cleanly (see subsystem-promote-and-daemon-guard).\n\n(4) Workflow→agent name convention: when a builtin polls external CI systems (e.g. gh run list), map workflow names to mesh role agents by naming convention (e.g. 'dev-mesh-coder' → coder agent). This lets cloud CI work appear in the live activity graph without those agents writing local run-logs.\n\n(5) Tolerant snapshot merge: data written by a builtin (a cache file) should be merged tolerantly into API responses. Missing file, corrupt JSON, or non-array value → silently degrade to local-only data. Never let a missing cache crash the live API.\n\nTest coverage: (a) known builtin name → calls registered fn, returns result; (b) unknown builtin name → fail-state record, no throw; (c) delegate jobs still route correctly. Hermetic: use dependency injection so the builtin fn is a no-op stub. Provenance: PR #114 (2026-06-19).",
+    "provenance": {
+      "source": "PR #114 (2026-06-19): feat(mesh): Phase 2 — GitHub-Actions activity poller (orchestrator agent)",
       "ts": "2026-06-19"
     }
   }
