@@ -1,6 +1,7 @@
 // test/dev-society.test.js — hermetic tests for the A2A Dev-Society pure core (P1).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import * as devCore from '../src/dev-society/core.js';
 import {
   isEligible, selectTask, branchName, a2aMessage, coderPrompt, reviewerPrompt,
@@ -223,10 +224,10 @@ test('advisoryRegistry: ask-only peers rooted under meshRoot', () => {
   const reg = advisoryRegistry({ binPath: '/x/bin.js', meshRoot: '/mesh', nodePath: '/usr/bin/node' });
   assert.equal(reg.peers.analyst.env.AGENT_MESH_ENABLED_MODES, 'ask');
   assert.equal(reg.peers.triager.env.AGENT_MESH_ENABLED_MODES, 'ask');
-  assert.match(reg.peers.analyst.root, /\/mesh\/analyst$/);
-  assert.deepEqual(reg.peers.analyst.args, ['/x/bin.js', 'serve-a2a', '/mesh/analyst']);
+  assert.equal(reg.peers.analyst.root, join('/mesh', 'analyst'));
+  assert.deepEqual(reg.peers.analyst.args, ['/x/bin.js', 'serve-a2a', join('/mesh', 'analyst')]);
   assert.throws(() => advisoryRegistry({ meshRoot: '/mesh' }), /binPath/);
   assert.throws(() => advisoryRegistry({ binPath: '/x/bin.js' }), /meshRoot/);
   assert.equal(reg.peers.analyst.command, '/usr/bin/node');
-  assert.match(reg.peers.triager.root, /\/mesh\/triager$/);
+  assert.equal(reg.peers.triager.root, join('/mesh', 'triager'));
 });
