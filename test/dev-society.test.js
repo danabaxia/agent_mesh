@@ -203,3 +203,27 @@ test('shouldDispatch/recordDispatch: fire once until target or labels change', (
   assert.equal(shouldDispatch(issue(1, [QUESTION, 'help wanted']), r, state), true, 'labels changed');
   assert.equal(state[1].dispatchedAt, 1000);
 });
+
+import {
+  analystDraftPrompt, analystSpecPrompt, triagePrompt, questionPrompt, advisoryRegistry,
+} from '../src/dev-society/core.js';
+
+test('advisory prompts: frame issue as data, name the issue number', () => {
+  const i = issue(42, [IDEA, APPROVED], { title: 'add widget', body: 'please' });
+  for (const p of [analystDraftPrompt(i), analystSpecPrompt(i), triagePrompt(i), questionPrompt(i)]) {
+    assert.match(p, /#42/);
+    assert.match(p, /add widget/);
+    assert.match(p, /data/i, 'frames input as data');
+  }
+  assert.match(analystSpecPrompt(i), /spec|design/i);
+  assert.match(triagePrompt(i), /classif|plan/i);
+});
+
+test('advisoryRegistry: ask-only peers rooted under meshRoot', () => {
+  const reg = advisoryRegistry({ binPath: '/x/bin.js', meshRoot: '/mesh', nodePath: '/usr/bin/node' });
+  assert.equal(reg.peers.analyst.env.AGENT_MESH_ENABLED_MODES, 'ask');
+  assert.equal(reg.peers.triager.env.AGENT_MESH_ENABLED_MODES, 'ask');
+  assert.match(reg.peers.analyst.root, /\/mesh\/analyst$/);
+  assert.deepEqual(reg.peers.analyst.args, ['/x/bin.js', 'serve-a2a', '/mesh/analyst']);
+  assert.throws(() => advisoryRegistry({ meshRoot: '/mesh' }), /binPath/);
+});
