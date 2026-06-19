@@ -20,8 +20,10 @@ function enforceCaps(merged) {
   let keys = Object.keys(merged);
   if (keys.length > MAX_QUICK_ENTRIES) {
     const order = keys.slice().sort((a, b) => {
-      const ca = merged[a]?.core ? 1 : 0, cb = merged[b]?.core ? 1 : 0;
-      if (ca !== cb) return ca - cb;                       // non-core (0) evicted before core (1)
+      // Protect only LIVE core (a retired/expired core entry is not worth keeping over a
+      // live lesson) — matches the spec's "evict non-core live entries first".
+      const ca = isLiveCore(merged[a]) ? 1 : 0, cb = isLiveCore(merged[b]) ? 1 : 0;
+      if (ca !== cb) return ca - cb;                       // evictable (0) before live-core (1)
       return ts(merged[a]).localeCompare(ts(merged[b]));   // oldest provenance.ts first
     });
     for (const k of order.slice(0, keys.length - MAX_QUICK_ENTRIES)) delete merged[k];

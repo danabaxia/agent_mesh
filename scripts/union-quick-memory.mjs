@@ -9,7 +9,7 @@
 // mergefix). Never resolves code. Exit 0 only when every conflict was resolved + git-added.
 // Spec: docs/superpowers/specs/2026-06-19-memory-automerge-union-design.md
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import { mergeQuickMemory } from '../src/quick-memory-merge.js';
@@ -41,17 +41,23 @@ function resolveMarkdown(path) {
     writeFileSync(path, [ours, theirs].filter((s) => s != null).join('\n'));
   } else {
     const dir = mkdtempSync(join(tmpdir(), 'mq-'));
-    const f = { o: join(dir, 'o'), b: join(dir, 'b'), t: join(dir, 't') };
-    writeFileSync(f.o, ours ?? ''); writeFileSync(f.b, base); writeFileSync(f.t, theirs ?? '');
-    // --union keeps BOTH sides of every conflict hunk; -p prints the result to stdout.
-    const unioned = git(['merge-file', '-p', '--union', f.o, f.b, f.t]);
-    writeFileSync(path, unioned);
+    try {
+      const f = { o: join(dir, 'o'), b: join(dir, 'b'), t: join(dir, 't') };
+      writeFileSync(f.o, ours ?? ''); writeFileSync(f.b, base); writeFileSync(f.t, theirs ?? '');
+      // --union keeps BOTH sides of every conflict hunk; -p prints the result to stdout.
+      const unioned = git(['merge-file', '-p', '--union', f.o, f.b, f.t]);
+      writeFileSync(path, unioned);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
   git(['add', '--', path]);
 }
 
 function main() {
-  const conflicted = git(['diff', '--name-only', '--diff-filter=U'])
+  // core.quotePath=false: emit non-ASCII paths verbatim (not octal-escaped + quoted) so a
+  // legitimately-named memory file isn't mis-classified as non-memory and needlessly deferred.
+  const conflicted = git(['-c', 'core.quotePath=false', 'diff', '--name-only', '--diff-filter=U'])
     .split('\n').map((s) => s.trim()).filter(Boolean);
   if (conflicted.length === 0) { console.error('no conflicted files'); process.exit(3); }
 
