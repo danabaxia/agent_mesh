@@ -89,6 +89,27 @@ jobs:
       - name: L1 — mesh e2e (real claude peer-selection + two-hop over stdio A2A)
         run: AGENT_MESH_E2E=1 node --test test/eval-mesh-e2e.test.js
 
+  l0-json:
+    name: L0 hermetic suite (JSON producer for MIR)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: L0 — full suite, writing test-results.json before any nonzero exit
+        run: node run-all-tests.mjs --json test-results.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: l0-json-results
+          path: test-results.json
+          retention-days: 14
+          if-no-files-found: warn
+
   l2-behavior:
     name: L2 behavior eval scorecard (record-only)
     runs-on: ubuntu-latest
@@ -205,4 +226,57 @@ jobs:
           name: l4-perf-scorecard
           path: perf-results/
           retention-days: 14
+          if-no-files-found: ignore
+
+  mir:
+    name: Mesh Improvement Report (aggregate + file findings)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [l0-json, l2-behavior, l3-adversarial, l4-perf]
+    if: always()              # a failed producer is a hard finding — never skip
+    permissions:
+      contents: read
+      actions: read           # download baseline artifact + list prior runs
+      issues: write           # the deterministic issue sync
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download this run's producer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Stage artifacts into the layout the MIR collector expects
+        run: |
+          mkdir -p .dev-society/mir eval-results adversarial-results perf-results
+          cp -r artifacts/l2-behavior-scorecard/* eval-results/ 2>/dev/null || true
+          cp -r artifacts/l3-adversarial-results/* adversarial-results/ 2>/dev/null || true
+          cp -r artifacts/l4-perf-scorecard/* perf-results/ 2>/dev/null || true
+          cp artifacts/l0-json-results/test-results.json .dev-society/mir/test-results.json 2>/dev/null || true
+      - name: Restore the previous MIR as baseline (latest prior run with a mir artifact, any conclusion)
+        run: |
+          PREV=$(gh run list --workflow integration.yml --json databaseId,createdAt --limit 30 --jq '.[].databaseId' | while read id; do
+            if gh run download "$id" -n mir-artifact -D /tmp/prevmir 2>/dev/null; then echo "$id"; break; fi
+          done || true)
+          if [ -d /tmp/prevmir ]; then cp /tmp/prevmir/mir-*.json .dev-society/mir/ 2>/dev/null || true; fi
+      - name: Run the MIR (live on schedule)
+        if: github.event_name == 'schedule'
+        run: GITHUB_SHA=${{ github.sha }} node scripts/mir-run.mjs
+      - name: Run the MIR (dry-run on manual dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: GITHUB_SHA=${{ github.sha }} node scripts/mir-run.mjs --dry-run
+      - name: Summarize MIR
+        if: always()
+        run: find .dev-society/mir -name 'mir-*.md' -exec cat {} >> "$GITHUB_STEP_SUMMARY" \; 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mir-artifact
+          path: .dev-society/mir/mir-*.json
+          retention-days: 30
           if-no-files-found: ignore
