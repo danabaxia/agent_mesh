@@ -374,5 +374,16 @@
       "source": "PR #112 (2026-06-18): feat(mesh): Phase 1 — always-on scheduling infra + dashboard visibility",
       "ts": "2026-06-18"
     }
+  },
+  "cached-report-compute-and-schedule": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Cached report: each KPI needs both aggregation AND a refresh schedule — script without scheduler goes stale.",
+    "l1": "PR #120: issues.openNow absent from aggregate.js despite openIssues being passed (prs.openNow existed). AND daily-report-refresh had no scheduler despite PR #108 shipping the script — cache stuck 2 days old. Fix: one-line aggregation + builtin at 00:10 on the orchestrator. Symmetric parallel KPIs (prs/issues) are a completeness hint: if one is tracked, the other must be too.",
+    "value": "Pattern for adding a new KPI to a cached report:\n\n(1) Aggregation: if a parallel metric exists (e.g. prs.openNow), its counterpart (issues.openNow) must also be computed. The input param may already be passed but not projected into the output. Symptom: wrong count on dashboard — structurally absent, not stale.\n\n(2) Schedule wiring: a report script without a refresh schedule produces correct data once and goes stale. Wire a builtin on the orchestrator (e.g. daily-report-refresh at 00:10) — same pattern as gh-activity-poll. Symptom: cache age >> expected cadence.\n\n(3) Verify both: run the script manually (--cache-only, no --post) to confirm the new field appears; confirm daemon selftest exits cleanly; confirm dashboard renders the live total.\n\nRed flag: cache age >> expected period implies scheduler not wired — check script has a builtin before debugging aggregation logic.\n\nSymmetry hint: parallel KPI pairs (PRs/Issues, open/closed, pass/fail) must be tracked at the same aggregation depth. A one-sided pair is almost always a missed step.\n\nProvenance: PR #120 (2026-06-19).",
+    "provenance": {
+      "source": "PR #120 (2026-06-19): fix(report): correct open-issue count on the dashboard + schedule the daily report",
+      "ts": "2026-06-19"
+    }
   }
 }
