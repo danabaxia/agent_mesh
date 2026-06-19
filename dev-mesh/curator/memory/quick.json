@@ -374,5 +374,16 @@
       "source": "PR #112 (2026-06-18): feat(mesh): Phase 1 — always-on scheduling infra + dashboard visibility",
       "ts": "2026-06-18"
     }
+  },
+  "default-off-three-layer-kill-switch": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Default-OFF automation: fail-closed predicate + env-flag CLI + YAML vars gate; operator flip activates, nothing else.",
+    "l1": "PR #124 (gated auto-merge sweep): isAutoMergeable is a pure fail-closed fn — undefined/garbage → not mergeable; `enabled !== true` → empty list. CLI: `enabled = ENV === 'true'` (string-exact, not truthy). YAML: `if: vars.AUTOMERGE_ENABLED == 'true'`. All three default OFF. Hold-label check catches both object shapes and raw strings. Merging the code is safe; feature stays inert until the operator explicitly sets the repo variable. Hermetic tests cover all paths without a real merge.",
+    "value": "Three-layer kill-switch pattern for default-OFF automation:\n\n(1) Pure fail-closed predicate: function returns [] / false for ALL missing or non-true inputs. Type-check strictly (`=== false`, `=== true`) — undefined/null/garbage → not eligible. Hold labels: check both object shape (`.name`) and raw string so the same code handles both API shapes. `enabled !== true` → early-return empty, so even partial env values cannot activate the sweep.\n\n(2) CLI gate: `const enabled = process.env.FLAG === 'true'` — pass `enabled` as an explicit arg into the pure function. Never use truthy coercion (`!!flag` vs `flag === 'true'`). Document the exact activation command: `gh variable set AUTOMERGE_ENABLED --body true`.\n\n(3) YAML gate: `if: vars.FLAG == 'true'` in the job-level condition. GitHub Actions vars context is always a string; `== 'true'` is correct (not `!= 'false'` or truthy). Unset variable → condition is false → job skipped entirely, no gh calls at all.\n\nAll three layers independently default OFF — defense in depth means no single layer's misconfiguration triggers behavior.\n\nVerify coverage: (a) hermetic unit tests exercise pure predicate with all partial/corrupt input combinations — no real merge needed; (b) `--dry-run` CLI flag validates eligibility logic live without merging; (c) unset or `'false'` YAML var → job skips, observable in Actions UI.\n\nDeactivation is instant: set the variable to false or delete it. Provenance: PR #124 (2026-06-19).",
+    "provenance": {
+      "source": "PR #124: feat(mesh): gated auto-merge sweep (Phase 1, default-OFF)",
+      "ts": "2026-06-19"
+    }
   }
 }
