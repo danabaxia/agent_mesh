@@ -185,3 +185,40 @@ test('loadTasks: mesh-bench.json is empty array (placeholder)', async () => {
 test('loadTasks: non-existent suite throws', async () => {
   await assert.rejects(() => loadTasks('does-not-exist'), /cannot read task file/);
 });
+
+// ── spec §9 coverage: malformed JSON, CLI arg parser, skip-guard ────────────
+import { fileURLToPath } from 'node:url';
+import { parseArgs, UsageError } from '../scripts/eval-swebench.mjs';
+import { detectSwebench } from '../eval/swebench/scorer.mjs';
+
+const TASKS_DIR_T = fileURLToPath(new URL('../eval/swebench/tasks/', import.meta.url));
+
+test('loadTasks: malformed JSON throws (spec §9)', async () => {
+  const name = `_malformed-${randomUUID().slice(0, 8)}`;
+  const f = join(TASKS_DIR_T, `${name}.json`);
+  await writeFile(f, '{ this is not valid json ');
+  try {
+    await assert.rejects(() => loadTasks(name), /malformed JSON/);
+  } finally {
+    await rm(f, { force: true });
+  }
+});
+
+test('parseArgs: valid flags parse; unknown flag → UsageError (the exit-2 path) (spec §9)', () => {
+  const o = parseArgs(['--suite', 'full', '--topology', 'ask_chain', '--trials', '3', '--min-pass-rate', '0.5', '--out', 'x']);
+  assert.equal(o.suite, 'full');
+  assert.equal(o.topology, 'ask_chain');
+  assert.equal(o.trials, 3);
+  assert.equal(o.minPassRate, 0.5);
+  assert.equal(o.out, 'x');
+  assert.equal(parseArgs(['--list']).list, true);
+  assert.throws(() => parseArgs(['--bogus']), UsageError);
+  assert.throws(() => parseArgs(['--bogus']), /unknown flag/);
+  assert.throws(() => parseArgs(['--trials', '-1']), /positive integer/);
+  assert.throws(() => parseArgs(['--min-pass-rate', '2']), /\[0,1\]/);
+  assert.throws(() => parseArgs(['--suite']), /requires a value/);
+});
+
+test('detectSwebench: absent binary → false (skip-guard, spec §9)', async () => {
+  assert.equal(await detectSwebench('definitely-not-on-path-xyz-12345'), false);
+});

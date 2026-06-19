@@ -7,6 +7,7 @@
 //   [--topology single_worker|ask_chain] [--trials N] [--timeout-ms N]
 //   [--out DIR] [--min-pass-rate 0..1]
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { runSuite, loadTasks } from '../eval/swebench/harness.mjs';
 import { aggregate, renderMarkdown, writeScorecard, exitCode } from '../eval/swebench/report.mjs';
 import { detectSwebench } from '../eval/swebench/scorer.mjs';
@@ -17,7 +18,11 @@ const USAGE = `node scripts/eval-swebench.mjs [--list] [--suite mesh-bench|full]
   [--topology single_worker|ask_chain] [--trials N] [--timeout-ms N]
   [--out DIR] [--min-pass-rate 0..1]`;
 
-function parseArgs(argv) {
+// Thrown by the arg parser on bad input so parseArgs is unit-testable (the CLI maps it
+// to exit code 2). Keeps process.exit() out of the pure parse path.
+export class UsageError extends Error {}
+
+export function parseArgs(argv) {
   const o = { suite: 'mesh-bench', topology: 'single_worker', trials: 1, timeoutMs: 600_000, out: 'eval-swebench-results' };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -50,12 +55,17 @@ const posInt = (v, f) => {
 };
 
 function fail(msg) {
-  process.stderr.write(`eval-swebench: ${msg}\n`);
-  process.exit(2);
+  throw new UsageError(msg);
 }
 
 async function main() {
-  const o = parseArgs(process.argv.slice(2));
+  let o;
+  try {
+    o = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    if (err instanceof UsageError) { process.stderr.write(`eval-swebench: ${err.message}\n`); process.exit(2); }
+    throw err;
+  }
   if (o.help) { process.stdout.write(USAGE + '\n'); return; }
 
   if (o.list) {
@@ -94,7 +104,11 @@ async function main() {
   process.exit(exitCode(scorecard, o.minPassRate));
 }
 
-main().catch((err) => {
-  process.stderr.write(`eval-swebench: ${err.stack || err.message}\n`);
-  process.exit(1);
-});
+// Only run as a CLI when invoked directly — importing this module (e.g. from tests, to
+// unit-test parseArgs) must NOT execute main() against the importer's argv.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((err) => {
+    process.stderr.write(`eval-swebench: ${err.stack || err.message}\n`);
+    process.exit(1);
+  });
+}
