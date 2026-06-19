@@ -484,5 +484,16 @@
       "source": "PR #116 (2026-06-19): [codex] add scheduled dev-mesh security agent",
       "ts": "2026-06-19"
     }
+  },
+  "scheduler-builtin-for-native-jobs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Scheduler builtin: register native polling fns in-process; no LLM spawn; unknown name → fail-state.",
+    "l1": "PR #114 added a builtin kind to the mesh scheduler: instead of spawning delegateTask (a claude -p subprocess), a builtin runs an in-process function (e.g. pollGhActivity calling gh run list). Name is a key in a fixed registry; unknown name → fail-state record, never throws — consistent with failure-is-data. Delegate jobs unaffected. Guard daemon-started builtins with !opts.once && !opts.selftest (see subsystem-promote-and-daemon-guard). External builtin data should merge tolerantly into API responses: missing/corrupt/non-array cache → degrade to local-only.",
+    "value": "Pattern: when a mesh scheduled job performs native operations (gh run list, git, external API poll) that do NOT require an LLM, implement it as a scheduler `builtin` instead of a `delegateTask`.\n\n(1) Register the function in an in-process builtin registry (not in schedule.json). schedule.json carries { \"kind\": \"builtin\", \"name\": \"my-job-name\" }. The name is a lookup key — the value is never arbitrary code. Unknown builtin name → fail-state job record, never throws and never spawns anything.\n\n(2) Additive: existing delegate jobs are unaffected. The scheduler dispatches to the correct path by kind.\n\n(3) Daemon guard: register builtins inside the `!opts.once && !opts.selftest` block so single-pass sweep/health invocations exit cleanly (see subsystem-promote-and-daemon-guard).\n\n(4) Workflow→agent name convention: when a builtin polls external CI systems (e.g. gh run list), map workflow names to mesh role agents by naming convention (e.g. 'dev-mesh-coder' → coder agent). This lets cloud CI work appear in the live activity graph without those agents writing local run-logs.\n\n(5) Tolerant snapshot merge: data written by a builtin (a cache file) should be merged tolerantly into API responses. Missing file, corrupt JSON, or non-array value → silently degrade to local-only data. Never let a missing cache crash the live API.\n\nTest coverage: (a) known builtin name → calls registered fn, returns result; (b) unknown builtin name → fail-state record, no throw; (c) delegate jobs still route correctly. Hermetic: use dependency injection so the builtin fn is a no-op stub. Provenance: PR #114 (2026-06-19).",
+    "provenance": {
+      "source": "PR #114 (2026-06-19): feat(mesh): Phase 2 — GitHub-Actions activity poller (orchestrator agent)",
+      "ts": "2026-06-19"
+    }
   }
 }
