@@ -36,9 +36,19 @@ const READONLY_MARKER = 'x-agentmesh';
 /**
  * The reserved-bridge env for peers a worker/native session spawns onward.
  * Threaded so cycle/depth detection works (PATH/DEPTH come only from env).
+ *
+ * AGENT_MESH_MODE is passed through from the parent task's mode so the bridge
+ * can distinguish ask→do (refused as readonly_parent) from do→do (allowed in
+ * v2). Callers supply the explicit mode via the third argument.
+ *
+ * @param {object} callEnv  threaded call-context env (PATH/DEPTH)
+ * @param {object} env      parent task's full env (framework config pass-through)
+ * @param {object} [opts]
+ *   @param {string} [opts.mode]  parent task mode; absent → bridge stays ask-only
  */
-export function buildBridgeEnv(callEnv, env) {
-  const out = { AGENT_MESH_MODE: 'ask' };
+export function buildBridgeEnv(callEnv, env, { mode } = {}) {
+  const parentMode = mode || env?.AGENT_MESH_MODE;
+  const out = parentMode ? { AGENT_MESH_MODE: parentMode } : {};
   if (callEnv?.AGENT_MESH_PATH !== undefined) out.AGENT_MESH_PATH = callEnv.AGENT_MESH_PATH;
   if (callEnv?.AGENT_MESH_DEPTH !== undefined) out.AGENT_MESH_DEPTH = callEnv.AGENT_MESH_DEPTH;
   for (const k of [

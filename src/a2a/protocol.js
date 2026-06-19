@@ -81,6 +81,7 @@ export function buildTaskFromDelegateResult({ result, message, id = randomUUID()
   else if (result?.status === 'timeout') metadata['agentmesh/error_code'] = 'timeout';
   if (result?.best_effort) metadata['agentmesh/best_effort'] = true;
   if (result?.note) metadata['agentmesh/note'] = result.note;
+  if (result?.downstream_changes != null) metadata['agentmesh/downstream_changes'] = result.downstream_changes;
 
   const artifacts = [];
   if (typeof result?.summary === 'string' && result.summary.length > 0) {

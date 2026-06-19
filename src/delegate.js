@@ -1,9 +1,10 @@
 import { readdir, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   DEFAULT_DEPTH,
   DEFAULT_TIMEOUT_MS,
+  DEFAULT_LOG_DIR,
   WRITE_TOOLS,
   readPositiveInt
 } from './config.js';
@@ -12,7 +13,7 @@ import { validateDelegateInput } from './contract.js';
 import { enterCallContext } from './context.js';
 import { captureChangeState, computeFilesChanged } from './change-detect.js';
 import { badInput, refused, resultError } from './errors.js';
-import { createRunLog, appendRunLog } from './log.js';
+import { createRunLog, appendRunLog, readRunLogRecords } from './log.js';
 import { spawnFile } from './process.js';
 import {
   buildClaudeInvocation, buildClaudeEnv, compactArgv
@@ -235,6 +236,12 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
   const changed = await computeFilesChanged(root, before);
   const result = buildDelegateResult({ spawnResult, changed, logPath });
   result.run_id = runId;
+  // Accumulate peer_changes from any bridge a2a calls the worker made (do-mode
+  // chains only). null when no bridge calls happened or mode is ask.
+  if (mode === 'do') {
+    const downstream = await aggregateDownstreamChanges(root, env, runId);
+    if (downstream !== null) result.downstream_changes = downstream;
+  }
   await appendRunLog(logPath, {
     id: runId,
     parent_run_id: parentRunId,
@@ -265,8 +272,8 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
 // Env for the framework peer bridge MCP server. The bridge inherits the worker's
 // (claude's) environment for system PATH etc.; here we set only the
 // security-relevant overrides:
-//   - AGENT_MESH_MODE='ask'  → v1 ask-only onward (overrides the worker's mode so
-//     the bridge cannot launder a `do` worker into a `do` peer call).
+//   - AGENT_MESH_MODE=<parent-mode>  → threads the actual parent mode so the bridge
+//     can enforce ask→do laundering prevention (readonly_parent) while allowing do→do.
 //   - AGENT_MESH_PATH/DEPTH  → the THREADED call context (from entered.env) so
 //     peers the bridge spawns get correct cycle/depth detection.
 //   - framework config pass-through (mesh root/ceiling, claude binary, timeout,
@@ -374,4 +381,32 @@ function summarizeSpawn(spawnResult) {
 function tail(text, limit = 4000) {
   if (text.length <= limit) return text;
   return text.slice(text.length - limit);
+}
+
+/**
+ * After the worker finishes, read the bridge's a2a log records that were
+ * written during this run (identified by parent_run_id === runId) and
+ * aggregate all peer_changes arrays into a deduplicated flat list.
+ *
+ * Returns null when no bridge calls happened (ask chains, no bridge, etc.).
+ * Returns [] when bridge calls happened but no files were changed.
+ */
+async function aggregateDownstreamChanges(root, env, runId) {
+  const logDir = resolve(root, (env && env.AGENT_MESH_LOG_DIR) || DEFAULT_LOG_DIR);
+  let files;
+  try { files = await readdir(logDir); } catch { return null; }
+  const a2aFiles = files.filter((f) => f.startsWith('a2a-') && f.endsWith('.jsonl')).sort();
+  const changes = [];
+  for (const f of a2aFiles) {
+    const records = await readRunLogRecords(join(logDir, f));
+    for (const r of records) {
+      if (r.parent_run_id !== runId || r.state !== 'done') continue;
+      changes.push({
+        peer: r.to,
+        files_changed: r.peer_changes ?? [],
+        best_effort: r.best_effort ?? false
+      });
+    }
+  }
+  return changes.length > 0 ? changes : null;
 }

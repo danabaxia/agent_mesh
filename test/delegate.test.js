@@ -795,3 +795,38 @@ test('delegateTask: non-envelope (text) output → usage null, summary is the te
   const log = recs.find((r) => r.id === result.run_id && r.state === 'done');
   assert.equal(log.usage, null);                    // run record records null, not absent
 });
+
+test('delegateTask do mode: aggregateDownstreamChanges reads a2a log records by parent_run_id', async () => {
+  // B3: hermetic test for the aggregateDownstreamChanges read path.
+  // The fakeClaude seeds the a2a log with a synthetic done record whose
+  // parent_run_id matches the outer run's AGENT_MESH_RUN_ID, then
+  // delegateTask must surface it as result.downstream_changes.
+  const root = await createGitRepo();
+  const fakeClaude = await createFakeClaude(`
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const date = new Date().toISOString().slice(0, 10);
+    const logDir = path.join(process.cwd(), '.agent-mesh', 'logs');
+    await fs.mkdir(logDir, { recursive: true });
+    const logFile = path.join(logDir, 'a2a-' + date + '.jsonl');
+    const record = JSON.stringify({
+      kind: 'a2a', to: 'lib-peer', state: 'done',
+      parent_run_id: process.env.AGENT_MESH_RUN_ID,
+      peer_changes: ['src/foo.ts', 'src/bar.ts'],
+      best_effort: false
+    });
+    await fs.appendFile(logFile, record + '\\n', 'utf8');
+    console.log('ok');
+  `);
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_CLAUDE: fakeClaude, AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'do', task: 'change peer files' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.deepEqual(result.downstream_changes, [
+    { peer: 'lib-peer', files_changed: ['src/foo.ts', 'src/bar.ts'], best_effort: false }
+  ]);
+});
