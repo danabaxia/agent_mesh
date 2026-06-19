@@ -1,0 +1,12 @@
+{
+  "jobs": [
+    {
+      "id": "gh-activity-poll",
+      "name": "GitHub activity poll",
+      "kind": "builtin",
+      "builtin": "gh-activity-poll",
+      "cadence": { "kind": "every", "minutes": 5 },
+      "enabled": true
+    }
+  ]
+}

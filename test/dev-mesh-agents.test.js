@@ -16,7 +16,7 @@ import { validateManifest } from '../src/builder/manifest.js';
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
 const srcMesh = join(repoRoot, 'dev-mesh');
 
-const ROLES = ['maintainer', 'analyst', 'triager', 'coder', 'tester', 'reviewer', 'curator'];
+const ROLES = ['maintainer', 'analyst', 'triager', 'coder', 'tester', 'reviewer', 'curator', 'orchestrator'];
 
 test('committed mesh.json is a valid manifest with the right roles/modes/peers', () => {
   const manifest = JSON.parse(readFileSync(join(srcMesh, 'mesh.json'), 'utf8'));
@@ -28,6 +28,8 @@ test('committed mesh.json is a valid manifest with the right roles/modes/peers',
   assert.deepEqual(byName('coder').enabledModes, ['ask', 'do']);
   assert.deepEqual(byName('curator').enabledModes, ['ask', 'do']);
   assert.deepEqual(byName('tester').enabledModes, ['ask']);   // reclassified ask (spec §4.1)
+  assert.deepEqual(byName('orchestrator').enabledModes, ['ask']); // ops/observability, ask-only
+  assert.deepEqual(byName('orchestrator').peers, []);             // standalone: owns the gh-activity-poll builtin, no onward delegation
   // peering
   assert.deepEqual(byName('maintainer').peers.sort(), ['analyst', 'coder', 'curator', 'reviewer', 'triager']);
   assert.deepEqual(byName('coder').peers, ['tester']);
