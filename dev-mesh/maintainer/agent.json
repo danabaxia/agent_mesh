@@ -1,7 +1,7 @@
 {
   "protocolVersion": "1.0",
   "name": "maintainer",
-  "description": "Dev-mesh dispatcher: watches the backlog, claims approved tasks, and routes work to the right specialist peer. Observes and delegates; never writes code or merges.",
+  "description": "Dev-mesh dispatcher: watches the backlog, claims approved tasks, and routes work to the right specialist peer, including scheduled security sweeps. Observes and delegates; never writes code or merges.",
   "version": "0.1.0",
   "defaultInputModes": [
     "text/plain"

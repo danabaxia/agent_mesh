@@ -8,7 +8,7 @@
       "card": "agent.json",
       "served": true,
       "enabledModes": ["ask"],
-      "peers": ["analyst", "triager", "coder", "reviewer", "curator"]
+      "peers": ["analyst", "triager", "coder", "reviewer", "curator", "security"]
     },
     {
       "name": "analyst",
@@ -61,6 +61,14 @@
     {
       "name": "orchestrator",
       "root": "./orchestrator",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask"],
+      "peers": []
+    },
+    {
+      "name": "security",
+      "root": "./security",
       "card": "agent.json",
       "served": true,
       "enabledModes": ["ask"],
