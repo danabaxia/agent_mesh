@@ -584,6 +584,17 @@
       "ts": "2026-06-19"
     }
   },
+  "agent-prompt-no-user-refs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "User-controlled refs must not be in agent prompt text — only YAML env:/run:; agent pushes HEAD, YAML resolves the ref.",
+    "l1": "PR #160: (1) `${{ inputs.task }}` in run: — dispatch caller controls shell; (2) embedding literal `$PR_BRANCH` in prompt text — git allows `$(cmd)` in branch names, so model-echoed refs are injection. Fix: attacker-controlled data lives ONLY in YAML env:/run:. For repair-loop agents: YAML pre-step checks out branch; agent edits/commits; YAML post-step pushes `git push origin HEAD:$PR_BRANCH` — agent never sees the ref. Extends gh-actions-ref-injection and bash-tool-simple-expansion-hoist.",
+    "value": "Two injection surfaces closed by PR #160 — same root cause:\n\n(1) workflow_dispatch inputs in run: (`${{ inputs.task }}` inline → shell injection). Fix: `env: TASK: ${{ inputs.task }}` then `\"$TASK\"` in shell. Applies to inputs.* and vars.* used as positional args (`--model ${{ vars.X }}` is unsafe; `--model \"$VAR\"` after env: is safe). Extends gh-actions-ref-injection (which covers head.ref from PRs — same fix, different source).\n\n(2) Branch refs in agent prompt text. When simple_expansion blocks `$PR_BRANCH` in Bash tool calls, the naive fix is embedding the literal branch name in the agent prompt. This is CWE-78: git allows `$(cmd)` in branch names, so a crafted ref in prompt text → model echoes it to shell → command injection. Fix: the ref NEVER appears in prompt text.\n\nCanonical pattern for repair-loop agents:\n1. YAML run: pre-step — `git checkout \"$PR_BRANCH\"` (safe: shell var, not template interpolation); `git merge origin/main`.\n2. Drive Coder step — agent receives context (conflict files, PR description), edits/resolves, commits. Agent sees no ref string.\n3. YAML run: post-step — `git push origin HEAD:\"$PR_BRANCH\"` (shell var only).\n\nAgent never touches the ref — it pushes HEAD. The YAML step holds the only string copy of the branch name.\n\nRule: attacker-controlled data (user inputs, branch names, PR titles) must never transit: agent prompt → model output → shell. It must live exclusively in YAML env:/run:. Any workaround that embeds it in prompt text to bypass simple_expansion creates a prompt-injection-to-shell path.\n\nRelated: gh-actions-ref-injection (head.ref in run:), bash-tool-simple-expansion-hoist (hoist git ops to YAML env:). Provenance: PR #160 (2026-06-19).",
+    "provenance": {
+      "source": "PR #160: fix(ci): close mesh-detected workflow holes — shell injection + broken repair loops",
+      "ts": "2026-06-19"
+    }
+  },
   "sandbox-host-cli-parity": {
     "status": "active",
     "valid_to": null,
