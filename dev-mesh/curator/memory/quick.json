@@ -572,5 +572,16 @@
       "source": "PR #138: fix(dashboard): daily/refresh derives DEV_SOCIETY_REPO from git remote",
       "ts": "2026-06-19"
     }
+  },
+  "issue-gate-pr-merge": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Auto-merge reads only PR fields — stamp blocked-by-issue via cron sweep when closing issue is blocked/rejected.",
+    "l1": "isAutoMergeable checks only PR-level fields — so a PR closing a blocked/rejected issue can satisfy CLEAN+APPROVED and auto-merge. Issue labels gated work-start, not merge. Fix (PR #156): a cron sweep ('2,17,32,47 * * * *', 5 min before automerge ticks) resolves closingIssuesReferences per open PR, idempotently stamps/removes blocked-by-issue. isAutoMergeable now includes blocked-by-issue as a hold label. Safety: sweep owns ONLY its label — never touches human-set do-not-merge/hold/wip. PRs with no linked issue are ungated.",
+    "value": "Three-component pattern for coupling PR auto-merge to linked-issue state:\n\n(1) Pure gate fn shouldHoldForIssues(closingIssues): check each closingIssuesReference's labels against a blocking set (blocked/rejected/wontfix/duplicate). Returns true if any match. No I/O — pure predicate, unit-testable and extensible without touching the merge path.\n\n(2) Cron sweep (dev-mesh-issue-gate.yml, cron: '2,17,32,47 * * * *' — offset 5 min before automerge's :00/:15/:30/:45 ticks): for each open same-repo PR, call gateDecision → add/remove/noop for blocked-by-issue. Idempotent. Gated by AUTOMERGE_ENABLED (same kill switch as the merge sweep). Least-privilege: pull-requests:write + issues:read + contents:read only.\n\n(3) Hold-label rule in isAutoMergeable extended to include blocked-by-issue — the one new entry in the hold list. No merge-decision logic change beyond this.\n\nSafety invariants:\n- Sweep owns ONLY blocked-by-issue — never touches human-set labels (do-not-merge, hold, wip). If a human removes blocked-by-issue, the next sweep re-stamps it (source of truth is the linked issue state, not the label).\n- PRs with no closingIssuesReferences are ungated — chore/docs/memory PRs merge normally.\n- Manual gh pr merge bypasses label checks (documented trade-off; hard enforcement needs a branch-protection required check — out of scope).\n\nTest surface: test/issue-gate.test.js (pure shouldHoldForIssues/gateDecision), test/issue-gate-sweep.test.js (sweep orchestration), test/issue-gate-workflow.test.js (YAML structure lint), + blocked-by-issue case in test/automerge-eligibility.test.js.\n\nProvenance: PR #156 (2026-06-19).",
+    "provenance": {
+      "source": "PR #156: feat(automerge): gate PR merge on linked-issue state",
+      "ts": "2026-06-19"
+    }
   }
 }
