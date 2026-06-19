@@ -20,6 +20,7 @@ import {
 } from './delegate-invocation.js';
 import { recordEvent } from './session-provenance.js';
 import { readManifest, writeManifest, upsertSession } from './session-manifest.js';
+import { readRunnerConfig, parseScriptRunnerResult } from './runner.js';
 
 export { resolveMeshRoot } from './delegate-invocation.js';
 
@@ -119,6 +120,15 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
     if (blocked) return refused(blocked.reason, blocked.message);
   }
 
+  // Runner selection: read x-agentmesh.runner.command from agent.json.
+  // Non-Claude (script) runners are ask-only in v1 — the same ask-only-first
+  // pattern established in onward delegation. Do-capable script runners require
+  // an OS sandbox to enforce path-guard; that is deferred to v2.
+  const runnerConfig = await readRunnerConfig(root);
+  if (runnerConfig && mode === 'do') {
+    return refused('mode_disabled', 'Script runners are ask-only in v1; do-capable runners require OS sandbox — deferred to v2.');
+  }
+
   // Grouped per-date log file + a unique run id (start + final share it). The
   // log dir is excluded from change detection, so these records never affect
   // files_changed / preexisting_dirty.
@@ -173,23 +183,54 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
   let invocation;
   try {
     const claudeEnv = buildClaudeEnv({ root, env, mode, callEnv: entered.env, runId });
-    invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, session: taggedSession });
-    spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
-      cwd: root,
-      env: claudeEnv,
-      timeoutMs,
-      detached: true
-    });
-    // Auto-updater race: npm's claude binary is briefly ABSENT while the
-    // updater swaps the package (observed live 2026-06-10 AND AGAIN
-    // 2026-06-12T02:42Z — a single 1.5s retry was beaten by the second
-    // window). Ride it out with a backoff SCHEDULE: base, x2, x4 (default
-    // 1.5s+3s+6s ≈ 10.5s of cover); a genuinely missing binary still fails.
-    {
-      const base = readPositiveInt(env.AGENT_MESH_SPAWN_RETRY_MS, 1500);
-      const attempts = readPositiveInt(env.AGENT_MESH_SPAWN_RETRIES, 3);
-      for (let i = 0; i < attempts && spawnResult.error && /ENOENT/i.test(spawnResult.error.message || ''); i++) {
-        await new Promise((r) => setTimeout(r, base * 2 ** i));
+    if (runnerConfig) {
+      // ScriptRunner: the command from agent.json x-agentmesh.runner.command.
+      // Framework owns the env (anti-spoof, AGENT_MESH_ROOT, etc.) and
+      // timeout/kill; the script owns only its execution core.
+      // Task delivered as JSON on stdin: { mode, task, root }.
+      invocation = { args: [runnerConfig.command] };
+      spawnResult = await spawnFile(runnerConfig.command, [], {
+        cwd: root,
+        env: claudeEnv,
+        timeoutMs,
+        detached: true,
+        stdinData: JSON.stringify({ mode, task, root })
+      });
+    } else {
+      // ClaudeRunner (default): spawns `claude -p` with the standard invocation.
+      invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, session: taggedSession });
+      spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
+        cwd: root,
+        env: claudeEnv,
+        timeoutMs,
+        detached: true
+      });
+      // Auto-updater race: npm's claude binary is briefly ABSENT while the
+      // updater swaps the package (observed live 2026-06-10 AND AGAIN
+      // 2026-06-12T02:42Z — a single 1.5s retry was beaten by the second
+      // window). Ride it out with a backoff SCHEDULE: base, x2, x4 (default
+      // 1.5s+3s+6s ≈ 10.5s of cover); a genuinely missing binary still fails.
+      {
+        const base = readPositiveInt(env.AGENT_MESH_SPAWN_RETRY_MS, 1500);
+        const attempts = readPositiveInt(env.AGENT_MESH_SPAWN_RETRIES, 3);
+        for (let i = 0; i < attempts && spawnResult.error && /ENOENT/i.test(spawnResult.error.message || ''); i++) {
+          await new Promise((r) => setTimeout(r, base * 2 ** i));
+          spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
+            cwd: root,
+            env: claudeEnv,
+            timeoutMs,
+            detached: true
+          });
+        }
+      }
+      // Resume-load self-heal (§3.3/§8): a deleted/over-compacted/broken transcript
+      // makes `--resume <id>` fail; retry once fresh with `--session-id <id>` so a
+      // stale id never strands the caller. The deterministic id is unchanged, so the
+      // next turn resumes the freshly-created transcript.
+      const RESUME_FAIL = /no conversation|session not found|could not resume|--resume/i;
+      if (taggedSession && taggedSession.resume && spawnResult.code !== 0 && RESUME_FAIL.test(spawnResult.stderr || '')) {
+        invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv,
+          session: { id: taggedSession.id, resume: false } });
         spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
           cwd: root,
           env: claudeEnv,
@@ -197,21 +238,6 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
           detached: true
         });
       }
-    }
-    // Resume-load self-heal (§3.3/§8): a deleted/over-compacted/broken transcript
-    // makes `--resume <id>` fail; retry once fresh with `--session-id <id>` so a
-    // stale id never strands the caller. The deterministic id is unchanged, so the
-    // next turn resumes the freshly-created transcript.
-    const RESUME_FAIL = /no conversation|session not found|could not resume|--resume/i;
-    if (taggedSession && taggedSession.resume && spawnResult.code !== 0 && RESUME_FAIL.test(spawnResult.stderr || '')) {
-      invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv,
-        session: { id: taggedSession.id, resume: false } });
-      spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
-        cwd: root,
-        env: claudeEnv,
-        timeoutMs,
-        detached: true
-      });
     }
   } catch (error) {
     const result = resultError('spawn_failed', error.message);
@@ -234,7 +260,7 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
   }
 
   const changed = await computeFilesChanged(root, before);
-  const result = buildDelegateResult({ spawnResult, changed, logPath });
+  const result = buildDelegateResult({ spawnResult, changed, logPath, fromScript: Boolean(runnerConfig) });
   result.run_id = runId;
   // Accumulate peer_changes from any bridge a2a calls the worker made (do-mode
   // chains only). null when no bridge calls happened or mode is ask.
@@ -320,11 +346,14 @@ export function parseResultEnvelope(stdout) {
   };
 }
 
-function buildDelegateResult({ spawnResult, changed, logPath }) {
-  // Parse the JSON result envelope (--output-format json). On a timeout the
-  // output is truncated, so prefer summarizeSpawn's "Timed out…" framing there;
-  // otherwise use the envelope's `.result` when present, else the text fallback.
-  const envelope = parseResultEnvelope(spawnResult.stdout);
+function buildDelegateResult({ spawnResult, changed, logPath, fromScript = false }) {
+  // Parse the result: ScriptRunner expects { summary, usage? } JSON; ClaudeRunner
+  // expects the --output-format json envelope { result, usage, ... }. On a
+  // timeout the output is truncated, so prefer summarizeSpawn's "Timed out…"
+  // framing; otherwise use the envelope summary when present, else the text fallback.
+  const envelope = fromScript
+    ? parseScriptRunnerResult(spawnResult.stdout)
+    : parseResultEnvelope(spawnResult.stdout);
   const summary = !spawnResult.timedOut && envelope && envelope.summary != null
     ? tail(envelope.summary)
     : summarizeSpawn(spawnResult);

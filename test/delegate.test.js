@@ -796,6 +796,136 @@ test('delegateTask: non-envelope (text) output → usage null, summary is the te
   assert.equal(log.usage, null);                    // run record records null, not absent
 });
 
+// ── ScriptRunner (pluggable Runner SPI, issue #142) ───────────────────────────
+
+test('delegateTask: ScriptRunner ask mode — script receives task JSON on stdin, { summary } parsed from stdout', async () => {
+  const root = await createGitRepo();
+  // A script that reads stdin, echoes back the parsed task text in { summary }
+  const fakeScript = await createFakeClaude(`
+    let raw = '';
+    process.stdin.setEncoding('utf8');
+    for await (const chunk of process.stdin) raw += chunk;
+    const payload = JSON.parse(raw);
+    // Echo the received task as the summary so the test can verify stdin delivery
+    process.stdout.write(JSON.stringify({ summary: 'echo:' + payload.task }));
+  `);
+  await writeFile(join(root, 'agent.json'), JSON.stringify({
+    name: 'script-peer',
+    'x-agentmesh': { runner: { command: fakeScript } }
+  }), 'utf8');
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'hello world' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.summary, 'echo:hello world');
+  assert.equal(result.usage, undefined); // no usage field in the script output
+});
+
+test('delegateTask: ScriptRunner ask mode — { summary, usage } from stdout captured', async () => {
+  const root = await createGitRepo();
+  const fakeScript = await createFakeClaude(`
+    process.stdout.write(JSON.stringify({
+      summary: 'script finished',
+      usage: { input_tokens: 10, output_tokens: 5, total_cost_usd: 0.002, num_turns: 1 }
+    }));
+  `);
+  await writeFile(join(root, 'agent.json'), JSON.stringify({
+    'x-agentmesh': { runner: { command: fakeScript } }
+  }), 'utf8');
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'run task' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.summary, 'script finished');
+  assert.equal(result.usage.input_tokens, 10);
+  assert.equal(result.usage.output_tokens, 5);
+  assert.equal(result.usage.total_cost_usd, 0.002);
+  assert.equal(result.usage.num_turns, 1);
+});
+
+test('delegateTask: ScriptRunner do mode → refused with mode_disabled', async () => {
+  const root = await createGitRepo();
+  const fakeScript = await createFakeClaude(`process.stdout.write(JSON.stringify({ summary: 'ok' }));`);
+  await writeFile(join(root, 'agent.json'), JSON.stringify({
+    'x-agentmesh': { runner: { command: fakeScript } }
+  }), 'utf8');
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'do', task: 'write a file' }
+  });
+
+  assert.equal(result.status, 'refused');
+  assert.equal(result.reason, 'mode_disabled');
+});
+
+test('delegateTask: ScriptRunner plain-text stdout → summary is raw text (fallback)', async () => {
+  const root = await createGitRepo();
+  const fakeScript = await createFakeClaude(`process.stdout.write('plain text result');`);
+  await writeFile(join(root, 'agent.json'), JSON.stringify({
+    'x-agentmesh': { runner: { command: fakeScript } }
+  }), 'utf8');
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'run' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.summary, 'plain text result');
+  assert.equal(result.usage, undefined);
+});
+
+test('delegateTask: ClaudeRunner unaffected by ScriptRunner — no agent.json uses claude', async () => {
+  // Verify that agents without agent.json still use the ClaudeRunner (default behavior).
+  const root = await createGitRepo();
+  const fakeClaude = await createFakeClaude(`console.log('claude output');`);
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_CLAUDE: fakeClaude, AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'do something' }
+  });
+  assert.equal(result.status, 'done');
+  assert.equal(result.summary, 'claude output');
+});
+
+test('delegateTask: ScriptRunner inherits framework env (AGENT_MESH_ROOT, AGENT_MESH_MODE)', async () => {
+  const root = await createGitRepo();
+  const captureEnv = join(root, 'env-capture.json');
+  const fakeScript = await createFakeClaude(`
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(${JSON.stringify(captureEnv)}, JSON.stringify({
+      root: process.env.AGENT_MESH_ROOT,
+      mode: process.env.AGENT_MESH_MODE
+    }));
+    process.stdout.write(JSON.stringify({ summary: 'env captured' }));
+  `);
+  await writeFile(join(root, 'agent.json'), JSON.stringify({
+    'x-agentmesh': { runner: { command: fakeScript } }
+  }), 'utf8');
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'check env' }
+  });
+
+  assert.equal(result.status, 'done');
+  const captured = JSON.parse(await readFile(captureEnv, 'utf8'));
+  assert.equal(captured.root, root);
+  assert.equal(captured.mode, 'ask');
+});
+
 test('delegateTask do mode: aggregateDownstreamChanges reads a2a log records by parent_run_id', async () => {
   // B3: hermetic test for the aggregateDownstreamChanges read path.
   // The fakeClaude seeds the a2a log with a synthetic done record whose
