@@ -13,7 +13,7 @@ on:
 
 # Phase 0: the claude-code-action agent (full Claude Code tools) claims, implements
 # on a branch, runs the suite, and opens the PR using the job's github_token. It
-# never merges — a human holds the merge gate (auto-merge off).
+# never self-merges — agents leave merging to dev-mesh-automerge (gated, default-OFF).
 permissions:
   contents: write
   issues: write
@@ -85,7 +85,7 @@ jobs:
 
             When green: commit, push the branch, and **open a pull request** that links the
             Issue (`Closes #<number>`), then move the label `in-progress → pr:in-review`.
-            Do NOT merge — a human holds the merge gate (auto-merge is off). CI (`ci.yml`)
+            Do NOT merge — agents never self-merge; dev-mesh-automerge handles merging when enabled. CI (`ci.yml`)
             on your PR is the authoritative test gate.
       - name: Verify the agent worked + capture usage
         if: always()
