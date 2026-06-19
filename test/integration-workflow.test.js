@@ -115,7 +115,7 @@ test('integration workflow: l0-json producer uploads test-results before exit', 
   assert.match(wf, /l0-json:/);
   assert.match(wf, /run-all-tests\.mjs --json test-results\.json/);
   // the upload must survive a red suite (nonzero exit) → if: always()
-  assert.match(wf, /name: l0-json-results[\s\S]*?if: always\(\)/);
+  assert.match(wf, /if: always\(\)[\s\S]{0,200}?name: l0-json-results/);
 });
 
 test('integration workflow: mir job aggregates, with permissions and schedule-gated mutation', () => {
