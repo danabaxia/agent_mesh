@@ -539,5 +539,16 @@
       "source": "PR #132: feat(dashboard): Schedules panel — Run-now button + per-task descriptions",
       "ts": "2026-06-19"
     }
+  },
+  "port-scoped-pidfile-single-instance": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Single-instance CLI server: port-scoped pidfile, SIGTERM→grace→SIGKILL on relaunch, fail-open I/O, --no-replace opt-out.",
+    "l1": "PR #136: dashboard processes piled up on restart — pkill-by-name misses lingering instances sharing the same port. Fix: `<os.tmpdir()>/agent-mesh-dashboard-<port>.pid` records the owner PID. On relaunch: read pidfile → SIGTERM → poll ≤3 s → SIGKILL if still alive → write new pidfile → bind. All I/O is best-effort; a pidfile error never blocks launch. `--no-replace` lets scripts refuse an already-running instance. Remove pidfile on clean exit.",
+    "value": "Apply to any long-running CLI server that users repeatedly restart (dashboard, dev-server, proxy).\n\n(1) Pidfile location: `<os.tmpdir()>/<name>-<port>.pid`. Port-scoped so two processes on different ports coexist safely.\n\n(2) Reap sequence on launch: read pidfile → check `isAlive(pid)` → SIGTERM → poll every 100 ms for ≤3 s → SIGKILL if process still alive → write new pidfile → bind.\n\n(3) Never kill an untracked holder: only kill a PID recorded in this tool's own pidfile. An unrecorded port-holder surfaces as `EADDRINUSE` — actionable error, not a silent kill.\n\n(4) Fail-open I/O: wrap every pidfile read/write and signal send in try/catch. A missing, stale, or unwritable pidfile must never prevent launch — only `--no-replace` may refuse.\n\n(5) `--no-replace` flag: read pidfile, if a live PID exists → exit 1 with a message naming the PID and port. Use in scripted/CI contexts where a double-launch is always an error.\n\n(6) Remove pidfile on clean exit and uncaught fatal (process.on('exit', …)).\n\n(7) Inject I/O and signal deps for hermetic tests — mock the process table to exercise stale/graceful/SIGKILL/best-effort branches without spawning real processes. PR #136 ships 8 tests in test/dashboard-single-instance.test.js covering all branches. Implementation: src/dashboard/single-instance.js. Provenance: PR #136 (2026-06-19).",
+    "provenance": {
+      "source": "PR #136: feat(dashboard): single-instance — reap prior instance on launch",
+      "ts": "2026-06-19"
+    }
   }
 }
