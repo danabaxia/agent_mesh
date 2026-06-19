@@ -528,5 +528,16 @@
       "source": "PR #130: fix(memory-automerge): deterministic in-line union to drain the memory:promote backlog",
       "ts": "2026-06-19"
     }
+  },
+  "run-now-state-rearm": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Run-now: re-arm nextRunAt=now in state.json; daemon tick executes ≤30s — no new execution surface in the UI.",
+    "l1": "PR #132: ▶ Run button calls POST /api/schedules/run → validates (manifest + isSafeArtifactId + enabled) → markJobDue sets nextRunAt=now (pure fn, clones state). Daemon's 30s tick finds job due and runs it. Same mechanism the heartbeat uses to re-arm overdue jobs. UI stays read-only — writes only a 'due' marker (data, not execution). Disabled → 409; unknown → 404. Path safety: writes only the validated agent's schedule-state.json (isPathInsideRoot). describeJob fallback: description → prompt first line → ''.",
+    "value": "Pattern: when a UI needs to trigger a scheduled job on demand, do NOT add execution capability to the UI layer. Instead:\n\n(1) API endpoint POST /api/schedules/run {agent, id}: validate (a) agent matches manifest; (b) id is a real job in agent's schedule.json; (c) job is enabled (else 409); (d) agentRoot passes isPathInsideRoot. Write only to <agentRoot>/.agent-mesh/schedule-state.json.\n\n(2) Pure helper markJobDue(state, id, now): returns shallow-cloned state with nextRunAt=now.toISOString(), running:false. Creates the entry if absent. No I/O — the route does the I/O.\n\n(3) Response 202 {queued:true, runsWithinMs:30000}. UI shows transient 'queued…'; status updates on next poll. Errors: 409 disabled, 404 unknown, 500 write failure.\n\n(4) Daemon's tick (≤30s) finds job due (enabled && !running && nextRunAt ≤ now) and executes. Dashboard never runs anything itself — preserves the daemon's serialization, path-guard, and auth model.\n\n(5) Idempotent: clicking twice is harmless — both set nextRunAt=now; daemon's one-job-at-a-time lock prevents double-run.\n\n(6) Optional: if dashboard-owned scheduler present (--allow-shell), also call scheduler.runNow for immediacy — but the re-arm is the universal mechanism in daemon-owned setup.\n\n(7) describeJob fallback: description field (trimmed) → first non-empty line of prompt (length-bounded) → ''. Include in list-all so /api/schedules carries the description.\n\nGeneralizes: any API that triggers daemon-owned work should write a data marker; the daemon reads and executes — no execution surfaces in the UI. Provenance: PR #132 (2026-06-19).",
+    "provenance": {
+      "source": "PR #132: feat(dashboard): Schedules panel — Run-now button + per-task descriptions",
+      "ts": "2026-06-19"
+    }
   }
 }
