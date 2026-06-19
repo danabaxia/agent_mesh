@@ -1,0 +1,52 @@
+# Dev-mesh · issue-gate — a PR whose LINKED issue is blocked/rejected/wontfix/duplicate
+# must not auto-merge. This scheduled sweep resolves each open PR's closingIssuesReferences
+# and stamps a dedicated `blocked-by-issue` hold label (honored by isAutoMergeable) when
+# the issue is in a blocking state, removing it when it isn't. It owns ONLY that label —
+# never a human-set do-not-merge/hold/wip. PRs with no linked issue are left alone.
+#
+# Default-OFF: no-ops unless repo variable AUTOMERGE_ENABLED == 'true' (same family as
+# dev-mesh-automerge). Offset to run ~5 min BEFORE the automerge sweep so the hold label
+# is fresh when automerge evaluates. Decision logic is pure: src/automerge/issue-gate.js.
+# Spec: docs/superpowers/specs/2026-06-19-issue-gates-pr-merge-design.md
+name: dev-mesh-issue-gate
+
+on:
+  schedule:
+    - cron: '2,17,32,47 * * * *' # every 15 min, 5 min before dev-mesh-automerge
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Decide holds without editing labels'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: dev-mesh-issue-gate
+  cancel-in-progress: false
+
+jobs:
+  issue-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Ensure the blocked-by-issue label exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create blocked-by-issue \
+            --repo "$GITHUB_REPOSITORY" \
+            --color B60205 \
+            --description "Linked issue is blocked/rejected — auto-merge held" 2>/dev/null || true
+      - name: sweep
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOMERGE_ENABLED: ${{ vars.AUTOMERGE_ENABLED }}
+        run: node scripts/issue-gate-sweep.mjs ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
