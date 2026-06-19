@@ -52,6 +52,7 @@ import { fetchRemoteImage, defaultPinnedFetch } from './img-proxy.js';
 import { createScheduler } from '../schedule/scheduler.js';
 import { validateCadence, describeCadence } from '../schedule/schedule-cadence.js';
 import { listAllSchedules } from '../schedule/list-all.js';
+import { markJobDue } from '../schedule/run-now.js';
 import { createRotationManager } from './rotation.js';
 import { runDigest } from '../digest.js';
 import { buildResumeCommand } from './resume-command.js';
@@ -740,6 +741,38 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     const { jobs } = await listAllSchedules({ meshRoot });
     const schedulerOwner = dashboardOwnsScheduler ? 'dashboard' : (jobs.length ? 'daemon' : 'none');
     sendJson(res, 200, { schedulerOwner, jobs });
+    return;
+  }
+
+  // POST /api/schedules/run { agent, id } → 202 re-arms the job's nextRunAt to
+  // now so the daemon's next tick (≤30 s) picks it up. Does NOT require a
+  // dashboard-side scheduler. Validates: manifest entry (404), path safety
+  // (403), job in defs (404), job enabled (409). Writes only schedule-state.json.
+  if (pathname === '/api/schedules/run' && req.method === 'POST') {
+    let body;
+    try { body = JSON.parse((await readBodyCapped(req, 4096)) || '{}'); }
+    catch (err) { sendJson(res, err.tooLarge ? 413 : 400, { ok: false, error: { code: 'bad_input' } }); return; }
+    const name = String(body.agent || '');
+    const id = String(body.id || '');
+    if (!isSafeArtifactId(id)) { sendJson(res, 400, { ok: false, error: { code: 'bad_id' } }); return; }
+    const snapshot = await loadDashboardSnapshot(meshRoot);
+    const entry = snapshot?.manifest?.agents?.find((a) => a.name === name);
+    if (!entry) { send404(res); return; }
+    const agentRoot = resolve(join(meshRoot, entry.root));
+    const inside = await isPathInsideRoot(meshRoot, agentRoot).catch(() => false);
+    if (!inside) { send403(res, 'Agent root escapes mesh boundary'); return; }
+    const defs = await readScheduleFile(agentRoot);
+    const job = defs.jobs.find((j) => j && j.id === id);
+    if (!job) { send404(res); return; }
+    if (!job.enabled) { sendJson(res, 409, { ok: false, error: { code: 'disabled', message: 'enable the job to run it' } }); return; }
+    const statePath = scheduleStatePath(agentRoot);
+    let state = {};
+    try { state = JSON.parse(await readFile(statePath, 'utf8')); } catch { state = {}; }
+    const next = markJobDue(state, id, new Date());
+    await mkdir(dirname(statePath), { recursive: true });
+    await writeFile(statePath, JSON.stringify(next, null, 2) + '\n', 'utf8');
+    if (scheduler) Promise.resolve(scheduler.runNow(name, id)).catch(() => { /* recorded in state */ });
+    sendJson(res, 202, { ok: true, queued: true, runsWithinMs: 30000 });
     return;
   }
 
