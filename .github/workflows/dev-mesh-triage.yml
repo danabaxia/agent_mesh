@@ -63,10 +63,9 @@ jobs:
               - flake       → re-kick (max 2×); never if the diff touches the failing area.
               - real_bug    → write a fix plan and hand it to the backlog/Coder flow.
             Post the label + reason + action as a comment. You do not edit code here.
-      - name: Verify the agent actually worked (green != healthy)
+      - name: Verify the agent worked + capture usage
         if: always()
-        env:
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        # --advisory-blocked: this is a light comment/ask role (no git/general
-        # shell granted), so probing a denied command is benign noise, not a failure.
-        run: node scripts/assert-run-healthy.mjs --advisory-blocked
+        uses: ./.github/actions/agent-postrun
+        with:
+          execution_file: ${{ steps.claude.outputs.execution_file }}
+          advisory_blocked: "true"
