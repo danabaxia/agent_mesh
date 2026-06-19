@@ -43,3 +43,26 @@ export function runsToActivityRecords(runs, { now = () => new Date() } = {}) {
   }
   return out;
 }
+
+const GH_FIELDS = 'databaseId,workflowName,status,conclusion,createdAt,updatedAt,event,headBranch';
+
+/**
+ * Impure: run `gh run list`, keep a recent window, transform, write the cache.
+ * `gh(args) → stdout`, `writeCache(records) → void`. Returns the builtin-runner
+ * result shape ({status:'ok'|'fail', output?/error?}).
+ */
+export async function pollGhActivity({ gh, repo, writeCache, now = () => new Date(), windowMin = Number(process.env.GH_ACTIVITY_WINDOW_MIN) || 120 }) {
+  try {
+    const runs = JSON.parse(await gh(['run', 'list', '--repo', repo, '--limit', '80', '--json', GH_FIELDS]));
+    const cut = now().getTime() - windowMin * 60_000;
+    const recent = (Array.isArray(runs) ? runs : []).filter((r) => {
+      const t = Date.parse(r.updatedAt || r.createdAt || '');
+      return Number.isFinite(t) && t >= cut;
+    });
+    const records = runsToActivityRecords(recent, { now });
+    await writeCache(records);
+    return { status: 'ok', output: `gh-activity: ${records.length} records from ${recent.length} runs` };
+  } catch (e) {
+    return { status: 'fail', error: e?.message || String(e) };
+  }
+}

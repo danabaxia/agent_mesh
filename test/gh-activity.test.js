@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { workflowToAgent, runsToActivityRecords } from '../src/dev-society/gh-activity.js';
+import { pollGhActivity } from '../src/dev-society/gh-activity.js';
 
 test('workflowToAgent maps dev-mesh workflows to role agents (catch-all → orchestrator)', () => {
   assert.equal(workflowToAgent('dev-mesh-review'), 'reviewer');
@@ -72,4 +73,20 @@ test('runsToActivityRecords: completed run with null updatedAt → finished_at f
   ], { now: () => fixed });
   assert.equal(recs.find((r) => r.id === 'gh-9').finished_at, '2026-06-18T12:34:56.000Z');
   assert.equal(recs.find((r) => r.id === 'gh-9:e').finished_at, '2026-06-18T12:34:56.000Z');
+});
+
+test('pollGhActivity: windows recent runs, transforms, writes the cache', async () => {
+  const nowMs = Date.parse('2026-06-18T12:00:00Z');
+  const gh = async (args) => {
+    assert.ok(args.includes('run') && args.includes('list'));
+    return JSON.stringify([
+      { databaseId: 1, workflowName: 'dev-mesh-review', status: 'in_progress', conclusion: null, createdAt: '2026-06-18T11:59:00Z', updatedAt: '2026-06-18T11:59:30Z' },
+      { databaseId: 2, workflowName: 'dev-mesh-triage', status: 'completed', conclusion: 'success', createdAt: '2026-06-18T05:00:00Z', updatedAt: '2026-06-18T05:10:00Z' }, // stale → dropped (>120m)
+    ]);
+  };
+  let written = null;
+  const r = await pollGhActivity({ gh, repo: 'o/r', writeCache: async (recs) => { written = recs; }, now: () => new Date(nowMs), windowMin: 120 });
+  assert.equal(r.status, 'ok');
+  assert.equal(written.length, 2);
+  assert.ok(written.every((rec) => rec.id.startsWith('gh-1')));
 });
