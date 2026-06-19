@@ -1,4 +1,4 @@
-# Dev-mesh · memory auto-merge — the ONE sanctioned auto-merge in the mesh.
+# Dev-mesh · memory auto-merge — the memory-only auto-merge path (quick.json, never code).
 # A SCHEDULED sweep (not pull_request): GitHub's recursion guard means a memory:promote
 # PR opened by the Curator with GITHUB_TOKEN would NOT fire a pull_request workflow, so a
 # `schedule` trigger is the robust way to pick them up. For each open same-repo
