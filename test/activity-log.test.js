@@ -18,8 +18,12 @@ test('recordActivity appends a parseable line to the dated file', async () => {
   assert.equal(ev.ts, '2026-06-19T12:00:00.000Z');
 });
 
-test('recordActivity is fail-safe (un-writable dir → no throw)', () => {
-  assert.doesNotThrow(() => recordActivity({ summary: 'x' }, { dir: '/proc/nonexistent/nope', now: () => new Date('2026-06-19T00:00:00Z') }));
+test('recordActivity is fail-safe (un-writable dir → no throw)', async () => {
+  // A FILE: a dir path *under* it is ENOTDIR on every OS — an instant, deterministic
+  // un-writable target (unlike /proc, whose procfs writes can BLOCK on Linux → hang).
+  const f = join(await tmp(), 'afile');
+  await writeFile(f, 'x');
+  assert.doesNotThrow(() => recordActivity({ summary: 'x' }, { dir: join(f, 'sub'), now: () => new Date('2026-06-19T00:00:00Z') }));
 });
 
 test('readActivity reads recent files newest-first, since-windowed, capped, skips malformed', async () => {
