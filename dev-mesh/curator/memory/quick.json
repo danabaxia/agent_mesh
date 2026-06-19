@@ -396,5 +396,60 @@
       "source": "PR #130: fix(memory-automerge): deterministic in-line union to drain the memory:promote backlog",
       "ts": "2026-06-19"
     }
+  },
+  "intake-poll-lifecycle": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Multi-step label pipelines stall without a poll — events fire once but never re-trigger intermediate state advances.",
+    "l1": "dev-mesh-intake.yml was event-only (issues/issue_comment) so once the Analyst moved an issue to 'discussing' or 'spec:draft', nothing re-triggered it — issues stalled mid-pipeline needing human nudges. PR #91 added a 30-min poll (cron: '5,35 * * * *') + workflow_dispatch. Poll mode advances up to 3 pre-approval issues/run (FIFO). Concurrency group must use github.event.issue.number||'poll' — event.issue.number is null in scheduled runs.",
+    "value": "For any GitHub Actions workflow that manages a multi-step label lifecycle (e.g. idea → discussing → spec:draft → spec:in-review):\n\n(1) Retain event triggers (issues, issue_comment) for immediate response on new activity.\n(2) Add a schedule (e.g. '5,35 * * * *') as the advancement pump for stuck intermediate states — the cron runs even when no new event fires.\n(3) Cap the batch size in poll mode (≤3 issues/run) to avoid timeouts on large backlogs.\n(4) Use github.event.issue.number||'poll' in the concurrency group key — event.issue.number is null in schedule/workflow_dispatch runs and a null-derived group key produces unexpected concurrency behavior.\n(5) In poll mode, list open issues in pre-approval states, sort FIFO by number, and advance each by one honest step.\n\nDistinct from event-driven-polling-backstop (which guards against missed webhook delivery) — here the issue is that no re-triggering event exists at all after the initial state change; the schedule is the only driver. Provenance: PR #91 (2026-06-18).",
+    "provenance": {
+      "source": "PR #91: feat(dev-mesh): intake polls to auto-advance the pre-approval pipeline",
+      "ts": "2026-06-18"
+    }
+  },
+  "integration-ref-trunk-staleness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "INTEGRATION_REF must track main under trunk-based dev — stale branch silently validates dead code for all nightly tiers.",
+    "l1": "PR #100: INTEGRATION_REF was pinned to v0.4-development, which was 188 commits behind main — the nightly L1/L2/L3/L4 tiers had been validating long-stale code for an extended period without any alert. Under trunk-based development, main is the single living line; retiring feature/development branches but leaving INTEGRATION_REF pointing at them means every nightly scorecard result (behavior evals, adversarial battery, perf benchmark) quietly tests the wrong code. The 188-commit gap was only discovered by inspection, not by a CI alert.",
+    "value": "Checklist when retiring a feature/development branch under trunk-based development:\n\n1. INTEGRATION_REF → main: update it in the same PR that retires the branch. A stale INTEGRATION_REF never causes an error or alert — all nightly jobs succeed but each validates dead code.\n2. Lint-encode the target ref: the integration-workflow.test.js assertion on `INTEGRATION_REF: main` (landed with PR #100) makes any future change a deliberate, test-gated act. Every CI pipeline variable naming a branch should have a hermetic lint equivalent.\n3. Align the schedule trigger: the nightly fires from the default branch (`main`) and checks out INTEGRATION_REF explicitly. If those diverge, a workflow_dispatch from main still tests the stale ref while the schedule appears to work. Verify both always name the same living line.\n4. Scope-check stale refs after ANY branch cleanup: grep all workflow files for retired branch refs immediately after the cleanup — INTEGRATION_REF is a silent misconfiguration until the next nightly run.\n\nProvenance: PR #100 (2026-06-18): chore(integration): retarget the nightly to main (trunk-based development).",
+    "provenance": {
+      "source": "PR #100: chore(integration): retarget the nightly to main (trunk-based development)",
+      "ts": "2026-06-18"
+    }
+  },
+  "new-agent-scaffold-completeness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New agents need 7 scaffold .gitkeeps alongside content — fresh checkout fails validate until doctor seeds them.",
+    "l1": "PR #122: security agent shipped agent.json/AGENT.md/prompts/skills but not the 7 scaffold .gitkeep dirs (.agent/{memories,rules,reference,workflows,artifacts}/, deliverables/, output/). Fresh checkout fails `validate dev-mesh` with 7 missing-directory errors. CI missed it because the hermetic suite runs doctor --apply on a copy first, and the live mesh auto-seeds at runtime — so a missing-scaffold commit appears green in CI while failing on fresh checkout.",
+    "value": "When adding a new agent to the dev-mesh, commit the full scaffold .gitkeeps alongside the real content in the same PR. Required scaffold dirs: .agent/{memories,rules,reference,workflows,artifacts}/, deliverables/, output/ (7 .gitkeep files — same set as every existing agent). Verify before merging: run `node ./bin/agent-mesh.js validate <mesh>` on the branch — must show Conformance: OK. The hermetic CI suite (npm test) runs doctor --apply on a temp copy, so a missing-scaffold PR appears green in CI while failing validate on a fresh checkout. Related: doctor-apply-on-framework-upgrade (run doctor --apply after framework upgrades to resync existing agents). Provenance: PR #122 (2026-06-19).",
+    "provenance": {
+      "source": "PR #122 (2026-06-19): fix(dev-mesh): seed the security agent's missing scaffold dirs",
+      "ts": "2026-06-19"
+    }
+  },
+  "fail-safe-observability-daemon": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon observability calls must be fail-safe: log writes that throw are an availability bug, not a logging bug.",
+    "l1": "PR #126: recordActivity wraps all file I/O in try/catch, no re-throw — a filesystem error must never crash the daemon loop. Three complementary invariants: (1) mode guard suppresses emits under --selftest/--once (single-pass must not produce side-effect files); (2) the read-API route returns [] / 2xx on error, never 500; (3) event strings are HTML-escaped before render. Activity log is the daily-rotating journal; run logs remain the per-run detail layer.",
+    "value": "Four invariants for adding cross-cutting observability to a daemon service:\n\n(1) Fail-safe emit: wrap every log-write in try/catch with no re-throw. Filesystem errors (full disk, bad permissions, missing dir) must never propagate into the daemon loop — a crash in the logger is a service outage. Pattern: `try { await appendFile(path, line); } catch { /* swallow */ }`\n\n(2) Mode guard: gate ALL emits on `!opts.selftest && !opts.once` — single-pass invocations (health checks, one-shot runs) must exit cleanly without producing side-effect log files. Assert in tests: run `--selftest`, verify no activity files created.\n\n(3) Tolerant read route: the observability API (GET /api/activity-log) must catch all errors and return [] / 2xx, never a 500. A broken log reader must not disable the dashboard that depends on it.\n\n(4) XSS-safe render: pass every event field (summary, agent, ref, detail) through an HTML-escape fn before innerHTML. Event payloads are service-generated but may relay user-originated strings — treat as untrusted.\n\nTwo-layer separation: activity log = high-level event stream (issue.picked / delegate.done / job.run); per-agent run logs = granular detail, linked by `ref`. Don't collapse them.\n\nProvenance: PR #126 (2026-06-19).",
+    "provenance": {
+      "source": "PR #126: feat(mesh): unified activity log + filterable dashboard panel (Phase 1)",
+      "ts": "2026-06-19"
+    }
+  },
+  "scheduler-builtin-return-shape": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon scheduler builtins must return {status:'ok'} — void/undefined breaks onJobResult.",
+    "l1": "PR #127 final review caught a Critical: the `issue-sweep` builtin initially returned void (sweep() is async with no explicit return). The scheduler executor's onJobResult reads `.status` from the return — undefined.status silently miscategorises the run. Fixed by wrapping: `.then(() => ({status:'ok', output:'issue-sweep complete'})).catch(e => ({status:'fail', error:e.message}))`. Every `kind:builtin` entry in schedule.json must return `{status:'ok'}` or `{status:'fail', error}` — never void.",
+    "value": "Apply when registering any new builtin in the dev-society daemon scheduler:\n\n(1) Always return an explicit status object. Pattern:\n`builtins['name'] = () => work().then(() => ({status:'ok', output:'...'})).catch(e => ({status:'fail', error:e.message}));`\nFor async/await style: `builtins['name'] = async () => { await work(); return {status:'ok'}; }`\n\n(2) When wrapping an existing async sweep function (e.g. sweep() returns void): do NOT assign directly as `builtins['x'] = sweep` — the void return propagates. Wrap with `.then`/`catch` or an async wrapper that ends with `return {status:'ok'}`.\n\n(3) The executor's onJobResult logs `status === 'ok'` as info and everything else as warn. A void return means status is `undefined`, not 'fail' — the run appears to succeed while the job result is silently wrong.\n\nSymptom: job-run log entries show `undefined` as the status instead of 'ok' or 'fail'.\n\nThis was caught only by the final code review of PR #127 (2026-06-19) — there is no runtime validation of the return shape at registration time. Provenance: PR #127.",
+    "provenance": {
+      "source": "PR #127: feat(dev-society): label-aware 10-min issue sweep (maintainer-owned)",
+      "ts": "2026-06-19"
+    }
   }
 }
