@@ -1,0 +1,12 @@
+{
+  "jobs": [
+    {
+      "id": "issue-sweep",
+      "name": "Label-aware issue sweep",
+      "kind": "builtin",
+      "builtin": "issue-sweep",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
+    }
+  ]
+}

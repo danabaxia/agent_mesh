@@ -58,6 +58,10 @@ const once = process.argv.includes('--once');
 const selftest = process.argv.includes('--selftest');
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const SCHED_MESH_ROOT = process.env.DEV_SOCIETY_MESH_ROOT || join(repoRoot, 'dev-mesh');
+const STALE_MS = Number(process.env.DEV_SOCIETY_STALE_MS || 1800000);
+const dispatchStatePath = join(repoRoot, '.dev-society', 'dispatch-state.json');
+const readDispatchState = () => { try { return JSON.parse(readFileSync(dispatchStatePath, 'utf8')); } catch { return {}; } };
+const writeDispatchState = (s) => { mkdirSync(dirname(dispatchStatePath), { recursive: true }); writeFileSync(dispatchStatePath, JSON.stringify(s, null, 2)); };
 
 // Always-on standard scheduler: runs agents' .agent/schedule.json jobs 24/7.
 // Skipped in --once/--selftest (those paths exit early; scheduler must not start).
@@ -85,6 +89,7 @@ if (!once && !selftest) {
         return { status: 'fail', error: e?.message || String(e) };
       }
     },
+    'issue-sweep': () => sweep().catch((e) => log('issue-sweep error:', e.message)),
   };
   sched = createScheduler({ meshRoot: SCHED_MESH_ROOT, builtins });
   sched.start();
@@ -148,15 +153,19 @@ for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.st
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
 const git = (args, cwd) => sh('git', args, { cwd, maxBuffer: 1 << 24 });
 
-async function listEligible() {
-  const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
-    '--label', core.APPROVED, '--label', core.ROUTE_LABEL, '--limit', '50',
-    '--json', 'number,title,body,labels']);
-  return JSON.parse(stdout);
-}
 const issueComment = (n, body) => gh(['issue', 'comment', String(n), '--repo', cfg.repo, '--body', body]).catch((e) => log('  (comment failed)', e.message));
 const addLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--add-label', l]).catch(() => {});
 const rmLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--remove-label', l]).catch(() => {});
+
+async function listAllOpen() {
+  const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
+    '--limit', '100', '--json', 'number,title,body,labels']);
+  return JSON.parse(stdout);
+}
+
+// Replaced with real implementations in Task 5.
+async function dispatchAdvisory(issue, route) { log(`  (stub) advisory #${issue.number} → ${route.target}`); }
+async function runSpecTask(issue) { log(`  (stub) spec PR for #${issue.number}`); }
 
 // registryFor moved to src/dev-society/core.js (pure + hermetically tested) — the daemon
 // calls core.registryFor(wt, { binPath: BIN }). Reviewer stays ask-only there (S1).
@@ -233,34 +242,67 @@ async function runOneTask(issue) {
   }
 }
 
-async function tick() {
-  const issues = await listEligible();
-  const task = core.selectTask(issues);
-  if (!task) { log('no eligible (approved + route:a2a) tasks'); return false; }
-  await runOneTask(task);
-  return true;
+async function sweep() {
+  if (!cfg.repo) { log('sweep: set DEV_SOCIETY_REPO'); return; }
+  const issues = await listAllOpen();
+  const state = readDispatchState();
+  const now = Date.now();
+  const liveBuilds = new Set();
+  const staleClaims = new Set(
+    issues
+      .filter((i) => core.labelNames(i).includes(core.IN_PROGRESS))
+      .filter((i) => { const p = state[i.number]; return !p || (now - (p.dispatchedAt || 0)) > STALE_MS; })
+      .map((i) => i.number),
+  );
+  const routed = issues
+    .map((i) => ({ issue: i, route: core.routeFor(i, { liveBuilds, staleClaims }) }))
+    .filter((x) => x.route.target);
+
+  // Advisory routes (analyst/triager): cheap A2A asks → comments. Dispatch all pending.
+  for (const { issue, route } of routed.filter((r) => r.route.mode === 'ask')) {
+    if (!core.shouldDispatch(issue, route, state)) continue;
+    try {
+      if (route.spec) await runSpecTask(issue);
+      else await dispatchAdvisory(issue, route);
+      core.recordDispatch(state, issue, route, now);
+    } catch (e) { log(`  advisory #${issue.number} (${route.target}) failed:`, e.message); }
+  }
+  writeDispatchState(state);
+
+  // Code routes (coder do): heavy + serialize on the worktree → one build per tick (FIFO).
+  const coderQ = routed.filter((r) => r.route.mode === 'do').map((r) => r.issue);
+  const pick = core.selectCoderTask(coderQ);
+  if (!pick) { log('sweep: no coder task this tick'); return; }
+  core.recordDispatch(state, pick, { target: 'coder' }, now);
+  writeDispatchState(state);
+  try { await runOneTask(pick); } catch (e) { log(`  coder #${pick.number} failed:`, e.message); }
 }
 
 async function main() {
   if (selftest) {
-    // No GitHub/claude — prove selection + wiring with a sample.
     const sample = [
-      { number: 7, title: 'routed', labels: [core.APPROVED, core.ROUTE_LABEL] },
-      { number: 3, title: 'not routed', labels: [core.APPROVED] },
+      { number: 10, title: 'idea: new thing', labels: ['idea'] },
+      { number: 11, title: 'idea: approved thing', labels: ['idea', 'approved'] },
+      { number: 12, title: 'fix the bug', labels: ['bug'] },
+      { number: 13, title: 'infra_auth: nightly broke', labels: [] },
+      { number: 14, title: 'how do I X?', labels: ['question'] },
+      { number: 15, title: 'shipped', labels: ['done'] },
+      { number: 16, title: 'finalize spec', labels: ['spec:draft'] },
     ];
-    const picked = core.selectTask(sample);
-    log('selftest: BIN exists =', existsSync(BIN), '| picked =', picked && picked.number, '| branch =', picked && core.branchName(picked.number));
-    log('selftest: config =', JSON.stringify(cfg));
-    if (!picked || picked.number !== 7) { console.error('selftest FAILED'); process.exit(1); }
-    log('selftest OK'); return;
+    const got = Object.fromEntries(sample.map((i) => [i.number, core.routeFor(i).target]));
+    log('selftest routing:', JSON.stringify(got));
+    const want = { 10: null, 11: 'analyst', 12: 'coder', 13: 'triager', 14: 'analyst', 15: null, 16: 'analyst' };
+    for (const [n, t] of Object.entries(want)) {
+      if (got[n] !== t) { console.error(`selftest FAILED: #${n} expected ${t}, got ${got[n]}`); process.exit(1); }
+    }
+    log('selftest OK');
+    return;
   }
   if (!cfg.repo) { console.error('Set DEV_SOCIETY_REPO=owner/repo'); process.exit(1); }
   mkdirSync(cfg.workRoot, { recursive: true });
-  log(`dev-society daemon up — repo=${cfg.repo} base=${cfg.base} poll=${cfg.pollMs}ms once=${once}`);
-  do {
-    try { await tick(); } catch (e) { log('tick error:', e.message); }
-    if (!once) await new Promise((r) => setTimeout(r, cfg.pollMs));
-  } while (!once);
+  if (once) { await sweep(); return; }
+  log(`dev-society daemon up — repo=${cfg.repo} base=${cfg.base}; issue-sweep runs via the scheduler every 10m`);
+  // Always-on: the scheduler started at module load drives issue-sweep; it keeps the process alive.
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
