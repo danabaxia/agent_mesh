@@ -161,9 +161,64 @@ async function listAllOpen() {
   return JSON.parse(stdout);
 }
 
-// Replaced with real implementations in Task 5.
-async function dispatchAdvisory(issue, route) { log(`  (stub) advisory #${issue.number} → ${route.target}`); }
-async function runSpecTask(issue) { log(`  (stub) spec PR for #${issue.number}`); }
+async function dispatchAdvisory(issue, route) {
+  const reg = core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT });
+  const client = await createA2AClient(reg, { requestTimeoutMs: cfg.timeoutMs });
+  try {
+    let prompt;
+    if (route.target === 'analyst') {
+      prompt = route.reason === 'question' ? core.questionPrompt(issue) : core.analystDraftPrompt(issue);
+    } else {
+      prompt = core.triagePrompt(issue);
+    }
+    log(`  → ${route.target} (ask) #${issue.number} [${route.reason}]…`);
+    const task = await client.send(route.target, core.a2aMessage('ask', prompt));
+    const text = core.taskText(task) || '(no output)';
+    await issueComment(issue.number, `🤖 **${route.target}** (A2A \`ask\`):\n\n${text.slice(0, 60000)}`);
+    if (route.advance) await addLabel(issue.number, route.advance);
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
+async function runSpecTask(issue) {
+  const branch = `dev-society/spec-${issue.number}`;
+  const wt = join(cfg.workRoot, `spec-${issue.number}`);
+  log(`▶ spec #${issue.number} "${issue.title}" → ${branch}`);
+  rmSync(wt, { recursive: true, force: true });
+  await git(['worktree', 'prune'], repoRoot);
+  await git(['fetch', 'origin', cfg.base, '-q'], repoRoot);
+  await git(['worktree', 'add', '-f', '-B', branch, wt, `origin/${cfg.base}`], repoRoot);
+  const client = await createA2AClient(core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT }), { requestTimeoutMs: cfg.timeoutMs });
+  try {
+    const task = await client.send('analyst', core.a2aMessage('ask', core.analystSpecPrompt(issue)));
+    const spec = core.taskText(task);
+    if (!spec || spec.length < 200) {
+      await issueComment(issue.number, '🤖 A2A society Analyst did not produce a usable spec — needs a human.');
+      return;
+    }
+    const slug = String(issue.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || `issue-${issue.number}`;
+    const date = new Date().toISOString().slice(0, 10);
+    const rel = `docs/superpowers/specs/${date}-${slug}-design.md`;
+    mkdirSync(join(wt, dirname(rel)), { recursive: true });
+    writeFileSync(join(wt, rel), spec.endsWith('\n') ? spec : spec + '\n');
+    await git(['add', rel], wt);
+    await git(['-c', 'commit.gpgsign=false', 'commit', '-qm',
+      `spec: ${issue.title}\n\nDrafted by the A2A dev-society (Analyst over A2A ask) for #${issue.number}.`], wt);
+    await git(['push', '-u', 'origin', branch, '--force-with-lease'], wt);
+    const { stdout } = await gh(['pr', 'create', '--repo', cfg.repo, '--base', cfg.base, '--head', branch,
+      '--title', `spec: ${issue.title} (#${issue.number})`,
+      '--body', `Draft spec for #${issue.number}, authored by the **A2A dev-society** Analyst (A2A \`ask\`). Human review required before \`approved\`.`]);
+    await rmLabel(issue.number, core.SPEC_DRAFT);
+    await addLabel(issue.number, core.SPEC_IN_REVIEW);
+    await issueComment(issue.number, `🤖 Spec PR opened: ${stdout.trim()}`);
+    log(`  ✓ spec PR: ${stdout.trim()}`);
+  } finally {
+    await client.close().catch(() => {});
+    rmSync(wt, { recursive: true, force: true });
+    await git(['worktree', 'prune'], repoRoot).catch(() => {});
+  }
+}
 
 // registryFor moved to src/dev-society/core.js (pure + hermetically tested) — the daemon
 // calls core.registryFor(wt, { binPath: BIN }). Reviewer stays ask-only there (S1).
