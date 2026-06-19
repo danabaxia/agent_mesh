@@ -138,6 +138,23 @@ test('path-guard: AGENT.md under root is NOT protected (data, not config)', asyn
   assert.equal(await isProtectedConfigPath(root, join(root, 'AGENT.md')), false);
 });
 
+test('isPathInsideRoot treats backslash path separators identically to forward slashes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-guard-'));
+  // Backslash separators must be normalized to / on all platforms so Windows
+  // paths (from Node 22 realpath/relative) compare correctly against the root.
+  assert.equal(await isPathInsideRoot(root, 'sub\\dir\\file.txt'), true);
+  assert.equal(
+    await isPathInsideRoot(root, 'sub\\dir\\file.txt'),
+    await isPathInsideRoot(root, 'sub/dir/file.txt')
+  );
+});
+
+test('isPathInsideRoot blocks backslash-encoded traversal after normalization', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-guard-'));
+  // After \\ → / normalization, ..\\outside.txt becomes ../outside.txt — a traversal.
+  assert.equal(await isPathInsideRoot(root, '..\\outside.txt'), false);
+});
+
 function execHook(root, payload) {
   const result = spawnSync('node', ['hooks/path-guard.js'], {
     cwd: repoRoot,

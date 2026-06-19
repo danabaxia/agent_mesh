@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDashboardServer } from '../src/dashboard/server.js';
+import { createDashboardServer, repoSlugFromRemote } from '../src/dashboard/server.js';
 import { initMesh } from '../src/builder/init-mesh.js';
 import { writeManifest } from '../src/builder/manifest.js';
 
@@ -26,6 +26,15 @@ async function authed(meshRoot, opts = {}) {
   return { srv, port, cookie };
 }
 const post = (srv, port, cookie, p) => fetch(`${srv.url}${p}`, { method: 'POST', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', Cookie: cookie } });
+
+test('repoSlugFromRemote parses https and ssh remotes (so the regen can set DEV_SOCIETY_REPO)', () => {
+  assert.equal(repoSlugFromRemote('https://github.com/danabaxia/agent_mesh.git'), 'danabaxia/agent_mesh');
+  assert.equal(repoSlugFromRemote('https://github.com/danabaxia/agent_mesh'), 'danabaxia/agent_mesh');
+  assert.equal(repoSlugFromRemote('git@github.com:danabaxia/agent_mesh.git'), 'danabaxia/agent_mesh');
+  assert.equal(repoSlugFromRemote('git@github.com:danabaxia/agent_mesh.git\n'), 'danabaxia/agent_mesh');
+  assert.equal(repoSlugFromRemote(''), '');
+  assert.equal(repoSlugFromRemote(undefined), '');
+});
 
 test('POST /api/daily/refresh runs the regenerator then returns the fresh report', async () => {
   const { meshRoot } = await buildMesh();

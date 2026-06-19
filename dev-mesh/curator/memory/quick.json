@@ -550,5 +550,16 @@
       "source": "PR #136: feat(dashboard): single-instance — reap prior instance on launch",
       "ts": "2026-06-19"
     }
+  },
+  "git-remote-envvar-fallback": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Env var fallback: parse owner/repo from git remote when daemon-set var is absent in manual/interactive runs.",
+    "l1": "PR #138: POST /api/daily/refresh failed (exit 2) from a manually-launched dashboard — DEV_SOCIETY_REPO is set only by the launchd service, not interactive processes. Fix: repoSlugFromRemote() shells `git config --get remote.origin.url` and parses both https (https://github.com/o/r.git) and ssh (git@github.com:o/r) forms, stripping .git and whitespace, throwing on empty. No behavior change when the var is already set. Tests: https/ssh/.git-suffix/trailing-newline/empty — 4 new cases.",
+    "value": "Pattern for any env var typically set by a service launcher (launchd/systemd): (1) try process.env.VAR first; (2) if absent, run `git config --get remote.origin.url`; (3) parse both https (https://github.com/owner/repo.git) and ssh (git@github.com:owner/repo) URL forms; (4) strip trailing .git suffix and whitespace; (5) throw on empty/unparseable. Export the parser as a named helper (e.g. repoSlugFromRemote) for unit testing. Test cases: https URL / ssh URL / .git suffix / trailing newline / empty string. Ensures the feature works in both daemon-managed and manual sessions without requiring the operator to set extra env vars. Provenance: PR #138 (2026-06-19).",
+    "provenance": {
+      "source": "PR #138: fix(dashboard): daily/refresh derives DEV_SOCIETY_REPO from git remote",
+      "ts": "2026-06-19"
+    }
   }
 }

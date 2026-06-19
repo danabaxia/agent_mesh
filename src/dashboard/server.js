@@ -11,7 +11,7 @@
  */
 
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { readFile, readdir, stat, realpath, mkdir, writeFile, rm, unlink, open } from 'node:fs/promises';
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, relative, resolve, extname, dirname, basename, isAbsolute, sep } from 'node:path';
@@ -219,11 +219,27 @@ function defaultSpawnLocate(fullPath) {
 // daily-report-refresh builtin), inheriting env so gh auth/DEV_SOCIETY_REPO apply.
 // Injectable via createDashboardServer({ regenerateDaily }) so tests stub it.
 // Resolves on exit 0; rejects on non-zero, spawn error, or a 120s timeout.
+// Parse an owner/repo slug from a git remote URL (https or ssh form), or '' if none.
+// daily-report.mjs requires DEV_SOCIETY_REPO; a manually-launched dashboard won't have
+// it in env (only the launchd daemon pins it), so we derive it from the repo's remote.
+export function repoSlugFromRemote(url) {
+  const m = String(url || '').trim().match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?\/?$/);
+  return m ? m[1] : '';
+}
+
 function defaultRegenerateDaily(meshRoot) {
   const repoRoot = resolve(meshRoot, '..');
   const script = join(repoRoot, 'scripts', 'daily-report.mjs');
+  const env = { ...process.env };
+  if (!env.DEV_SOCIETY_REPO) {
+    try {
+      const url = execFileSync('git', ['-C', repoRoot, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8' });
+      const slug = repoSlugFromRemote(url);
+      if (slug) env.DEV_SOCIETY_REPO = slug;
+    } catch { /* no git/remote — daily-report.mjs will report the missing repo itself */ }
+  }
   return new Promise((res, rej) => {
-    const child = spawn(process.execPath, [script], { cwd: repoRoot, stdio: 'ignore', env: process.env });
+    const child = spawn(process.execPath, [script], { cwd: repoRoot, stdio: 'ignore', env });
     const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* already gone */ } rej(new Error('daily-report timed out')); }, 120000);
     child.on('error', (e) => { clearTimeout(timer); rej(e); });
     child.on('exit', (code) => { clearTimeout(timer); code === 0 ? res() : rej(new Error(`daily-report exited ${code}`)); });
