@@ -272,8 +272,8 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
 // Env for the framework peer bridge MCP server. The bridge inherits the worker's
 // (claude's) environment for system PATH etc.; here we set only the
 // security-relevant overrides:
-//   - AGENT_MESH_MODE='ask'  → v1 ask-only onward (overrides the worker's mode so
-//     the bridge cannot launder a `do` worker into a `do` peer call).
+//   - AGENT_MESH_MODE=<parent-mode>  → threads the actual parent mode so the bridge
+//     can enforce ask→do laundering prevention (readonly_parent) while allowing do→do.
 //   - AGENT_MESH_PATH/DEPTH  → the THREADED call context (from entered.env) so
 //     peers the bridge spawns get correct cycle/depth detection.
 //   - framework config pass-through (mesh root/ceiling, claude binary, timeout,

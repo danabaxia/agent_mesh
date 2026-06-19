@@ -145,9 +145,15 @@ export function createBridge({ root, env = process.env, createClient = createA2A
     }
 
     // Acquire the cross-process write lock for do→do delegation before spawning.
+    // The lock must be keyed on the PEER's canonical root (the resource being
+    // protected), not the caller's root — otherwise two callers delegating do-mode
+    // to the same peer each acquire different lock files and don't contend.
     let lock = null;
     if (mode === 'do') {
-      lock = await acquireLock(root, env);
+      const rawPeerRoot = managed.registry.peers[peer]?.root;
+      if (!rawPeerRoot) return refuseLogged('bad_input', `peer "${peer}" has no root; cannot acquire write lock.`);
+      const peerRoot = isAbsolute(rawPeerRoot) ? rawPeerRoot : resolve(root, rawPeerRoot);
+      lock = await acquireLock(peerRoot, env);
       if (!lock.acquired) {
         return refuseLogged('lock_timeout',
           `Could not acquire the do-mode peer lock within the timeout; another bridge process may be holding it.`);
