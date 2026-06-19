@@ -42,6 +42,12 @@ const names = (issue) => (issue?.labels || []).map((l) => (typeof l === 'string'
 /** Normalized label names of an issue (string | {name}). */
 export function labelNames(issue) { return names(issue); }
 
+/** An OPEN issue carrying a terminal label (done/rejected/wontfix/duplicate/invalid)
+ *  that nothing else closes — the sweep should `gh issue close` it so it doesn't hang. */
+export function isTerminalState(issue) {
+  return names(issue).some((l) => TERMINAL.includes(l));
+}
+
 const SECURITY_SWEEP_TITLE = /^dev-mesh security alert$/i;
 const SECURITY_SWEEP_BLOCKING_BODY = /Dev-mesh scheduled security sweep\s+[-—]\s+BLOCKING finding/i;
 const BLOCKED_CONFLICT_LABELS = [APPROVED, ROUTE_LABEL, IN_PROGRESS, PR_IN_REVIEW];
