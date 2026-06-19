@@ -1,9 +1,10 @@
 import { readdir, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   DEFAULT_DEPTH,
   DEFAULT_TIMEOUT_MS,
+  DEFAULT_LOG_DIR,
   WRITE_TOOLS,
   readPositiveInt
 } from './config.js';
@@ -12,7 +13,7 @@ import { validateDelegateInput } from './contract.js';
 import { enterCallContext } from './context.js';
 import { captureChangeState, computeFilesChanged } from './change-detect.js';
 import { badInput, refused, resultError } from './errors.js';
-import { createRunLog, appendRunLog } from './log.js';
+import { createRunLog, appendRunLog, readRunLogRecords } from './log.js';
 import { spawnFile } from './process.js';
 import {
   buildClaudeInvocation, buildClaudeEnv, compactArgv
@@ -235,6 +236,12 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
   const changed = await computeFilesChanged(root, before);
   const result = buildDelegateResult({ spawnResult, changed, logPath });
   result.run_id = runId;
+  // Accumulate peer_changes from any bridge a2a calls the worker made (do-mode
+  // chains only). null when no bridge calls happened or mode is ask.
+  if (mode === 'do') {
+    const downstream = await aggregateDownstreamChanges(root, env, runId);
+    if (downstream !== null) result.downstream_changes = downstream;
+  }
   await appendRunLog(logPath, {
     id: runId,
     parent_run_id: parentRunId,
@@ -374,4 +381,30 @@ function summarizeSpawn(spawnResult) {
 function tail(text, limit = 4000) {
   if (text.length <= limit) return text;
   return text.slice(text.length - limit);
+}
+
+/**
+ * After the worker finishes, read the bridge's a2a log records that were
+ * written during this run (identified by parent_run_id === runId) and
+ * aggregate all peer_changes arrays into a deduplicated flat list.
+ *
+ * Returns null when no bridge calls happened (ask chains, no bridge, etc.).
+ * Returns [] when bridge calls happened but no files were changed.
+ */
+async function aggregateDownstreamChanges(root, env, runId) {
+  const logDir = resolve(root, (env && env.AGENT_MESH_LOG_DIR) || DEFAULT_LOG_DIR);
+  let files;
+  try { files = await readdir(logDir); } catch { return null; }
+  const a2aFiles = files.filter((f) => f.startsWith('a2a-') && f.endsWith('.jsonl')).sort();
+  const allChanges = [];
+  let found = false;
+  for (const f of a2aFiles) {
+    const records = await readRunLogRecords(join(logDir, f));
+    for (const r of records) {
+      if (r.parent_run_id !== runId || r.state !== 'done') continue;
+      found = true;
+      if (Array.isArray(r.peer_changes)) allChanges.push(...r.peer_changes);
+    }
+  }
+  return found ? [...new Set(allChanges)] : null;
 }

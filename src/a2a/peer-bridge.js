@@ -12,9 +12,9 @@
  * The peer is named as DATA (an argument), never registered as a per-peer tool —
  * so this does not commit the "agent-as-MCP-tool is a category error" mistake.
  * The worker→bridge hop is local MCP; the bridge→peer hop is real A2A over
- * `createA2AClient`. v1 is ASK-ONLY: any non-`ask` onward call is refused with
- * `mode_disabled` before a peer is spawned (a capability gate, distinct from the
- * `readonly_parent` laundering code).
+ * `createA2AClient`. v2 permits do→do onward delegation (with a cross-process
+ * advisory file lock); ask→do is refused as `readonly_parent` (laundering
+ * prevention); ask→ask is always allowed.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -23,6 +23,7 @@ import { resolve, join, dirname, isAbsolute } from 'node:path';
 
 import { readManagedRegistry } from './registry.js';
 import { createA2AClient } from './stdio-client.js';
+import { acquireDoLock } from './do-lock.js';
 import { readManifest } from '../builder/manifest.js';
 import { readAgentDescription, extractCapabilities } from '../description.js';
 import { StdioTransport, rpcError } from '../mcp.js';
@@ -46,8 +47,6 @@ export const RESERVED_BRIDGE_ENV = [
   'AGENT_MESH_HOOK_LOG' // audit trail must not be redirectable by peer.env
 ];
 
-const ONWARD_MODE = 'ask'; // v1: ask-only
-
 // ---------------------------------------------------------------------------
 // Bridge core (testable without stdio)
 // ---------------------------------------------------------------------------
@@ -58,8 +57,9 @@ const ONWARD_MODE = 'ask'; // v1: ask-only
  *   @param {object} [opts.env]           bridge process env (set by delegate.js)
  *   @param {Function} [opts.createClient] injectable A2A client factory (tests)
  *   @param {number} [opts.requestTimeoutMs]
+ *   @param {Function} [opts.acquireLock] injectable lock factory (tests); defaults to acquireDoLock
  */
-export function createBridge({ root, env = process.env, createClient = createA2AClient, requestTimeoutMs } = {}) {
+export function createBridge({ root, env = process.env, createClient = createA2AClient, requestTimeoutMs, acquireLock = acquireDoLock } = {}) {
   async function listPeers() {
     const { registry } = await readManagedRegistry(root);
     // Surface each peer's self-description so the worker can pick the right peer
@@ -89,7 +89,7 @@ export function createBridge({ root, env = process.env, createClient = createA2A
    * @returns {Promise<object>} a plain result object (mapped to an MCP text
    *   result by the server). Failures are DATA, never thrown.
    */
-  async function delegateToPeer({ peer, mode = ONWARD_MODE, task, new_conversation = false } = {}) {
+  async function delegateToPeer({ peer, mode = 'ask', task, new_conversation = false } = {}) {
     const startedAt = new Date().toISOString();
     // Resolved up front (best-effort) so the a2a audit record carries `from` even
     // for an early refusal (mode_disabled / bad_input), before the gates below.
@@ -114,10 +114,17 @@ export function createBridge({ root, env = process.env, createClient = createA2A
       return refusal(code, message, peer);
     };
 
-    // v1 ask-only capability gate — refuse BEFORE any spawn.
-    if (mode !== ONWARD_MODE) {
-      return refuseLogged('mode_disabled', `Onward delegation is ask-only in v1; mode "${mode}" is disabled.`);
+    // Mode gate: ask→do is refused (laundering prevention); do→do is allowed (v2).
+    // The parent's mode reaches the bridge via AGENT_MESH_MODE in the bridge env
+    // (set by buildBridgeEnv in src/mesh-mcp.js); absent → treated as ask.
+    if (mode === 'do') {
+      const parentMode = env?.AGENT_MESH_MODE || 'ask';
+      if (parentMode !== 'do') {
+        return refuseLogged('readonly_parent',
+          `Onward do-mode delegation requires a do-mode parent; this agent is running in ${parentMode}-mode.`);
+      }
     }
+
     if (typeof peer !== 'string' || peer.length === 0) return refuseLogged('bad_input', 'peer name is required.');
     if (typeof task !== 'string' || task.trim().length < 1) return refuseLogged('bad_input', 'task text is required.');
     if (task.length > MAX_TASK_CHARS) return refuseLogged('bad_input', `task exceeds the ${MAX_TASK_CHARS}-character limit.`);
@@ -137,10 +144,21 @@ export function createBridge({ root, env = process.env, createClient = createA2A
         `(${pathHint}) — re-run 'agent-mesh doctor' if the mesh was relocated.`);
     }
 
+    // Acquire the cross-process write lock for do→do delegation before spawning.
+    let lock = null;
+    if (mode === 'do') {
+      lock = await acquireLock(root, env);
+      if (!lock.acquired) {
+        return refuseLogged('lock_timeout',
+          `Could not acquire the do-mode peer lock within the timeout; another bridge process may be holding it.`);
+      }
+    }
+
     let client;
     try {
       client = await createClient(managed.registry, { env, protectedEnv: RESERVED_BRIDGE_ENV, requestTimeoutMs });
     } catch (err) {
+      if (lock) await lock.release();
       return refuseLogged('spawn_failed', `failed to spawn peer "${peer}": ${err.message}`);
     }
 
@@ -148,7 +166,7 @@ export function createBridge({ root, env = process.env, createClient = createA2A
       messageId: randomUUID(),
       role: 'ROLE_USER',
       parts: [{ text: task }],
-      metadata: { 'agentmesh/mode': ONWARD_MODE, 'agentmesh/caller': from }
+      metadata: { 'agentmesh/mode': mode, 'agentmesh/caller': from }
     };
     const parentRunId = env?.AGENT_MESH_RUN_ID;
     if (parentRunId) message.metadata['agentmesh/parent_run_id'] = parentRunId;
@@ -163,7 +181,8 @@ export function createBridge({ root, env = process.env, createClient = createA2A
         status: mapped.status, error_code: mapped.error_code,
         child_log_path: mapped.log_path || null,
         child_run_id: (taskResult?.metadata || {})['agentmesh/run_id'] || null,
-        summary_preview: previewOf(mapped.summary)
+        summary_preview: previewOf(mapped.summary),
+        peer_changes: mapped.peer_changes ?? null
       });
       return mapped;
     } catch (err) {
@@ -174,6 +193,7 @@ export function createBridge({ root, env = process.env, createClient = createA2A
       return refusal('spawn_failed', err.message, peer);
     } finally {
       await client.close().catch(() => {});
+      if (lock) await lock.release();
     }
   }
 
@@ -315,6 +335,9 @@ function mapTask(peer, task) {
     status: state,
     error_code: md['agentmesh/error_code'] ?? null,
     files_changed: md['agentmesh/files_changed'] ?? null,
+    // peer_changes is the v2 explicit name for the same data: files the PEER's
+    // worker changed, kept separate from the caller's own files_changed.
+    peer_changes: md['agentmesh/files_changed'] ?? null,
     log_path: md['agentmesh/log_path'] ?? '',
     summary: artifactText || statusText || ''
   };
@@ -402,8 +425,10 @@ export function buildTools() {
       description:
         'Delegate a scoped task to a named peer agent over A2A and return its final result. ' +
         "When a task concerns another agent's folder or domain (see list_peers), delegate it " +
-        'rather than attempting it locally. v1 is ask-only (read/answer tasks); mode "do" will ' +
-        'be refused by the bridge with mode_disabled. Repeated calls to the same peer continue ' +
+        'rather than attempting it locally. mode "ask" (read/answer) is always available; ' +
+        'mode "do" (write) is available when this agent itself is running in do-mode — ' +
+        'ask→do is refused to prevent mode laundering. The result includes peer_changes ' +
+        '(files the peer wrote) for do-mode chains. Repeated calls to the same peer continue ' +
         'one persistent conversation; pass new_conversation:true to start fresh.',
       inputSchema: {
         type: 'object',
@@ -411,10 +436,10 @@ export function buildTools() {
         required: ['peer', 'task'],
         properties: {
           peer: { type: 'string', minLength: 1 },
-          // No enum restriction: the bridge's ask-only capability gate (mode_disabled)
-          // is the enforcement layer, not the schema. Allowing any string here lets
-          // the model pass mode:'do' so the bridge can return a structured refusal
-          // that the model then reports back (required by the I6 adversarial probe).
+          // No enum restriction: the bridge enforces mode policy at runtime
+          // (readonly_parent for ask→do; lock+forward for do→do).  Allowing any
+          // string lets the model pass mode:'do' so the bridge returns a structured
+          // refusal when the parent is ask-mode (required by adversarial probes).
           mode: { type: 'string', minLength: 1 },
           task: { type: 'string', minLength: 1, maxLength: MAX_TASK_CHARS },
           new_conversation: {

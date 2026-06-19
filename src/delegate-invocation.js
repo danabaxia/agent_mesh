@@ -59,7 +59,7 @@ export async function buildClaudeInvocation({ root, mode, task, env, callEnv, cl
     meshRoot,
     mode,
     binPath: BIN_PATH,
-    bridgeEnv: buildBridgeEnv(callEnv, env)
+    bridgeEnv: buildBridgeEnv(callEnv, env, { mode })
   });
 
   args.push('--strict-mcp-config', '--mcp-config', await writeMcpConfig(servers));
@@ -248,7 +248,7 @@ export async function buildAskInvocation({ root, env, callEnv, claudeEnv }) {
   if (identity) args.push('--append-system-prompt', identity);
   const servers = await assembleMcpServers({
     agentRoot: root, meshRoot, mode: 'ask', binPath: BIN_PATH,
-    bridgeEnv: buildBridgeEnv(callEnv, env)
+    bridgeEnv: buildBridgeEnv(callEnv, env, { mode: 'ask' })
   });
   args.push('--strict-mcp-config', '--mcp-config', await writeMcpConfig(servers));
   const mcpAllow = Object.keys(servers).map((name) => `mcp__${name}`);
