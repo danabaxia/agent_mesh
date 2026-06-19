@@ -605,5 +605,16 @@
       "source": "PR #156: feat(automerge): gate PR merge on linked-issue state",
       "ts": "2026-06-19"
     }
+  },
+  "a2a-http-dual-transport-dispatch": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "A2A HTTP: type peers in registry, unified client dispatch, recursion threaded as headers — one shared JSON-RPC core.",
+    "l1": "PR #151: adds HTTP/JSON-RPC to the stdio A2A mesh. Three-part pattern: (1) type the peer at registry-normalization time ('http'|'stdio'); (2) a single createA2AClient dispatches to HttpClientSession (fetch, per-request) or StdioClientSession (long-lived spawn) — the caller never selects a transport; (3) AGENT_MESH_PATH/DEPTH thread as X-AgentMesh-Path/X-AgentMesh-Depth headers so recursion-guard/depth-budget work identically on both transports. HTTP servers bind 127.0.0.1 only (auth/TLS deferred); mixed http+stdio registries work. AgentCard reports protocolBinding:'JSONRPC' for HTTP peers.",
+    "value": "Pattern for adding HTTP transport to a stdio-based JSON-RPC protocol (same core, two framing layers):\n\n(1) Type the peer at registry normalization: normalizeRegistry() inspects the peer record — if it has `url:` and no `command:`, it becomes type:'http'; otherwise type:'stdio'. Mixed registries (http + stdio peers in the same registry.json) work without any caller changes.\n\n(2) Unified client entry point: createA2AClient(registry) returns a single client whose .send(peer, msg) dispatches to HttpClientSession (per-request fetch, stateless) or StdioClientSession (long-lived process, stateful) based on peer.type. The caller never inspects the type — transport is purely a registry-level detail.\n\n(3) Thread recursion state across the HTTP boundary: AGENT_MESH_PATH and AGENT_MESH_DEPTH — normally passed as child process env — become X-AgentMesh-Path and X-AgentMesh-Depth HTTP headers. The receiving server extracts them from headers and injects into the worker env. Cycle-guard and depth-budget logic are transport-agnostic; a multi-hop mesh mixing stdio and HTTP enforces the same invariants end-to-end.\n\n(4) Server binding: HTTP servers bind 127.0.0.1 by default. Auth and TLS are explicitly deferred to v2 — document this limitation in the PR body so reviewers can assess the threat model consciously.\n\n(5) AgentCard: buildAgentCard accepts a transport param; HTTP cards report protocolBinding:'JSONRPC' for A2A interop.\n\n(6) Test split — 4 hermetic files isolating one layer each: http-server (request/response, error handling), http-client (session lifecycle), http-registry (normalizeRegistry typed peers), http-recursion (header propagation + depth enforcement). Clean split means failures point to the exact layer.\n\nInvariant: the JSON-RPC core (message validation, Task construction, agentmesh/* metadata) is NOT duplicated. The transport wraps the shared core — any core change applies to both transports automatically. Provenance: PR #151 (2026-06-19).",
+    "provenance": {
+      "source": "PR #151: feat(a2a): HTTP/JSON-RPC transport binding (issue #141)",
+      "ts": "2026-06-19"
+    }
   }
 }
