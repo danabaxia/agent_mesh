@@ -1,0 +1,38 @@
+# Dev-mesh · gated auto-merge — merges CLEAN + APPROVED same-repo PRs on a schedule.
+# Default-OFF: no-ops unless repo variable AUTOMERGE_ENABLED == 'true'. Mechanical
+# (no claude). NEVER merges forks, drafts, or PRs with a hold label (do-not-merge/
+# hold/wip). The merge decision is the pure isAutoMergeable() predicate.
+# Spec: docs/superpowers/specs/2026-06-19-mesh-automerge-design.md
+name: dev-mesh-automerge
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *' # every 15 min, offset from the other sweeps
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'List eligible PRs without merging'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: dev-mesh-automerge
+  cancel-in-progress: false
+
+jobs:
+  automerge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: sweep
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTOMERGE_ENABLED: ${{ vars.AUTOMERGE_ENABLED }}
+        run: node scripts/automerge-sweep.mjs ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
