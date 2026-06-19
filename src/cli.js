@@ -21,6 +21,10 @@ function usage() {
     '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat] [--no-replace]',
     '  agent-mesh shell <mesh-root> <agent>   # open native claude in an agent folder',
     '',
+    '  agent-mesh dev-society status [--repo OWNER/REPO]      # daemon + ledger + queue snapshot',
+    '  agent-mesh dev-society ledger [--last N]               # pretty-print ledger.jsonl',
+    '  agent-mesh issue label <num> [--add L]... [--remove L]... [--repo OWNER/REPO]',
+    '',
     'Environment:',
     '  AGENT_MESH_DEPTH=3',
     '  AGENT_MESH_TIMEOUT_MS=600000',
@@ -483,6 +487,23 @@ export async function main(argv, env = process.env) {
       process.stderr.write(`error: ${err.message}\n`);
       process.exitCode = 1;
     }
+    return;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Phase-1 unified ops surface (see src/dev-society-cli.js for rationale).
+  // Lets sandbox-Claude AND host-human invoke the same verbs instead of round-
+  // tripping through `gh` + cat ledger.jsonl + ls .dev-society/work/ shell paste.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (command === 'dev-society') {
+    const { runDevSocietyCli } = await import('./dev-society-cli.js');
+    await runDevSocietyCli(argv.slice(1), env);
+    return;
+  }
+
+  if (command === 'issue') {
+    const { runIssueCli } = await import('./dev-society-cli.js');
+    await runIssueCli(argv.slice(1), env);
     return;
   }
 

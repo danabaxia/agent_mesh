@@ -1,6 +1,9 @@
 // Pure: decide whether one open PR is safe to auto-merge. Fail-closed — any
 // missing/unknown field or disqualifier → false. No I/O.
-export const DEFAULT_HOLD_LABELS = ['do-not-merge', 'hold', 'wip'];
+// 'blocked-by-issue' is stamped by the issue-gate sweep (src/automerge/issue-gate.js)
+// when a PR's linked issue is blocked/rejected/wontfix/duplicate — honored here so such
+// a PR never auto-merges.
+export const DEFAULT_HOLD_LABELS = ['do-not-merge', 'hold', 'wip', 'blocked-by-issue'];
 
 /**
  * @param {object} pr  one `gh pr list/view --json` row:

@@ -104,11 +104,16 @@ export function spawnFile(command, args, options = {}) {
     const child = spawn(cmd, cmdArgs, {
       cwd: options.cwd,
       env: options.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.stdinData !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       detached: Boolean(options.detached),
       shell: t.shell,
       windowsHide: true
     });
+    if (options.stdinData !== undefined) {
+      try {
+        child.stdin.end(String(options.stdinData), 'utf8');
+      } catch { /* stdin write failed; the process reports this via its error or close event */ }
+    }
 
     let stdout = '';
     let stderr = '';

@@ -254,3 +254,12 @@ test('advisoryRegistry: ask-only peers rooted under meshRoot', () => {
   assert.equal(reg.peers.analyst.command, '/usr/bin/node');
   assert.equal(reg.peers.triager.root, join('/mesh', 'triager'));
 });
+
+import { isTerminalState, DONE as DONE_L, REJECTED as REJ_L } from '../src/dev-society/core.js';
+test('isTerminalState: true for terminal-labelled open issues, false otherwise', () => {
+  for (const l of [DONE_L, REJ_L, 'wontfix', 'duplicate', 'invalid']) {
+    assert.equal(isTerminalState(issue(1, [l])), true, l);
+  }
+  assert.equal(isTerminalState(issue(2, ['bug', 'in-progress'])), false);
+  assert.equal(isTerminalState(issue(3, [])), false);
+});
