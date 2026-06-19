@@ -163,8 +163,9 @@ async function listAllOpen() {
 
 async function dispatchAdvisory(issue, route) {
   const reg = core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT });
-  const client = await createA2AClient(reg, { requestTimeoutMs: cfg.timeoutMs });
+  let client = null;
   try {
+    client = await createA2AClient(reg, { requestTimeoutMs: cfg.timeoutMs });
     let prompt;
     if (route.target === 'analyst') {
       prompt = route.reason === 'question' ? core.questionPrompt(issue) : core.analystDraftPrompt(issue);
@@ -177,7 +178,7 @@ async function dispatchAdvisory(issue, route) {
     await issueComment(issue.number, `🤖 **${route.target}** (A2A \`ask\`):\n\n${text.slice(0, 60000)}`);
     if (route.advance) await addLabel(issue.number, route.advance);
   } finally {
-    await client.close().catch(() => {});
+    await client?.close().catch(() => {});
   }
 }
 
@@ -185,12 +186,13 @@ async function runSpecTask(issue) {
   const branch = `dev-society/spec-${issue.number}`;
   const wt = join(cfg.workRoot, `spec-${issue.number}`);
   log(`▶ spec #${issue.number} "${issue.title}" → ${branch}`);
-  rmSync(wt, { recursive: true, force: true });
-  await git(['worktree', 'prune'], repoRoot);
-  await git(['fetch', 'origin', cfg.base, '-q'], repoRoot);
-  await git(['worktree', 'add', '-f', '-B', branch, wt, `origin/${cfg.base}`], repoRoot);
-  const client = await createA2AClient(core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT }), { requestTimeoutMs: cfg.timeoutMs });
+  let client = null;
   try {
+    rmSync(wt, { recursive: true, force: true });
+    await git(['worktree', 'prune'], repoRoot);
+    await git(['fetch', 'origin', cfg.base, '-q'], repoRoot);
+    await git(['worktree', 'add', '-f', '-B', branch, wt, `origin/${cfg.base}`], repoRoot);
+    client = await createA2AClient(core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT }), { requestTimeoutMs: cfg.timeoutMs });
     const task = await client.send('analyst', core.a2aMessage('ask', core.analystSpecPrompt(issue)));
     const spec = core.taskText(task);
     if (!spec || spec.length < 200) {
@@ -214,7 +216,7 @@ async function runSpecTask(issue) {
     await issueComment(issue.number, `🤖 Spec PR opened: ${stdout.trim()}`);
     log(`  ✓ spec PR: ${stdout.trim()}`);
   } finally {
-    await client.close().catch(() => {});
+    await client?.close().catch(() => {});
     rmSync(wt, { recursive: true, force: true });
     await git(['worktree', 'prune'], repoRoot).catch(() => {});
   }
