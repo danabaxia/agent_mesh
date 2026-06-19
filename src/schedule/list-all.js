@@ -40,6 +40,7 @@ export async function listAllSchedules({ meshRoot, readManifestFn = readManifest
         lastSummary: e.lastSummary ?? '',
         nextRunAt: e.nextRunAt ?? null,
         running: !!e.running,
+        consecutiveFailures: e.consecutiveFailures ?? 0,
       });
     }
   }

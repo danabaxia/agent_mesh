@@ -213,7 +213,8 @@ export function createScheduler({ meshRoot, runJob, builtins = {}, intervalMs = 
         lastStatus: ok ? 'ok' : 'fail',
         lastSummary: String(summarySource).slice(0, SUMMARY_CAP),
         nextRunAt: computeNextRun(job.cadence, finishedAt).toISOString(),
-        running: false
+        running: false,
+        consecutiveFailures: ok ? 0 : ((after[job.id]?.consecutiveFailures || 0) + 1),
       };
       await writeJson(statePath(agent.root), after);
     } catch { /* state IO failure — swallow; next tick retries */ }
