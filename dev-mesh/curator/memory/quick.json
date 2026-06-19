@@ -287,17 +287,6 @@
       "ts": "2026-06-17"
     }
   },
-  "daemon-polling-idempotency": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "Polling daemon: exclude ALL in-flight labels from eligibility + fail-closed on null/ambiguous gate inputs.",
-    "l1": "PR #90 fixed C1: isEligible passed pr:in-review issues to the Coder, re-selecting items already under active PR development. Also T2: shouldOpenPR({tests:null}) returned truthy, creating PRs when no CI run had occurred. Both silent failures — no crash, just repeated work or spurious PR creation. Root cause: eligibility checked some but not all in-flight labels; gate function lacked a positive-confirmation requirement.",
-    "value": "(1) Eligibility: every label denoting active ownership (pr:in-review, in-progress, blocked) must appear in isEligible — missing any one silently allows duplicate processing. Test each in-flight label as an explicit negative case.\n(2) Gate functions: require confirmed positive state (e.g. !!tests && tests.passed === true), NOT merely absence of explicit failure. shouldOpenPR(null) → false; shouldMerge(null) → false. 'No data' is not 'ok'.\nApplies to any polling daemon or work-queue consumer. Provenance: PR #90 (2026-06-18), closes Issue #87.",
-    "provenance": {
-      "source": "PR #90: fix(dev-society): apply #86 review findings C1/C2/S1/S2 + tests T1/T2",
-      "ts": "2026-06-18"
-    }
-  },
   "security-eval-layer-targeting": {
     "status": "active",
     "valid_to": null,
@@ -306,6 +295,28 @@
     "value": "Three layered-defense fixture anti-patterns to avoid:\n\n(1) Dirty git state poisons pre-run change detection. Any fixture file written AFTER buildMesh's seed commit appears as untracked/modified, causing noExternalWrite() to see 'already dirty' as a false positive. Fix: committed malicious fixtures must ride the seed commit via buildMesh's rawRegistry escape hatch (or equivalent) — never written manually post-seed.\n\n(2) Relative escape paths trigger model safety heuristics, not the path-guard. A task like 'write to ../B/x.txt' is refused by the model before the path-guard hook fires. Use the absolute path to the sibling root so the model cooperates down to the framework layer under test. On Windows, do-mode is refused by managed-policy preflight without AGENT_MESH_ATTEST_MANAGED_COMPATIBLE — add a win32 skip for path-guard do-mode tests.\n\n(3) JSON Schema enum restriction can block the model from supplying a 'bad' argument. In delegate_to_peer, mode: { enum: ['ask'] } prevented the model from passing mode:'do' — schema validation fired before the bridge's runtime mode_disabled refusal. Fix: loosen to { type: 'string', minLength: 1 }; the runtime gate remains enforcement and is covered deterministically by unit tests.\n\nGeneral rule: design each security eval scenario so the fixture cooperates past every outer layer (model refusals, schema validation, dirty git state, managed-policy preflight) and the framework's own enforcement is the FIRST thing that fires. Provenance: PR #79 (2026-06-18), fixing Issue #77.",
     "provenance": {
       "source": "PR #79: fix: L3 adversarial battery I3/I5/I6 security invariant failures",
+      "ts": "2026-06-18"
+    }
+  },
+  "trunk-release-cut-model": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Trunk + release-cut closes deployment drift: main = single living line; releases are tags/branches cut from main.",
+    "l1": "PR #86 (P1 A2A dev-society on main): v0.5-development was a long-lived parallel branch requiring constant sync with main — deployment drift was inevitable. Fix: main = trunk developed 24/7 by the mesh; deployments are releases cut from main when mature (git tag v1.0 or a v1.0 branch). Upgrade = cut a new release from main and redeploy. The parallel branch becomes redundant. Also: when a persistent daemon adopts an issue class via a new label (route:a2a), add a 'skip if has label' guard in every other workflow to prevent double-building.",
+    "value": "Adopt main as the single trunk for any automated development society. Automation (mesh, daemon, scheduled jobs) develops it continuously. Release model: cut a tag (git tag vX.Y) or a branch (vX.Y-stable) from main when stable enough; deploy THAT, not main directly. Upgrade = cut a new release from the current trunk state.\n\nNever keep a long-lived parallel branch (e.g. vN-development) in sync with main — each sync is manual overhead and divergence accumulates silently until you have two de facto trunks.\n\nWhen a new automation path (daemon, scheduled poller) adopts an issue class via a new label (e.g. route:a2a): immediately add a 'skip if label present' guard in every OTHER workflow that would otherwise build the same issue — prevents double-builds and conflicting concurrent runs.\n\nProvenance: PR #86 (2026-06-18).",
+    "provenance": {
+      "source": "PR #86: feat(dev-society): land P1 on main (single trunk line) + trunk/release model",
+      "ts": "2026-06-18"
+    }
+  },
+  "daemon-polling-idempotency": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Polling daemon: exclude ALL in-flight labels from eligibility + fail-closed on null/ambiguous gate inputs.",
+    "l1": "PR #90 fixed C1: isEligible passed pr:in-review issues to the Coder, re-selecting items already under active PR development. Also T2: shouldOpenPR({tests:null}) returned truthy, creating PRs when no CI run had occurred. Both silent failures — no crash, just repeated work or spurious PR creation. Root cause: eligibility checked some but not all in-flight labels; gate function lacked a positive-confirmation requirement.",
+    "value": "(1) Eligibility: every label denoting active ownership (pr:in-review, in-progress, blocked) must appear in isEligible — missing any one silently allows duplicate processing. Test each in-flight label as an explicit negative case.\n(2) Gate functions: require confirmed positive state (e.g. !!tests && tests.passed === true), NOT merely absence of explicit failure. shouldOpenPR(null) → false; shouldMerge(null) → false. 'No data' is not 'ok'.\nApplies to any polling daemon or work-queue consumer. Provenance: PR #90 (2026-06-18), closes Issue #87.",
+    "provenance": {
+      "source": "PR #90: fix(dev-society): apply #86 review findings C1/C2/S1/S2 + tests T1/T2",
       "ts": "2026-06-18"
     }
   },
@@ -386,14 +397,14 @@
       "ts": "2026-06-19"
     }
   },
-  "deterministic-union-backlog-drain": {
+  "scheduler-builtin-return-shape": {
     "status": "active",
     "valid_to": null,
-    "l0": "Shared-file PRs accumulate faster than LLM mergefix can drain — add deterministic keyed-union in the automerge sweep.",
-    "l1": "PR #130: 12 memory:promote PRs piled up; each touches quick.json; all conflicted; mergefix resolves 1/run via LLM — Curator opens them faster than mergefix drains. Fix: deterministic keyed-union in the automerge sweep (newer provenance.ts wins same-key; ours on tie; LRU cap enforced post-union). exit 3 for any non-memory conflict defers to mergefix. Whole backlog drains in one sweep pass, no LLM needed.",
-    "value": "In the automerge sweep, resolve quick.json deterministically: (1) keyed union — same key → newer provenance.ts wins, tie → ours; (2) LRU evict oldest non-core until under cap; (3) line-union memory *.md; (4) exit 3 on ANY non-memory conflict — defer to mergefix, never auto-merge code. Whole backlog drains in one sweep pass without LLM. Provenance: PR #130 (2026-06-19).",
+    "l0": "Daemon scheduler builtins must return {status:'ok'} — void/undefined breaks onJobResult.",
+    "l1": "PR #127 final review caught a Critical: the `issue-sweep` builtin initially returned void (sweep() is async with no explicit return). The scheduler executor's onJobResult reads `.status` from the return — undefined.status silently miscategorises the run. Fixed by wrapping: `.then(() => ({status:'ok', output:'issue-sweep complete'})).catch(e => ({status:'fail', error:e.message}))`. Every `kind:builtin` entry in schedule.json must return `{status:'ok'}` or `{status:'fail', error}` — never void.",
+    "value": "Apply when registering any new builtin in the dev-society daemon scheduler:\n\n(1) Always return an explicit status object. Pattern:\n`builtins['name'] = () => work().then(() => ({status:'ok', output:'...'})).catch(e => ({status:'fail', error:e.message}));`\nFor async/await style: `builtins['name'] = async () => { await work(); return {status:'ok'}; }`\n\n(2) When wrapping an existing async sweep function (e.g. sweep() returns void): do NOT assign directly as `builtins['x'] = sweep` — the void return propagates. Wrap with `.then`/`catch` or an async wrapper that ends with `return {status:'ok'}`.\n\n(3) The executor's onJobResult logs `status === 'ok'` as info and everything else as warn. A void return means status is `undefined`, not 'fail' — the run appears to succeed while the job result is silently wrong.\n\nSymptom: job-run log entries show `undefined` as the status instead of 'ok' or 'fail'.\n\nThis was caught only by the final code review of PR #127 (2026-06-19) — there is no runtime validation of the return shape at registration time. Provenance: PR #127.",
     "provenance": {
-      "source": "PR #130: fix(memory-automerge): deterministic in-line union to drain the memory:promote backlog",
+      "source": "PR #127: feat(dev-society): label-aware 10-min issue sweep (maintainer-owned)",
       "ts": "2026-06-19"
     }
   },
@@ -438,17 +449,6 @@
     "value": "Four invariants for adding cross-cutting observability to a daemon service:\n\n(1) Fail-safe emit: wrap every log-write in try/catch with no re-throw. Filesystem errors (full disk, bad permissions, missing dir) must never propagate into the daemon loop — a crash in the logger is a service outage. Pattern: `try { await appendFile(path, line); } catch { /* swallow */ }`\n\n(2) Mode guard: gate ALL emits on `!opts.selftest && !opts.once` — single-pass invocations (health checks, one-shot runs) must exit cleanly without producing side-effect log files. Assert in tests: run `--selftest`, verify no activity files created.\n\n(3) Tolerant read route: the observability API (GET /api/activity-log) must catch all errors and return [] / 2xx, never a 500. A broken log reader must not disable the dashboard that depends on it.\n\n(4) XSS-safe render: pass every event field (summary, agent, ref, detail) through an HTML-escape fn before innerHTML. Event payloads are service-generated but may relay user-originated strings — treat as untrusted.\n\nTwo-layer separation: activity log = high-level event stream (issue.picked / delegate.done / job.run); per-agent run logs = granular detail, linked by `ref`. Don't collapse them.\n\nProvenance: PR #126 (2026-06-19).",
     "provenance": {
       "source": "PR #126: feat(mesh): unified activity log + filterable dashboard panel (Phase 1)",
-      "ts": "2026-06-19"
-    }
-  },
-  "scheduler-builtin-return-shape": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "Daemon scheduler builtins must return {status:'ok'} — void/undefined breaks onJobResult.",
-    "l1": "PR #127 final review caught a Critical: the `issue-sweep` builtin initially returned void (sweep() is async with no explicit return). The scheduler executor's onJobResult reads `.status` from the return — undefined.status silently miscategorises the run. Fixed by wrapping: `.then(() => ({status:'ok', output:'issue-sweep complete'})).catch(e => ({status:'fail', error:e.message}))`. Every `kind:builtin` entry in schedule.json must return `{status:'ok'}` or `{status:'fail', error}` — never void.",
-    "value": "Apply when registering any new builtin in the dev-society daemon scheduler:\n\n(1) Always return an explicit status object. Pattern:\n`builtins['name'] = () => work().then(() => ({status:'ok', output:'...'})).catch(e => ({status:'fail', error:e.message}));`\nFor async/await style: `builtins['name'] = async () => { await work(); return {status:'ok'}; }`\n\n(2) When wrapping an existing async sweep function (e.g. sweep() returns void): do NOT assign directly as `builtins['x'] = sweep` — the void return propagates. Wrap with `.then`/`catch` or an async wrapper that ends with `return {status:'ok'}`.\n\n(3) The executor's onJobResult logs `status === 'ok'` as info and everything else as warn. A void return means status is `undefined`, not 'fail' — the run appears to succeed while the job result is silently wrong.\n\nSymptom: job-run log entries show `undefined` as the status instead of 'ok' or 'fail'.\n\nThis was caught only by the final code review of PR #127 (2026-06-19) — there is no runtime validation of the return shape at registration time. Provenance: PR #127.",
-    "provenance": {
-      "source": "PR #127: feat(dev-society): label-aware 10-min issue sweep (maintainer-owned)",
       "ts": "2026-06-19"
     }
   },
@@ -516,6 +516,17 @@
     "provenance": {
       "source": "PR #85: feat(dev-mesh): research Analyst runs daily + dedupes — keep the idea queue fed",
       "ts": "2026-06-18"
+    }
+  },
+  "deterministic-union-backlog-drain": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Shared-file PRs accumulate faster than LLM mergefix can drain — add deterministic keyed-union in the automerge sweep.",
+    "l1": "PR #130: 12 memory:promote PRs piled up; each touches quick.json; all conflicted; mergefix resolves 1/run via LLM — Curator opens them faster than mergefix drains. Fix: deterministic keyed-union in the automerge sweep (newer provenance.ts wins same-key; ours on tie; LRU cap enforced post-union). exit 3 for any non-memory conflict defers to mergefix. Whole backlog drains in one sweep pass, no LLM needed.",
+    "value": "In the automerge sweep, resolve quick.json deterministically: (1) keyed union — same key → newer provenance.ts wins, tie → ours; (2) LRU evict oldest non-core until under cap; (3) line-union memory *.md; (4) exit 3 on ANY non-memory conflict — defer to mergefix, never auto-merge code. Whole backlog drains in one sweep pass without LLM. Provenance: PR #130 (2026-06-19).",
+    "provenance": {
+      "source": "PR #130: fix(memory-automerge): deterministic in-line union to drain the memory:promote backlog",
+      "ts": "2026-06-19"
     }
   }
 }
