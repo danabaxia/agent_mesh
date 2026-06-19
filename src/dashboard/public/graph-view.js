@@ -64,6 +64,14 @@ const TEMPLATE = `
     <div class="shead" data-fold><span class="caret">▾</span><span>⏱ SCHEDULES</span><span class="meta" id="gv-sched-owner">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
     <div class="secbody"><div class="tscroll" id="gv-sched"></div></div>
   </div>
+  <div class="sec" id="sec-health">
+    <div class="shead" data-fold><span class="caret">▾</span><span>♥ HEALTH</span><span class="meta" id="gv-health-pill">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
+    <div class="secbody"><div class="tscroll" id="gv-health"></div></div>
+  </div>
+  <div class="sec" id="sec-activity">
+    <div class="shead" data-fold><span class="caret">▾</span><span>📋 ACTIVITY LOG</span><span class="meta" id="gv-activity-meta">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
+    <div class="secbody"><div class="tscroll" id="gv-activity-log"></div></div>
+  </div>
 </div>`;
 
 export function renderGraphView(rootEl) {
@@ -112,6 +120,8 @@ function loadAll() {
   loadTokens();
   loadDaily();
   loadSchedules();
+  loadHealth();
+  loadActivityLog();
   if (!es) {
     try { es = new EventSource('/api/events'); es.addEventListener('activity', () => loadActivity()); es.onerror = () => {}; } catch { /* no SSE */ }
   }
@@ -252,7 +262,7 @@ async function loadDaily() {
   setText('gv-k-prs', `${(prs.merged || []).length} merged · ${prs.openNow ?? 0} open total`);
   setText('gv-k-iss', `${(iss.opened || []).length} / ${(iss.closed || []).length}`);
   const labels = Object.entries(iss.openByLabel || {}).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(' · ') || '—';
-  setText('gv-k-isss', labels);
+  setText('gv-k-isss', `${iss.openNow ?? 0} open total · ${labels}`);
   const t = r.tokens && r.tokens.total ? (r.tokens.total.input || 0) + (r.tokens.total.output || 0) : 0;
   setText('gv-k-tok', fmt(t));
   setText('gv-k-toks', `$${(r.tokens?.local?.costUsd || 0).toFixed(2)} — detail below ↓`);
@@ -274,6 +284,139 @@ async function loadSchedules() {
   const pill = (s) => s === 'ok' ? '<span class="state done">ok</span>' : s === 'fail' ? '<span class="state block">fail</span>' : '<span class="state open">—</span>';
   const rows = d.jobs.map((j) => `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span></td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : ''}</td></tr>`).join('');
   el.innerHTML = `<table><thead><tr><th>agent · job</th><th>cadence</th><th>last</th><th>next run</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function loadHealth() {
+  const pillEl = root.querySelector('#gv-health-pill');
+  const el = root.querySelector('#gv-health');
+  let data;
+  try {
+    data = await (await fetch('/api/health', { credentials: 'same-origin' })).json();
+  } catch {
+    if (pillEl) pillEl.textContent = 'unavailable';
+    if (el) el.innerHTML = '<div class="gv-empty">health unavailable</div>';
+    return;
+  }
+  const { summary = {}, findings = [], openEscalations = [] } = data;
+  const bad = (summary.failing || 0) + (summary.overdue || 0) + (summary.stuck || 0);
+  // header pill
+  if (pillEl) {
+    if (bad === 0) {
+      pillEl.innerHTML = '<span class="hpill hpill-ok">All scheduled jobs healthy</span>';
+    } else {
+      const haserr = findings.some((f) => f.severity === 'error');
+      pillEl.innerHTML = `<span class="hpill ${haserr ? 'hpill-err' : 'hpill-warn'}">${bad} issue${bad === 1 ? '' : 's'}</span>`;
+    }
+  }
+  if (!findings.length) {
+    el.innerHTML = '<div class="gv-empty health-ok">All scheduled jobs healthy</div>';
+    return;
+  }
+  const order = { error: 0, warn: 1 };
+  const sorted = [...findings].sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9));
+  const rows = sorted.map((f) => {
+    const key = `mesh-heartbeat:${f.agent}/${f.jobId}/${f.condition}`;
+    const escalated = openEscalations.includes(key);
+    const rel = relTime(f.since);
+    const sev = f.severity === 'error' ? 'state block' : 'state prog';
+    const escBadge = escalated ? ' <span class="hesc">escalated</span>' : '';
+    return `<tr>
+      <td class="title"><span class="tt"><b class="an" style="color:${agentColor(f.agent)}">${esc(f.agent)}</b></span></td>
+      <td><span class="kind issue">${esc(f.jobId)}</span></td>
+      <td><span class="${sev}">${esc(f.condition)}</span></td>
+      <td class="age">${esc(rel)}</td>
+      <td class="title"><span class="tt">${esc(f.detail || '')}${escBadge}</span></td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table><thead><tr><th>agent</th><th>job</th><th>condition</th><th>since</th><th>detail</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ── activity log panel ──
+const actFilters = { agent: '', type: '', range: '24h' };
+
+function rangeSince(r) {
+  const nowMs = Date.now();
+  if (r === 'today') return new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z').toISOString();
+  if (r === '24h') return new Date(nowMs - 864e5).toISOString();
+  if (r === '7d') return new Date(nowMs - 7 * 864e5).toISOString();
+  return ''; // all
+}
+
+async function loadActivityLog() {
+  const el = root.querySelector('#gv-activity-log');
+  const metaEl = root.querySelector('#gv-activity-meta');
+  if (!el) return;
+  const since = rangeSince(actFilters.range);
+  const params = Object.entries({ agent: actFilters.agent, type: actFilters.type, since }).filter(([, v]) => v);
+  const qs = params.length ? '?' + new URLSearchParams(params).toString() : '';
+  let data;
+  try {
+    data = await (await fetch('/api/activity-log' + qs, { credentials: 'same-origin' })).json();
+  } catch {
+    el.innerHTML = '<div class="gv-empty">activity log unavailable</div>';
+    if (metaEl) metaEl.textContent = '—';
+    return;
+  }
+  const { events = [], agents: agentList = [], types: typeList = [] } = data;
+  if (metaEl) metaEl.textContent = `${events.length} event${events.length === 1 ? '' : 's'}`;
+
+  const agentOpts = ['', ...agentList].map((a) => `<option value="${esc(a)}"${actFilters.agent === a ? ' selected' : ''}>${a ? esc(a) : 'all agents'}</option>`).join('');
+  const typeOpts = ['', ...typeList].map((t) => `<option value="${esc(t)}"${actFilters.type === t ? ' selected' : ''}>${t ? esc(t) : 'all types'}</option>`).join('');
+  const rangeOpts = [
+    { v: 'today', l: 'Today' },
+    { v: '24h', l: '24h' },
+    { v: '7d', l: '7d' },
+    { v: 'all', l: 'All time' },
+  ].map(({ v, l }) => `<option value="${v}"${actFilters.range === v ? ' selected' : ''}>${l}</option>`).join('');
+
+  const levelPill = (lvl) => {
+    const cls = lvl === 'error' ? 'act-lvl act-lvl-error' : lvl === 'warn' ? 'act-lvl act-lvl-warn' : 'act-lvl act-lvl-info';
+    return `<span class="${cls}">${esc(lvl || 'info')}</span>`;
+  };
+
+  const rows = events.length ? events.map((e) => {
+    const who = e.agent ? tagName(e.agent) : `<span class="act-src">${esc(e.source || '')}</span>`;
+    const ref = e.ref ? ` <span class="act-ref">${esc(e.ref)}</span>` : '';
+    return `<tr class="act-row act-row-${esc(e.level || 'info')}">
+      <td class="age">${esc(relTime(e.ts))}</td>
+      <td>${who}</td>
+      <td><span class="act-type">${esc(e.type || '')}</span></td>
+      <td>${levelPill(e.level)}</td>
+      <td class="title"><span class="tt">${esc(e.summary || '')}${ref}</span></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="5" class="gv-empty">No activity yet.</td></tr>`;
+
+  el.innerHTML = `
+    <div class="act-filters">
+      <select class="act-sel" data-act-filter="agent">${agentOpts}</select>
+      <select class="act-sel" data-act-filter="type">${typeOpts}</select>
+      <select class="act-sel" data-act-filter="range">${rangeOpts}</select>
+    </div>
+    <table>
+      <thead><tr><th>time</th><th>agent</th><th>type</th><th>level</th><th>summary</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  // bind filter selects
+  el.querySelectorAll('.act-sel').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      actFilters[sel.dataset.actFilter] = sel.value;
+      loadActivityLog();
+    });
+  });
+}
+
+function relTime(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - Date.parse(iso);
+  if (isNaN(diff)) return '';
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 function setText(id, v) { const el = root.querySelector('#' + id); if (el) el.textContent = v; }
