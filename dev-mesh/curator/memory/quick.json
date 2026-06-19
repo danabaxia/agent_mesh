@@ -572,5 +572,16 @@
       "source": "PR #138: fix(dashboard): daily/refresh derives DEV_SOCIETY_REPO from git remote",
       "ts": "2026-06-19"
     }
+  },
+  "terminal-close-escalate-sweep": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon closes terminal-labelled issues; escalation sweep converts stuck PRs to deduped self-closing needs-triage issues.",
+    "l1": "PR #158 plugged two silent-hang holes. (1) isTerminalState: daemon sweep top-of-tick closes any open issue with a terminal label (done/rejected/wontfix/duplicate/invalid) — previously required manual close. (2) dev-mesh-escalate sweep: PR stuck past staleMs (3h default) in DIRTY/UNKNOWN/UNSTABLE/CHANGES_REQUESTED, or CLEAN-without-APPROVED → open a deduped needs-triage issue that flows into the Triager pipeline; self-close on recovery. Excludes drafts, forks, memory:promote, BLOCKED/BEHIND, CLEAN+APPROVED. Cron 12,42; gated by AUTOMERGE_ENABLED; issues:write only.",
+    "value": "Two-part self-healing pattern for no-silent-hangs:\n\n**Part 1 — auto-close terminal issues**: Add isTerminalState(issue) as the FIRST check in the daemon's sweep tick. Terminal labels: done, rejected, wontfix, duplicate, invalid. Call `gh issue close N` without removing the label. Run before any routing logic so closed issues never consume processing budget.\n\n**Part 2 — PR escalation sweep**: For each non-excluded PR stuck past staleMs: (a) classify stuck state (mergeability ∈ {DIRTY,UNKNOWN,UNSTABLE}; reviewDecision=CHANGES_REQUESTED; CLEAN-without-APPROVED); (b) title-dedup before creating a needs-triage issue ('stuck (PR #N — class)'); (c) self-close when PR recovers (MERGEABLE+APPROVED or PR merged/closed).\n\nExclusions (each prevents a false-positive): draft PRs; fork PRs (isCrossRepository=true); memory:promote label; BLOCKED/blocked-by-* label; BEHIND mergeability (mergefix owns); CLEAN+APPROVED (auto-merge owns).\n\nConfig: DEV_MESH_PR_STALE_MS (default 3h); AUTOMERGE_ENABLED gate (see default-off-three-layer-kill-switch); cron 12,42 offset from other sweeps. Permissions: issues:write only.\n\nTests: truth table for isEscalatable() covering all mergeState × reviewDecision × exclusion-label combos; open/dedup/self-close/--dry-run with injected gh shim; YAML lint for exclusion-list completeness.\n\nRelated: pr-janitor-gap-classes (complements — janitor handles scope-drift, UNKNOWN nudge, unlabelled-bot PRs). Provenance: PR #158 (2026-06-19).",
+    "provenance": {
+      "source": "PR #158: feat(self-healing): close terminal issues + escalate stuck PRs (no silent hangs)",
+      "ts": "2026-06-19"
+    }
   }
 }
