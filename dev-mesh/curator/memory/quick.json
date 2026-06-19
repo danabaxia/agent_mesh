@@ -374,5 +374,16 @@
       "source": "PR #112 (2026-06-18): feat(mesh): Phase 1 — always-on scheduling infra + dashboard visibility",
       "ts": "2026-06-18"
     }
+  },
+  "security-role-ask-only-reporter": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Security specialist: ask-only, OAuth, issues-only — no write/merge authority, no PR trigger, no outbound peers.",
+    "l1": "PR #116: dedicated security role that inspects continuously — never writes or merges. Invariants: (1) ask-only (no Edit/Write/Bash(git:*) tools); (2) CLAUDE_CODE_OAUTH_TOKEN not DEV_MESH_PAT — OAuth cannot push to .github/workflows; (3) findings reported as GitHub issues only — no PR reviews, no auto-closes; (4) no pull_request trigger — fork-PR content cannot receive secrets; (5) no outbound peers in mesh.json — sees all, controls nothing; (6) --advisory-blocked flag passed (read-probe denials are expected noise). Pattern: separate 'inspect and report' from all 'fix and merge' duties.",
+    "value": "Pattern for adding a security specialist role to an autonomous agent society:\n\n(1) Agent role: create dev-mesh/security with ask-only mode. No Edit, no Write, no Bash(git:*) in allowedTools. No outbound peers in agent.json — security sees all, controls nothing.\n\n(2) Three-lens coverage: (a) Injection — prompt/workflow injection, unsafe shell interpolation (${{ head.ref }} in run:), fork PR secret exposure; (b) Identity/auth — OAuth-only Claude auth, least-privilege GitHub permissions, same-repo guards, credential masking; (c) Token budget — bounded autonomous loops, per-branch retry caps, usage capture, human-visible budget exhaustion paths.\n\n(3) Workflow auth: use CLAUDE_CODE_OAUTH_TOKEN not DEV_MESH_PAT. OAuth cannot push to .github/workflows — a security agent that can self-edit CI is a conflict of interest. Trigger: schedule (cron, e.g. every 6h) + manual dispatch only. Never pull_request — fork PRs can exfiltrate secrets if the trigger runs in the wrong context.\n\n(4) Permissions: `contents: read, issues: write`. Security cannot push. Issues:write only for findings alerts. Never open/close/merge PRs.\n\n(5) Honesty gate: shared assert-run-healthy.mjs with --advisory-blocked (ask-role flag). Read-probe denials are expected noise, not failure (see honesty-gate-role-scoped).\n\n(6) Mesh wiring: route via Maintainer (add Security as peer in maintainer/agent.json). Topology test assertions: Security is ask-only; Maintainer peers include Security; Security has zero outbound peers.\n\n(7) Tests: dev-mesh-agents.test.js guards role set, ask-only flag, peer topology; dev-mesh-workflow.test.js guards schedule trigger, no PR trigger, OAuth sanitation, postrun gate, three security lenses in prompt. Write tests first — they are the living spec.\n\nProvenance: PR #116 (2026-06-19).",
+    "provenance": {
+      "source": "PR #116 (2026-06-19): [codex] add scheduled dev-mesh security agent",
+      "ts": "2026-06-19"
+    }
   }
 }
