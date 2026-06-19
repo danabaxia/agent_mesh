@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const dir = fileURLToPath(new URL('../.github/workflows/', import.meta.url));
-const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix'];
+const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix', 'security'];
 const wf = Object.fromEntries(NAMES.map((n) => {
   const p = `${dir}dev-mesh-${n}.yml`;
   return [n, existsSync(p) ? readFileSync(p, 'utf8') : ''];
@@ -36,6 +36,9 @@ test('triggers match the §6 table', () => {
   assert.match(wf.autofix, /check_run:/);           // autofix owns the CI-failure event
   assert.match(wf.triage, /schedule:/);             // triage is the hourly sweep…
   assert.doesNotMatch(wf.triage, /check_run:/);     // …not the event path (no double-run)
+  assert.match(wf.security, /schedule:/);            // security is a scheduled scanner…
+  assert.match(wf.security, /workflow_dispatch:/);   // …and can be run on demand
+  assert.doesNotMatch(wf.security, /^\s*pull_request:/m, 'security must not run on PRs');
   assert.match(wf.review, /^\s*pull_request:/m);
   assert.match(wf.curate, /^\s*pull_request:/m);
   assert.match(wf.curate, /types:\s*\[?\s*closed/, 'curate fires on PR closed');
@@ -69,6 +72,10 @@ test('SECURITY: ask-roles run least-privilege (review never writes repo contents
   assert.match(wf.review, /permissions:/);
   assert.match(wf.review, /contents:\s*read/, 'review must keep contents: read (no pushes)');
   assert.doesNotMatch(wf.review, /contents:\s*write/, 'review must not grant contents: write');
+  assert.match(wf.security, /permissions:/);
+  assert.match(wf.security, /contents:\s*read/, 'security must keep contents: read (no pushes)');
+  assert.match(wf.security, /issues:\s*write/, 'security may open/update alert issues');
+  assert.doesNotMatch(wf.security, /contents:\s*write/, 'security must not grant contents: write');
 });
 
 test('REVIEW VERDICT: reviewer emits an explicit approve/request-changes (the all-clear signal)', () => {
@@ -155,7 +162,9 @@ test('HONESTY GATE: every agent workflow fails on an errored/no-op model run', (
   // (claude-code-action reports success even when the model errored instantly).
   for (const n of NAMES) {
     assert.match(wf[n], /id:\s*claude/, `${n}: action step needs id: claude for the gate`);
-    assert.match(wf[n], /assert-run-healthy\.mjs/, `${n}: must run the per-run honesty gate`);
+    // The honesty gate now runs via the agent-postrun composite action (which invokes
+    // scripts/assert-run-healthy.mjs internally and also captures token usage).
+    assert.match(wf[n], /agent-postrun/, `${n}: must run the per-run honesty gate (agent-postrun)`);
   }
 });
 
@@ -204,24 +213,32 @@ test('CURATOR GATE: curate validates quick.json caps (belt-and-suspenders backst
   // already happened inside the action), not before the push. It fails the curate run
   // if the gate was skipped, but the memory:promote PR is already open at that point.
   // Ordering: must appear after `id: claude` (so it reads the committed file) and
-  // before assert-run-healthy (so a cap violation shows up before the honesty gate).
+  // before the honesty gate (so a cap violation shows up before it). The gate now runs
+  // via the agent-postrun composite step.
   assert.match(wf.curate, /validate-quick-memory\.mjs.*quick\.json/,
     'curate: must call validate-quick-memory.mjs on the curator quick.json');
   const ls = wf.curate.split('\n');
   const clIdx = ls.findIndex((l) => /id:\s*claude/.test(l));
   const vaIdx = ls.findIndex((l) => /validate-quick-memory\.mjs/.test(l));
-  const hhIdx = ls.findIndex((l) => /assert-run-healthy\.mjs/.test(l));
+  const hhIdx = ls.findIndex((l) => /agent-postrun/.test(l));
   assert.ok(clIdx < vaIdx, 'validate step must come after id: claude');
-  assert.ok(vaIdx < hhIdx, 'validate step must come before assert-run-healthy');
+  assert.ok(vaIdx < hhIdx, 'validate step must come before the honesty gate (agent-postrun)');
 });
 
 test('each workflow drives its own role via dev-mesh/<role>', () => {
   // autofix is the one exception: it's a combined Triager+Coder CI-fix role described
   // INLINE in the prompt (it deliberately does NOT read the no-shell Coder AGENT.md).
-  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator' };
+  const role = { research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager', review: 'reviewer', curate: 'curator', security: 'security' };
   for (const n of Object.keys(role)) {
     assert.match(wf[n], new RegExp(`dev-mesh/${role[n]}`), `${n}: should reference dev-mesh/${role[n]}`);
   }
+});
+
+test('security scanner covers injection, identity/auth, and token budget controls', () => {
+  assert.match(wf.security, /prompt injection|workflow command injection/i, 'security prompt must cover injection attacks');
+  assert.match(wf.security, /OAuth-only|CLAUDE_CODE_OAUTH_TOKEN|identity/i, 'security prompt must cover identity/auth');
+  assert.match(wf.security, /token budget|\[autofix\]|\[review-fix\]/i, 'security prompt must cover automation token budgets');
+  assert.match(wf.security, /dev-mesh\/security\/AGENT\.md/, 'security workflow must drive the security agent');
 });
 
 // --- Task 9: the nightly dogfood (Phase-1 mesh-native, non-gating) ---

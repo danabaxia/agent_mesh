@@ -1,0 +1,151 @@
+/* graph-view.css — the top-level "Graph" view (live mesh activity + tokens +
+   issues/PRs). Reuses board2.css :root tokens + the flow/dashmove/pulse
+   keyframes; all selectors scoped under #view-graph so nothing leaks to the board. */
+
+#view-graph{flex:1;min-height:0;display:none;flex-direction:column}
+#view-graph.on{display:flex}
+
+#view-graph .gv-head{display:flex;align-items:center;gap:14px;padding:10px 18px;background:var(--panel);border-bottom:1px solid var(--line)}
+#view-graph .gv-head .logo{font:700 17px var(--mono);letter-spacing:-.5px}
+#view-graph .clock{font-family:var(--mono);font-size:12px;color:var(--ink2)}
+
+#view-graph .mesh-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:10px 18px 0;background:var(--bg)}
+
+#view-graph .lower{flex:1;display:flex;flex-direction:column;min-height:0;padding:12px 18px;gap:12px}
+#view-graph .sec{background:var(--panel);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;min-height:0;flex:1}
+#view-graph .sec.band{flex:0 0 auto}
+#view-graph .sec.folded{flex:0 0 auto}
+#view-graph .sec.folded .secbody{display:none}
+#view-graph .shead{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;user-select:none;font:600 11px var(--mono);color:var(--ink2);letter-spacing:1px;border-bottom:1px solid var(--line)}
+#view-graph .sec.folded .shead{border-bottom:none}
+#view-graph .shead:hover{color:var(--teal)}
+#view-graph .shead .caret{font-size:10px;width:12px;display:inline-block;transition:transform .15s;color:var(--idle)}
+#view-graph .sec.folded .shead .caret{transform:rotate(-90deg)}
+#view-graph .shead .live-ind{color:var(--good);animation:flow 1.4s infinite}
+#view-graph .shead .meta{margin-left:auto;font:600 10px var(--mono);color:var(--idle);letter-spacing:.4px}
+#view-graph .maxbtn{margin-left:10px;cursor:pointer;color:var(--idle);font-size:13px;line-height:1;padding:2px 5px;border-radius:5px;border:1px solid transparent}
+#view-graph .maxbtn:hover{color:var(--teal);background:#eef6f4;border-color:var(--line)}
+#view-graph .sec.max .maxbtn{color:var(--teal);border-color:var(--teal)}
+#view-graph .secbody{flex:1;min-height:0;display:flex}
+#view-graph .lower.has-max .sec:not(.max){display:none}
+#view-graph .lower.has-max .sec.max,#view-graph .lower.has-max .sec.max.band{flex:1 1 auto}
+
+#view-graph .ranges{display:flex;gap:4px;margin-left:auto}
+#view-graph .ranges span{font:600 10px var(--mono);padding:3px 11px;border-radius:999px;border:1px solid var(--line);cursor:pointer;background:#fff;color:var(--ink2);letter-spacing:.3px}
+#view-graph .ranges span.on{background:var(--teal);color:#fff;border-color:var(--teal)}
+
+/* token band */
+#view-graph .tokbody{display:flex;gap:22px;padding:14px 18px;align-items:stretch;flex-wrap:wrap}
+#view-graph .tk{display:flex;flex-direction:column;gap:7px;min-width:0}
+#view-graph .tk .lab{font:600 9px var(--mono);color:var(--ink2);letter-spacing:.8px;text-transform:uppercase}
+#view-graph .tk-tot .big{font:700 32px var(--mono);color:var(--ink);line-height:1}
+#view-graph .tk-tot .sub{font:12px var(--mono);color:var(--ink2)}
+#view-graph .tk-tot .sub .am{color:var(--amber);font-weight:600}
+#view-graph .kv{display:flex;gap:14px}
+#view-graph .kv div{display:flex;flex-direction:column}
+#view-graph .kv b{font:600 15px var(--mono);color:var(--teal)}
+#view-graph .kv small{font:9px var(--mono);color:var(--ink2);letter-spacing:.5px}
+#view-graph .split{flex:1;min-width:200px}
+#view-graph .splitbar{height:13px;border-radius:7px;overflow:hidden;display:flex;border:1px solid var(--line);background:#fff}
+#view-graph .splitbar .lo{background:var(--busy)} #view-graph .splitbar .ci{background:var(--teal2)}
+#view-graph .splitleg{display:flex;justify-content:space-between;font:11px var(--mono);color:var(--ink2);margin-top:6px}
+#view-graph .splitleg .d{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:middle}
+#view-graph .top{min-width:230px;flex:1}
+#view-graph .crow{display:grid;grid-template-columns:78px 1fr 50px;gap:8px;align-items:center;margin:3px 0;font:11px var(--mono);cursor:default}
+#view-graph .crow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view-graph .crow .tr{height:7px;background:#ece6d7;border-radius:3px;overflow:hidden}
+#view-graph .crow .fl{height:100%;border-radius:3px}
+#view-graph .crow:hover .fl{filter:brightness(1.12)} #view-graph .crow:hover .nm{text-decoration:underline}
+#view-graph .crow .vv{color:var(--ink2);text-align:right}
+#view-graph .trend{min-width:200px}
+#view-graph .tbars{display:flex;align-items:flex-end;gap:3px;height:48px}
+#view-graph .tbars .tb{flex:1;background:linear-gradient(180deg,var(--teal2),var(--teal));border-radius:2px 2px 0 0;min-height:2px;cursor:pointer;transition:filter .12s}
+#view-graph .tbars .tb:hover{filter:brightness(1.12) saturate(1.25)}
+#view-graph .trend .tl{font:9px var(--mono);color:var(--idle);margin-top:5px;display:flex;justify-content:space-between}
+/* token panel spread when maximized */
+#view-graph #sec-tok.max .tokbody{display:grid;grid-template-columns:1.1fr 1fr;grid-template-rows:minmax(0,auto) minmax(0,1fr);gap:16px;padding:18px 22px;height:100%;overflow:auto}
+#view-graph #sec-tok.max .tk{background:#fcfaf4;border:1px solid var(--line);border-radius:12px;padding:16px 18px;min-width:0}
+#view-graph #sec-tok.max .tk-tot{grid-column:1;grid-row:1} #view-graph #sec-tok.max .split{grid-column:2;grid-row:1}
+#view-graph #sec-tok.max .top{grid-column:1;grid-row:2;overflow:auto} #view-graph #sec-tok.max .trend{grid-column:2;grid-row:2;display:flex;flex-direction:column}
+#view-graph #sec-tok.max .tk-tot .big{font-size:54px} #view-graph #sec-tok.max .kv b{font-size:22px} #view-graph #sec-tok.max .splitbar{height:26px}
+#view-graph #sec-tok.max .crow{grid-template-columns:96px 1fr 60px;margin:9px 0;font-size:13px} #view-graph #sec-tok.max .crow .tr{height:12px}
+#view-graph #sec-tok.max .tbars{flex:1;height:auto;min-height:140px;gap:5px}
+
+/* graph + events */
+#view-graph .split2{flex:1;display:grid;grid-template-columns:1fr 330px;min-height:0}
+#view-graph .split2 .ev-col{border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#view-graph .col-h{padding:7px 14px;border-bottom:1px solid var(--line);font:600 10px var(--mono);color:var(--ink2);letter-spacing:1px}
+#view-graph #gv-field{width:100%;height:100%;min-height:0;display:block}
+#view-graph .peer{stroke:#d4ccba;stroke-width:1.4;fill:none}
+#view-graph .arc{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:7 5;animation:dashmove .9s linear infinite}
+#view-graph .gpulse{fill:var(--amber)}
+#view-graph .nbody{fill:#fff;stroke-width:1.5;transition:stroke-width .12s}
+#view-graph .node{cursor:pointer} #view-graph .node:hover .nbody{stroke-width:3}
+#view-graph .halo{fill:none;stroke:var(--busy);stroke-width:1.6;opacity:0}
+#view-graph .node.work .halo{animation:gvring 1.3s ease-out infinite}
+@keyframes gvring{0%{opacity:.6;r:17}100%{opacity:0;r:34}}
+#view-graph .ini{font:600 12px var(--mono);text-anchor:middle;dominant-baseline:central;fill:#fff}
+#view-graph .nm2{font:600 13px Georgia,serif;text-anchor:middle;fill:var(--ink)}
+#view-graph .rtx{font:9px var(--mono);text-anchor:middle;fill:var(--amber)}
+#view-graph .gv-events{flex:1;overflow:auto;padding:5px 14px 8px;font-size:12px}
+#view-graph .gv-ev{display:flex;gap:9px;padding:4px 0;border-bottom:1px dashed #efe9da;animation:gvfeed .4s ease}
+#view-graph .gv-ev.fresh{background:#fffaf0}
+@keyframes gvfeed{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+#view-graph .gv-ev .et{font-family:var(--mono);color:var(--ink2);flex:none;width:54px}
+#view-graph .gv-ev .ek{font:600 10px var(--mono);width:52px;flex:none;padding-top:1px}
+#view-graph .gv-ev .ek.a2a{color:var(--amber)} #view-graph .gv-ev .ek.run{color:var(--teal)} #view-graph .gv-ev .ek.ok{color:var(--good)} #view-graph .gv-ev .ek.err{color:#b91c1c}
+#view-graph .gv-ev .ex{flex:1} #view-graph .gv-ev .an{font-weight:700}
+
+/* issues & prs table */
+#view-graph .tscroll{flex:1;overflow:auto}
+#view-graph table{width:100%;border-collapse:collapse;font-size:12.5px}
+#view-graph thead th{position:sticky;top:0;background:#f7f5ef;text-align:left;font:600 9.5px var(--mono);color:var(--ink2);letter-spacing:.8px;text-transform:uppercase;padding:8px 12px;border-bottom:1px solid var(--line)}
+#view-graph tbody td{padding:8px 12px;border-bottom:1px dashed #efe9da;vertical-align:middle}
+#view-graph tbody tr:hover{background:#fbf9f3}
+#view-graph td.num{font:600 12px var(--mono);color:var(--ink2);width:56px}
+#view-graph td.num a{color:var(--ink2);text-decoration:none} #view-graph td.num a:hover{color:var(--teal)}
+#view-graph .kind{font:600 9px var(--mono);padding:2px 6px;border-radius:4px;letter-spacing:.5px}
+#view-graph .kind.pr{background:#e7f3f1;color:var(--teal)} #view-graph .kind.issue{background:var(--amber-bg);color:var(--amber)}
+#view-graph td.title{max-width:1px;width:46%} #view-graph .title .tt{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view-graph .state{font:600 10px var(--mono);padding:2px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+#view-graph .state.done{background:#eaf6ee;color:var(--good);border-color:#cfe8d6}
+#view-graph .state.prog{background:var(--amber-bg);color:var(--amber);border-color:#f3e2bf}
+#view-graph .state.review{background:#eef2ff;color:#4338ca;border-color:#dde3fb}
+#view-graph .state.block{background:#fdecec;color:#b91c1c;border-color:#f4cccc}
+#view-graph .state.open{background:#fff;color:var(--ink2)}
+#view-graph .prog{display:flex;gap:3px;align-items:center;min-width:132px}
+#view-graph .prog .seg{height:7px;flex:1;border-radius:2px;background:#ece6d7}
+#view-graph .prog .seg.on{background:var(--teal2)} #view-graph .prog .seg.amber{background:var(--busy)} #view-graph .prog .seg.done{background:var(--good)}
+#view-graph .prog .pl{font:600 9px var(--mono);color:var(--ink2);margin-left:4px;white-space:nowrap}
+#view-graph td.age{font:11px var(--mono);color:var(--idle);white-space:nowrap}
+#view-graph .gv-empty{padding:16px;color:var(--idle);font-size:12.5px}
+
+/* health panel header pills */
+#view-graph .hpill{font:600 10px var(--mono);padding:2px 9px;border-radius:999px;border:1px solid var(--line)}
+#view-graph .hpill-ok{background:#eaf6ee;color:var(--good);border-color:#cfe8d6}
+#view-graph .hpill-warn{background:var(--amber-bg);color:var(--amber);border-color:#f3e2bf}
+#view-graph .hpill-err{background:#fdecec;color:#b91c1c;border-color:#f4cccc}
+/* health panel escalated badge */
+#view-graph .hesc{font:600 9px var(--mono);padding:1px 7px;border-radius:4px;background:#ede9fe;color:#5b21b6;margin-left:6px;vertical-align:middle}
+/* calm healthy empty state */
+#view-graph .gv-empty.health-ok{color:var(--good)}
+
+/* activity log panel */
+#view-graph .act-filters{display:flex;gap:8px;padding:10px 14px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+#view-graph .act-sel{font:600 11px var(--mono);padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink2);cursor:pointer;outline:none}
+#view-graph .act-sel:hover{border-color:var(--teal);color:var(--teal)}
+#view-graph .act-type{font:600 10px var(--mono);color:var(--ink2);letter-spacing:.3px}
+#view-graph .act-src{font:600 10px var(--mono);color:var(--idle)}
+#view-graph .act-ref{font:600 10px var(--mono);padding:1px 6px;border-radius:4px;background:var(--amber-bg);color:var(--amber);margin-left:5px;vertical-align:middle}
+/* level pills */
+#view-graph .act-lvl{font:600 9px var(--mono);padding:2px 7px;border-radius:999px;border:1px solid var(--line)}
+#view-graph .act-lvl-info{background:#eef6f4;color:var(--teal);border-color:#cde3de}
+#view-graph .act-lvl-warn{background:var(--amber-bg);color:var(--amber);border-color:#f3e2bf}
+#view-graph .act-lvl-error{background:#fdecec;color:#b91c1c;border-color:#f4cccc}
+/* row tinting by level */
+#view-graph .act-row-warn td{background:#fffbf3}
+#view-graph .act-row-error td{background:#fff5f5}
+
+/* shared hover tooltip (appended to body) */
+.gv-tip{position:fixed;z-index:9999;display:none;pointer-events:none;background:var(--ink);color:#fff;font:600 11px var(--mono);padding:5px 9px;border-radius:7px;box-shadow:0 5px 16px rgba(31,61,56,.28);white-space:nowrap}
+.gv-tip .v{color:var(--teal2)} .gv-tip .am{color:#fbbf5a}

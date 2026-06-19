@@ -11,17 +11,21 @@ name: CI
 #
 # Actions-minute budget (private repo: Windows bills 2x): the FULL cross-platform
 # matrix runs where it matters — on pull_request (the merge gate) and on manual
-# dispatch. Pushes only trigger on the protected lines (post-merge integration
-# smoke already gated by the PR), and there they run Linux-only. Feature-branch
-# pushes don't trigger CI at all — their open PR is the gate. This roughly halves
-# routine consumption WITHOUT weakening the gate: every PR still gets the full
+# dispatch. Pushes only trigger on the trunk `main` (post-merge integration smoke
+# already gated by the PR), and there they run Linux-only. Feature-branch pushes
+# don't trigger CI at all — their open PR is the gate. This roughly halves routine
+# consumption WITHOUT weakening the gate: every PR still gets the full
 # ubuntu+windows × node 20/22 matrix before it can merge.
+#
+# Trunk-based development: `main` is the single living line. The retired
+# `vN-development` lines are gone from the triggers; a future release branch that
+# needs CI can be added here when it's cut.
 
 on:
   push:
-    branches: [main, 'v*-development']
+    branches: [main]
   pull_request:
-    branches: [main, 'v*-development']
+    branches: [main]
   workflow_dispatch:
 
 concurrency:

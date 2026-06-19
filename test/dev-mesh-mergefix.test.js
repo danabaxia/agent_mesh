@@ -33,7 +33,7 @@ test('mergefix: do-worker tools (any-args), honesty gate present', () => {
   }
   assert.doesNotMatch(wf, /Bash\((?:git|gh|npm|node)\)/, 'bare Bash(cmd) denies args — use Bash(cmd:*)');
   assert.match(wf, /id:\s*claude/, 'action step needs id: claude');
-  assert.match(wf, /assert-run-healthy\.mjs/, 'must run the per-run honesty gate');
+  assert.match(wf, /agent-postrun/, 'must run the per-run honesty gate (agent-postrun composite)');
 });
 
 test('mergefix: branch ref via env (no shell/prompt injection) + fail-fast on empty token', () => {

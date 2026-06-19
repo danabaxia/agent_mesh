@@ -1,0 +1,50 @@
+{
+  "protocolVersion": "1.0",
+  "name": "security",
+  "description": "Scheduled security sentinel for the Dev-mesh: checks injection defenses, OAuth identity/auth, and token-budget controls. Reports only; never edits or merges.",
+  "version": "0.1.0",
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "injection-sweep",
+      "name": "Injection sweep",
+      "description": "Find prompt injection, workflow command injection, unsafe interpolation, and fork secret paths.",
+      "tags": [
+        "security",
+        "injection"
+      ]
+    },
+    {
+      "id": "identity-auth-review",
+      "name": "Identity and auth review",
+      "description": "Check OAuth-only auth, least-privilege permissions, same-repo guards, and token handling.",
+      "tags": [
+        "security",
+        "auth",
+        "identity"
+      ]
+    },
+    {
+      "id": "token-budget-guard",
+      "name": "Token budget guard",
+      "description": "Check autonomous loop budgets, usage capture, and branch-scoped retry caps.",
+      "tags": [
+        "security",
+        "budget",
+        "tokens"
+      ]
+    }
+  ],
+  "x-agentmesh": {
+    "modes": [
+      "ask"
+    ],
+    "meshVersion": "0.1.0"
+  }
+}

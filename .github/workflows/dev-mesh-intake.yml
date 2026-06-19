@@ -81,10 +81,9 @@ jobs:
             code branch, NEVER set `approved` — only a human grants approval. You produce
             discussion, specs, label transitions, and dupe/dead-idea rejections only. The only
             thing that should reach a human is an issue at `spec:in-review`.
-      - name: Verify the agent actually worked (green != healthy)
+      - name: Verify the agent worked + capture usage
         if: always()
-        env:
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-        # --advisory-blocked: this is a light comment/ask role (no git/general
-        # shell granted), so probing a denied command is benign noise, not a failure.
-        run: node scripts/assert-run-healthy.mjs --advisory-blocked
+        uses: ./.github/actions/agent-postrun
+        with:
+          execution_file: ${{ steps.claude.outputs.execution_file }}
+          advisory_blocked: "true"

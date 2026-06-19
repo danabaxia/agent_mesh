@@ -1,4 +1,4 @@
-# Dev-mesh · memory auto-merge — the ONE sanctioned auto-merge in the mesh.
+# Dev-mesh · memory auto-merge — the memory-only auto-merge path (quick.json, never code).
 # A SCHEDULED sweep (not pull_request): GitHub's recursion guard means a memory:promote
 # PR opened by the Curator with GITHUB_TOKEN would NOT fire a pull_request workflow, so a
 # `schedule` trigger is the robust way to pick them up. For each open same-repo
@@ -66,9 +66,26 @@ jobs:
             # (mergefix only touches DIRTY PRs, so nothing would ever refresh it). Merge main
             # in first; a real conflict → leave it for mergefix.
             if ! git merge origin/main --no-edit -q; then
-              echo "#$pr conflicts with main — mergefix will handle"
-              git merge --abort 2>&1 || echo "merge --abort failed; git state may be inconsistent"
-              git checkout - >/dev/null 2>&1 || true; echo "::endgroup::"; continue
+              # Memory PRs collide on quick.json constantly (every promotion edits it). Resolve
+              # deterministically IN-LINE: union-quick-memory.mjs unions quick.json (newer
+              # provenance.ts wins, LRU-evict over cap) and line-unions memory *.md. It exits 3
+              # for ANY non-memory conflict (code is NEVER auto-resolved) — then defer to mergefix.
+              # On success we complete the merge and push it to the PR branch so the server-side
+              # squash-merge below sees a clean, non-conflicting PR.
+              if node scripts/union-quick-memory.mjs; then
+                git commit --no-edit -q
+                branch=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq .headRefName)
+                if git push origin "HEAD:$branch" -q; then
+                  echo "#$pr: auto-resolved memory conflict by union"
+                else
+                  echo "#$pr push of resolved merge failed — mergefix will handle"
+                  git checkout - >/dev/null 2>&1 || true; echo "::endgroup::"; continue
+                fi
+              else
+                echo "#$pr conflict not auto-resolvable here (non-memory or invalid) — mergefix will handle"
+                git merge --abort 2>&1 || echo "merge --abort failed; git state may be inconsistent"
+                git checkout - >/dev/null 2>&1 || true; echo "::endgroup::"; continue
+              fi
             fi
             # bash array (not git ls-files + word-splitting): a path with a space or glob
             # char would break unquoted expansion (shellcheck SC2086/SC2012). Glob the

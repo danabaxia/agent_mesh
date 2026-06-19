@@ -93,33 +93,34 @@ test('gate: a missing execution file is fatal (exit 1)', () => {
 
 // Convention lint (the Reviewer's #26 hardening note): the light-vs-do-mode boundary
 // lives only in per-workflow YAML, so a future role could silently drift — a do-mode
-// pusher wrongly given --advisory-blocked would LOSE its honest RED on a real misconfig.
+// pusher wrongly given advisory_blocked would LOSE its honest RED on a real misconfig.
 // Encode the rule as a test: a workflow is a do-mode pusher IFF it grants Bash(git:*)
-// (the git-push signature); --advisory-blocked must be present IFF it is NOT a pusher.
-test('convention: assert-run-healthy.mjs --advisory-blocked iff the role lacks Bash(git:*)', () => {
+// (the git-push signature); the gate must be advisory IFF it is NOT a pusher. The gate
+// now runs via the agent-postrun composite action, which takes `advisory_blocked` as an
+// input (was the `--advisory-blocked` CLI flag on a direct assert-run-healthy.mjs call).
+test('convention: agent-postrun advisory_blocked iff the role lacks Bash(git:*)', () => {
   const wfDir = fileURLToPath(new URL('../.github/workflows', import.meta.url));
   const files = readdirSync(wfDir).filter((f) => f.startsWith('dev-mesh-') && f.endsWith('.yml'));
   let checked = 0;
   for (const f of files) {
     const wf = readFileSync(join(wfDir, f), 'utf8');
-    if (!/assert-run-healthy\.mjs/.test(wf)) continue; // dogfood/health call other scripts
+    if (!/agent-postrun/.test(wf)) continue; // dogfood/health don't run the composite gate
     checked++;
     // Heuristic: Bash(git:*) is the git-push signature of a do-mode pusher. A future role
     // granting a broader 'Bash' or a narrower 'Bash(git:push)' would NOT be detected here
     // and would be wrongly treated as light — update this pattern if such a grant is added.
     const isPusher = /Bash\(git:\*\)/.test(wf);
-    // Match the flag on the SAME invocation line as the script, so a positional path arg
-    // (node …assert-run-healthy.mjs $PATH --advisory-blocked) is still detected.
-    const hasFlag = /assert-run-healthy\.mjs[^\n]*--advisory-blocked/.test(wf);
+    // The composite gate is advisory when the workflow passes advisory_blocked: "true".
+    const hasFlag = /advisory_blocked:\s*["']true["']/.test(wf);
     if (isPusher) {
-      assert.equal(hasFlag, false, `${f}: do-mode pusher must NOT use --advisory-blocked (it must hard-fail on blocked)`);
+      assert.equal(hasFlag, false, `${f}: do-mode pusher must set advisory_blocked: "false" (hard-fail on blocked)`);
     } else {
-      assert.equal(hasFlag, true, `${f}: light role must use --advisory-blocked (else its review check false-fails)`);
+      assert.equal(hasFlag, true, `${f}: light role must set advisory_blocked: "true" (else its review check false-fails)`);
     }
   }
   // Track the ACTUAL gated count. An exact match forces a deliberate update when a workflow
   // is added OR un-gated — the lint's whole point is "nobody silently dropped one". Current
-  // 10: autofix, backlog, ci-sweep, curate, intake, mergefix, research, review-respond,
-  // review, triage (6 strict pushers + 4 --advisory-blocked light roles).
-  assert.equal(checked, 10, `expected exactly 10 gated dev-mesh workflows, saw ${checked}`);
+  // 11: autofix, backlog, ci-sweep, curate, intake, mergefix, research, review-respond,
+  // review, security, triage (6 strict pushers + 5 --advisory-blocked light roles).
+  assert.equal(checked, 11, `expected exactly 11 gated dev-mesh workflows, saw ${checked}`);
 });

@@ -677,7 +677,7 @@ test('bootstrapUrl contains token', async () => {
 // Static asset serving (Inc 1b)
 // ---------------------------------------------------------------------------
 
-test('GET / returns index.html (200, text/html) behind auth cookie', async () => {
+test('GET / returns the board (board2.html, 200, text/html) behind auth cookie', async () => {
   const { meshRoot } = await buildTestMesh();
   const { srv, cookie, port } = await startAuthedServer(meshRoot);
   try {
@@ -692,18 +692,18 @@ test('GET / returns index.html (200, text/html) behind auth cookie', async () =>
     const ct = res.headers.get('content-type') ?? '';
     assert.ok(ct.includes('text/html'), `Expected text/html content-type, got: ${ct}`);
     const body = await res.text();
-    assert.ok(body.includes('agent_mesh'), 'index.html must mention agent_mesh');
-    assert.ok(body.includes('<html'), 'index.html must be HTML');
+    assert.ok(body.includes('agent_mesh'), 'the board page must mention agent_mesh');
+    assert.ok(body.includes('<html'), 'the board page must be HTML');
   } finally {
     await srv.close();
   }
 });
 
-test('GET /app.js returns JavaScript (200, application/javascript) behind auth cookie', async () => {
+test('GET /board2.js returns JavaScript (200, application/javascript) behind auth cookie', async () => {
   const { meshRoot } = await buildTestMesh();
   const { srv, cookie, port } = await startAuthedServer(meshRoot);
   try {
-    const res = await fetchFrom(`${srv.url}/app.js`, {
+    const res = await fetchFrom(`${srv.url}/board2.js`, {
       headers: {
         'Host': `127.0.0.1:${port}`,
         'Sec-Fetch-Site': 'same-origin',
@@ -718,11 +718,11 @@ test('GET /app.js returns JavaScript (200, application/javascript) behind auth c
   }
 });
 
-test('GET /app.css returns CSS (200) behind auth cookie', async () => {
+test('GET /board2.css returns CSS (200) behind auth cookie', async () => {
   const { meshRoot } = await buildTestMesh();
   const { srv, cookie, port } = await startAuthedServer(meshRoot);
   try {
-    const res = await fetchFrom(`${srv.url}/app.css`, {
+    const res = await fetchFrom(`${srv.url}/board2.css`, {
       headers: {
         'Host': `127.0.0.1:${port}`,
         'Sec-Fetch-Site': 'same-origin',
@@ -737,11 +737,11 @@ test('GET /app.css returns CSS (200) behind auth cookie', async () => {
   }
 });
 
-test('GET /app.js without cookie → 403', async () => {
+test('GET /board2.js without cookie → 403', async () => {
   const { meshRoot } = await buildTestMesh();
   const { srv, port } = await startAuthedServer(meshRoot);
   try {
-    const res = await fetchFrom(`${srv.url}/app.js`, {
+    const res = await fetchFrom(`${srv.url}/board2.js`, {
       headers: {
         'Host': `127.0.0.1:${port}`,
         'Sec-Fetch-Site': 'same-origin'
