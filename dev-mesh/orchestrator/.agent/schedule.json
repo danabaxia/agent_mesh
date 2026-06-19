@@ -7,6 +7,14 @@
       "builtin": "gh-activity-poll",
       "cadence": { "kind": "every", "minutes": 5 },
       "enabled": true
+    },
+    {
+      "id": "daily-report-refresh",
+      "name": "Daily report refresh",
+      "kind": "builtin",
+      "builtin": "daily-report-refresh",
+      "cadence": { "kind": "daily", "at": "00:10" },
+      "enabled": true
     }
   ]
 }
