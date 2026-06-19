@@ -3,7 +3,7 @@
  *
  * Per-agent recurring jobs executed as real ask-mode delegations on a timer.
  *
- *   createScheduler({ meshRoot, runJob?, intervalMs=30000, now? })
+ *   createScheduler({ meshRoot, runJob?, builtins?, intervalMs=30000, now? })
  *     → { start(), stop(), tick(), runNow(agent,id), setEnabled(agent,id,bool), list(agent) }
  *
  * Storage:
@@ -155,7 +155,7 @@ async function saveJobArtifact({ agentRoot, agentName, job, output, when }) {
 // createScheduler
 // ---------------------------------------------------------------------------
 
-export function createScheduler({ meshRoot, runJob, intervalMs = DEFAULT_INTERVAL_MS, now = () => new Date() }) {
+export function createScheduler({ meshRoot, runJob, builtins = {}, intervalMs = DEFAULT_INTERVAL_MS, now = () => new Date() }) {
   const root = resolve(meshRoot);
   const run = runJob || createDelegateRunJob(root);
   const runningAgents = new Set();   // in-memory one-job-at-a-time lock, per agent
@@ -188,7 +188,11 @@ export function createScheduler({ meshRoot, runJob, intervalMs = DEFAULT_INTERVA
       let summarySource = '';
       let output = '';
       try {
-        const result = await run({ agentRoot: agent.root, agentName: agent.name, job });
+        const result = job.kind === 'builtin'
+          ? (typeof builtins[job.builtin] === 'function'
+              ? await builtins[job.builtin]({ agentRoot: agent.root, agentName: agent.name, job, meshRoot: root })
+              : { status: 'fail', error: `unknown builtin: ${job.builtin}` })
+          : await run({ agentRoot: agent.root, agentName: agent.name, job });
         ok = result?.status === 'ok';
         output = typeof result?.output === 'string' ? result.output : '';
         summarySource = ok ? output : (result?.error || result?.output || `status: ${result?.status ?? 'unknown'}`);

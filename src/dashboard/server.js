@@ -533,6 +533,17 @@ async function loadActivitySnapshot(meshRoot) {
       .slice(-ACTIVITY_RUNS_PER_AGENT);
     for (const r of agentRecords) records.push({ ...r, agent: agent.name });
   }
+
+  // Append GitHub-Actions activity (written by the orchestrator's gh-activity-poll
+  // builtin). Records are pre-shaped to buildActivity's contract; keep agent/from/to
+  // as-is (do NOT re-tag like per-agent logs). Missing/corrupt cache → local-only.
+  const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY
+    || resolve(meshRoot, '..', '.dev-society', 'gh-activity.json');
+  try {
+    const gh = JSON.parse(await readFile(ghActivityPath, 'utf8'));
+    if (Array.isArray(gh)) for (const r of gh) records.push(r);
+  } catch { /* no cache / unreadable → local activity only */ }
+
   return buildActivity(records);
 }
 
