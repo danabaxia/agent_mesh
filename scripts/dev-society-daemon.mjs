@@ -21,7 +21,6 @@
 //
 // Env (all optional except DEV_SOCIETY_REPO for live mode):
 //   DEV_SOCIETY_REPO       owner/repo (required live)
-//   DEV_SOCIETY_POLL_MS    poll interval, default 60000
 //   DEV_SOCIETY_WORKROOT   where worktrees are created, default <repo>/.dev-society/work
 //   DEV_SOCIETY_LEDGER     metrics ledger (jsonl), default <repo>/.dev-society/ledger.jsonl
 //   DEV_SOCIETY_BASE       base branch, default main
@@ -30,7 +29,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, appendFileSync, rmSync, existsSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, rmSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createA2AClient } from '../src/a2a/stdio-client.js';
@@ -40,7 +39,8 @@ import { pollGhActivity } from '../src/dev-society/gh-activity.js';
 import { runHeartbeat } from '../src/mesh-health/heartbeat-runner.js';
 import { listAllSchedules } from '../src/schedule/list-all.js';
 import { computeNextRun } from '../src/schedule/schedule-cadence.js';
-import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER } from '../src/config.js';
+import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER, DEFAULT_ACTIVITY_KEEP_DAYS } from '../src/config.js';
+import { recordActivity, pruneActivity } from '../src/activity-log/log.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -48,7 +48,6 @@ const BIN = join(repoRoot, 'bin', 'agent-mesh.js');
 
 const cfg = {
   repo: process.env.DEV_SOCIETY_REPO || '',
-  pollMs: Number(process.env.DEV_SOCIETY_POLL_MS || 60000),
   workRoot: process.env.DEV_SOCIETY_WORKROOT || join(repoRoot, '.dev-society', 'work'),
   ledger: process.env.DEV_SOCIETY_LEDGER || join(repoRoot, '.dev-society', 'ledger.jsonl'),
   base: process.env.DEV_SOCIETY_BASE || 'main',
@@ -58,21 +57,65 @@ const once = process.argv.includes('--once');
 const selftest = process.argv.includes('--selftest');
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 const SCHED_MESH_ROOT = process.env.DEV_SOCIETY_MESH_ROOT || join(repoRoot, 'dev-mesh');
+const STALE_MS = Number(process.env.DEV_SOCIETY_STALE_MS || 1800000);
+const dispatchStatePath = join(repoRoot, '.dev-society', 'dispatch-state.json');
+const readDispatchState = () => { try { return JSON.parse(readFileSync(dispatchStatePath, 'utf8')); } catch { return {}; } };
+const writeDispatchState = (s) => { mkdirSync(dirname(dispatchStatePath), { recursive: true }); writeFileSync(dispatchStatePath, JSON.stringify(s, null, 2)); };
 
 // Always-on standard scheduler: runs agents' .agent/schedule.json jobs 24/7.
 // Skipped in --once/--selftest (those paths exit early; scheduler must not start).
 let sched = null;
 let heartbeatTimer = null;
+// Activity-log emit shorthand — module-level so runOneTask (top-level fn) can reach it.
+// rec is a no-op stub until the live block below assigns the real implementation;
+// selftest/once never enter that block, so no files are written under those modes.
+let rec = () => {};
+const seenRuns = new Set();  // gh-activity dedup (module-level; populated only when live block runs)
 if (!once && !selftest) {
+  const activityDir = process.env.AGENT_MESH_ACTIVITY_DIR || join(repoRoot, '.dev-society');
+  const activityKeepDays = Number(process.env.AGENT_MESH_ACTIVITY_KEEP_DAYS) || DEFAULT_ACTIVITY_KEEP_DAYS;
+  rec = (ev) => recordActivity(ev, { dir: activityDir });            // fail-safe shorthand
+  pruneActivity({ dir: activityDir, keepDays: activityKeepDays });   // prune on startup
+
   const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY || join(repoRoot, '.dev-society', 'gh-activity.json');
   const builtins = {
     'gh-activity-poll': () => pollGhActivity({
       gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
       repo: cfg.repo,
-      writeCache: (records) => { mkdirSync(dirname(ghActivityPath), { recursive: true }); writeFileSync(ghActivityPath, JSON.stringify(records)); },
+      writeCache: (records) => {
+        mkdirSync(dirname(ghActivityPath), { recursive: true });
+        writeFileSync(ghActivityPath, JSON.stringify(records));
+        for (const r of records) {
+          if (typeof r.id !== 'string' || r.id.endsWith(':e')) continue;   // node records only (skip a2a edges)
+          if (seenRuns.has(r.id)) continue;
+          seenRuns.add(r.id);
+          rec({ source: 'gh-activity', agent: r.agent, type: 'ci.run', summary: `${r.route || 'ci'}${r.finished_at ? ' (done)' : ' (running)'}`, ref: r.id });
+        }
+      },
     }),
+    // Refresh the Daily Mesh Report cache the dashboard's /api/daily reads (incl.
+    // issues.openNow). Runs the existing script, which writeCache()s unconditionally
+    // (no --post, so no rolling-issue write). Keeps the dashboard from going stale.
+    'daily-report-refresh': async () => {
+      try {
+        await sh('node', [join(repoRoot, 'scripts', 'daily-report.mjs')], {
+          env: { ...process.env, DEV_SOCIETY_REPO: cfg.repo },
+          maxBuffer: 1 << 24,
+        });
+        return { status: 'ok', output: 'daily report cache refreshed' };
+      } catch (e) {
+        return { status: 'fail', error: e?.message || String(e) };
+      }
+    },
+    'issue-sweep': () => sweep()
+      .then(() => ({ status: 'ok', output: 'issue-sweep complete' }))
+      .catch((e) => { log('issue-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
   };
-  sched = createScheduler({ meshRoot: SCHED_MESH_ROOT, builtins });
+  sched = createScheduler({
+    meshRoot: SCHED_MESH_ROOT, builtins,
+    onJobResult: ({ agentName, jobId, status, summary }) =>
+      rec({ source: 'scheduler', agent: agentName, type: 'job.run', level: status === 'ok' ? 'info' : 'warn', summary: `${jobId}: ${status}${summary ? ' — ' + summary : ''}`, ref: jobId }),
+  });
   sched.start();
   log('scheduler started — meshRoot=' + SCHED_MESH_ROOT);
 
@@ -120,6 +163,9 @@ if (!once && !selftest) {
     });
     if (r.status === 'fail') log('heartbeat failed:', r.error);
     else if (r.summary && (r.summary.failing || r.summary.overdue || r.summary.stuck)) log('heartbeat:', JSON.stringify(r.summary));
+    if (r && r.summary && (r.summary.failing || r.summary.overdue || r.summary.stuck || r.summary.escalated)) {
+      rec({ source: 'heartbeat', type: 'heartbeat.summary', level: r.summary.escalated ? 'error' : 'warn', summary: `health: ${JSON.stringify(r.summary)}` });
+    }
   };
 
   if (HB_INTERVAL > 0) {
@@ -134,15 +180,77 @@ for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.st
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
 const git = (args, cwd) => sh('git', args, { cwd, maxBuffer: 1 << 24 });
 
-async function listEligible() {
-  const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
-    '--label', core.APPROVED, '--label', core.ROUTE_LABEL, '--limit', '50',
-    '--json', 'number,title,body,labels']);
-  return JSON.parse(stdout);
-}
 const issueComment = (n, body) => gh(['issue', 'comment', String(n), '--repo', cfg.repo, '--body', body]).catch((e) => log('  (comment failed)', e.message));
 const addLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--add-label', l]).catch(() => {});
 const rmLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--remove-label', l]).catch(() => {});
+
+// All open issues, intentionally UNFILTERED by label — routeFor does all gating/skip logic.
+async function listAllOpen() {
+  const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
+    '--limit', '100', '--json', 'number,title,body,labels']);
+  return JSON.parse(stdout);
+}
+
+async function dispatchAdvisory(issue, route) {
+  const reg = core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT });
+  let client = null;
+  try {
+    client = await createA2AClient(reg, { requestTimeoutMs: cfg.timeoutMs });
+    let prompt;
+    if (route.target === 'analyst') {
+      prompt = route.reason === 'question' ? core.questionPrompt(issue) : core.analystDraftPrompt(issue);
+    } else {
+      prompt = core.triagePrompt(issue);
+    }
+    log(`  → ${route.target} (ask) #${issue.number} [${route.reason}]…`);
+    const task = await client.send(route.target, core.a2aMessage('ask', prompt));
+    const text = core.taskText(task) || '(no output)';
+    await issueComment(issue.number, `🤖 **${route.target}** (A2A \`ask\`):\n\n${text.slice(0, 60000)}`);
+    if (route.advance) await addLabel(issue.number, route.advance);
+  } finally {
+    await client?.close().catch(() => {});
+  }
+}
+
+async function runSpecTask(issue) {
+  const branch = `dev-society/spec-${issue.number}`;
+  const wt = join(cfg.workRoot, `spec-${issue.number}`);
+  log(`▶ spec #${issue.number} "${issue.title}" → ${branch}`);
+  let client = null;
+  try {
+    rmSync(wt, { recursive: true, force: true });
+    await git(['worktree', 'prune'], repoRoot);
+    await git(['fetch', 'origin', cfg.base, '-q'], repoRoot);
+    await git(['worktree', 'add', '-f', '-B', branch, wt, `origin/${cfg.base}`], repoRoot);
+    client = await createA2AClient(core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT }), { requestTimeoutMs: cfg.timeoutMs });
+    const task = await client.send('analyst', core.a2aMessage('ask', core.analystSpecPrompt(issue)));
+    const spec = core.taskText(task);
+    if (!spec || spec.length < 200) {
+      await issueComment(issue.number, '🤖 A2A society Analyst did not produce a usable spec — needs a human.');
+      return;
+    }
+    const slug = String(issue.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '') || `issue-${issue.number}`;
+    const date = new Date().toISOString().slice(0, 10);
+    const rel = `docs/superpowers/specs/${date}-${slug}-design.md`;
+    mkdirSync(join(wt, dirname(rel)), { recursive: true });
+    writeFileSync(join(wt, rel), spec.endsWith('\n') ? spec : spec + '\n');
+    await git(['add', rel], wt);
+    await git(['-c', 'commit.gpgsign=false', 'commit', '-qm',
+      `spec: ${issue.title}\n\nDrafted by the A2A dev-society (Analyst over A2A ask) for #${issue.number}.`], wt);
+    await git(['push', '-u', 'origin', branch, '--force-with-lease'], wt);
+    const { stdout } = await gh(['pr', 'create', '--repo', cfg.repo, '--base', cfg.base, '--head', branch,
+      '--title', `spec: ${issue.title} (#${issue.number})`,
+      '--body', `Draft spec for #${issue.number}, authored by the **A2A dev-society** Analyst (A2A \`ask\`). Human review required before \`approved\`.`]);
+    await rmLabel(issue.number, core.SPEC_DRAFT);
+    await addLabel(issue.number, core.SPEC_IN_REVIEW);
+    await issueComment(issue.number, `🤖 Spec PR opened: ${stdout.trim()}`);
+    log(`  ✓ spec PR: ${stdout.trim()}`);
+  } finally {
+    await client?.close().catch(() => {});
+    rmSync(wt, { recursive: true, force: true });
+    await git(['worktree', 'prune'], repoRoot).catch(() => {});
+  }
+}
 
 // registryFor moved to src/dev-society/core.js (pure + hermetically tested) — the daemon
 // calls core.registryFor(wt, { binPath: BIN }). Reviewer stays ask-only there (S1).
@@ -150,6 +258,7 @@ async function runOneTask(issue) {
   const branch = core.branchName(issue.number);
   const wt = join(cfg.workRoot, `issue-${issue.number}`);
   log(`▶ claim #${issue.number} "${issue.title}" → ${branch}`);
+  rec({ source: 'daemon', type: 'issue.picked', summary: `picked #${issue.number}: ${String(issue.title || '').slice(0, 80)}`, ref: `#${issue.number}` });
   await addLabel(issue.number, core.IN_PROGRESS);
 
   // fresh worktree off the base branch
@@ -166,6 +275,7 @@ async function runOneTask(issue) {
     coderTask = await client.send('coder', core.a2aMessage('do', core.coderPrompt(issue)));
     const oc = core.taskOutcome(coderTask);
     log(`  ← coder status=${oc.status} files=${JSON.stringify(oc.filesChanged)}`);
+    rec({ source: 'daemon', agent: 'coder', type: 'delegate.done', level: oc.status === 'done' ? 'info' : 'warn', summary: `coder #${issue.number} → ${oc.status}`, ref: `#${issue.number}` });
 
     if (core.taskSucceeded(coderTask) && Array.isArray(oc.filesChanged) && oc.filesChanged.length) {
       // 2) Tester = shell step (workers can't run the suite — no Bash in do).
@@ -194,6 +304,7 @@ async function runOneTask(issue) {
           '--title', `${issue.title} (#${issue.number})`, '--body', body]);
         prNumber = (stdout.match(/\/pull\/(\d+)/) || [])[1] || null;
         log(`  ✓ PR opened: ${stdout.trim()}`);
+        if (prNumber) rec({ source: 'daemon', type: 'pr.opened', summary: `opened PR #${prNumber} for #${issue.number}`, ref: `pr#${prNumber}` });
         await rmLabel(issue.number, core.IN_PROGRESS);
         await addLabel(issue.number, core.PR_IN_REVIEW);
       } else {
@@ -209,6 +320,9 @@ async function runOneTask(issue) {
       await rmLabel(issue.number, core.IN_PROGRESS);
       await addLabel(issue.number, core.BLOCKED);
     }
+  } catch (taskErr) {
+    rec({ source: 'daemon', type: 'task.error', level: 'error', summary: `#${issue.number} failed: ${String(taskErr && taskErr.message || taskErr).slice(0, 120)}`, ref: `#${issue.number}` });
+    throw taskErr;  // re-throw so tick()'s catch can log it
   } finally {
     await client.close().catch(() => {});
     // record metrics for the eval/perf ledger (real-task scorecard input)
@@ -219,34 +333,71 @@ async function runOneTask(issue) {
   }
 }
 
-async function tick() {
-  const issues = await listEligible();
-  const task = core.selectTask(issues);
-  if (!task) { log('no eligible (approved + route:a2a) tasks'); return false; }
-  await runOneTask(task);
-  return true;
+async function sweep() {
+  if (!cfg.repo) { log('sweep: set DEV_SOCIETY_REPO'); return; }
+  const issues = await listAllOpen();
+  const state = readDispatchState();
+  const now = Date.now();
+  // liveBuilds stays empty by design: the scheduler runs one issue-sweep at a time
+  // per agent (in-memory lock) and runOneTask is awaited within the tick, so no build
+  // is ever concurrent. Stale-reclaim therefore relies on STALE_MS, which MUST exceed
+  // the A2A build timeout (cfg.timeoutMs) so a still-running build is never re-claimed.
+  const liveBuilds = new Set();
+  const staleClaims = new Set(
+    issues
+      .filter((i) => core.labelNames(i).includes(core.IN_PROGRESS))
+      .filter((i) => { const p = state[i.number]; return !p || (now - (p.dispatchedAt || 0)) > STALE_MS; })
+      .map((i) => i.number),
+  );
+  const routed = issues
+    .map((i) => ({ issue: i, route: core.routeFor(i, { liveBuilds, staleClaims }) }))
+    .filter((x) => x.route.target);
+
+  // Advisory routes (analyst/triager): cheap A2A asks → comments. Dispatch all pending.
+  for (const { issue, route } of routed.filter((r) => r.route.mode === 'ask')) {
+    if (!core.shouldDispatch(issue, route, state)) continue;
+    try {
+      if (route.spec) await runSpecTask(issue);
+      else await dispatchAdvisory(issue, route);
+      core.recordDispatch(state, issue, route, now);
+    } catch (e) { log(`  advisory #${issue.number} (${route.target}) failed:`, e.message); }
+  }
+  writeDispatchState(state);
+
+  // Code routes (coder do): heavy + serialize on the worktree → one build per tick (FIFO).
+  const coderQ = routed.filter((r) => r.route.mode === 'do').map((r) => r.issue);
+  const pick = core.selectCoderTask(coderQ);
+  if (!pick) { log('sweep: no coder task this tick'); return; }
+  core.recordDispatch(state, pick, { target: 'coder' }, now);
+  writeDispatchState(state);
+  try { await runOneTask(pick); } catch (e) { log(`  coder #${pick.number} failed:`, e.message); }
 }
 
 async function main() {
   if (selftest) {
-    // No GitHub/claude — prove selection + wiring with a sample.
     const sample = [
-      { number: 7, title: 'routed', labels: [core.APPROVED, core.ROUTE_LABEL] },
-      { number: 3, title: 'not routed', labels: [core.APPROVED] },
+      { number: 10, title: 'idea: new thing', labels: ['idea'] },
+      { number: 11, title: 'idea: approved thing', labels: ['idea', 'approved'] },
+      { number: 12, title: 'fix the bug', labels: ['bug'] },
+      { number: 13, title: 'infra_auth: nightly broke', labels: [] },
+      { number: 14, title: 'how do I X?', labels: ['question'] },
+      { number: 15, title: 'shipped', labels: ['done'] },
+      { number: 16, title: 'finalize spec', labels: ['spec:draft'] },
     ];
-    const picked = core.selectTask(sample);
-    log('selftest: BIN exists =', existsSync(BIN), '| picked =', picked && picked.number, '| branch =', picked && core.branchName(picked.number));
-    log('selftest: config =', JSON.stringify(cfg));
-    if (!picked || picked.number !== 7) { console.error('selftest FAILED'); process.exit(1); }
-    log('selftest OK'); return;
+    const got = Object.fromEntries(sample.map((i) => [i.number, core.routeFor(i).target]));
+    log('selftest routing:', JSON.stringify(got));
+    const want = { 10: null, 11: 'analyst', 12: 'coder', 13: 'triager', 14: 'analyst', 15: null, 16: 'analyst' };
+    for (const [n, t] of Object.entries(want)) {
+      if (got[n] !== t) { console.error(`selftest FAILED: #${n} expected ${t}, got ${got[n]}`); process.exit(1); }
+    }
+    log('selftest OK');
+    return;
   }
   if (!cfg.repo) { console.error('Set DEV_SOCIETY_REPO=owner/repo'); process.exit(1); }
   mkdirSync(cfg.workRoot, { recursive: true });
-  log(`dev-society daemon up — repo=${cfg.repo} base=${cfg.base} poll=${cfg.pollMs}ms once=${once}`);
-  do {
-    try { await tick(); } catch (e) { log('tick error:', e.message); }
-    if (!once) await new Promise((r) => setTimeout(r, cfg.pollMs));
-  } while (!once);
+  if (once) { await sweep(); return; }
+  log(`dev-society daemon up — repo=${cfg.repo} base=${cfg.base}; issue-sweep runs via the scheduler every 10m`);
+  // Always-on: the scheduler started at module load drives issue-sweep; it keeps the process alive.
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
