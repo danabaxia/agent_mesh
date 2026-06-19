@@ -21,7 +21,6 @@
 //
 // Env (all optional except DEV_SOCIETY_REPO for live mode):
 //   DEV_SOCIETY_REPO       owner/repo (required live)
-//   DEV_SOCIETY_POLL_MS    poll interval, default 60000
 //   DEV_SOCIETY_WORKROOT   where worktrees are created, default <repo>/.dev-society/work
 //   DEV_SOCIETY_LEDGER     metrics ledger (jsonl), default <repo>/.dev-society/ledger.jsonl
 //   DEV_SOCIETY_BASE       base branch, default main
@@ -30,7 +29,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, appendFileSync, rmSync, existsSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, rmSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createA2AClient } from '../src/a2a/stdio-client.js';
@@ -48,7 +47,6 @@ const BIN = join(repoRoot, 'bin', 'agent-mesh.js');
 
 const cfg = {
   repo: process.env.DEV_SOCIETY_REPO || '',
-  pollMs: Number(process.env.DEV_SOCIETY_POLL_MS || 60000),
   workRoot: process.env.DEV_SOCIETY_WORKROOT || join(repoRoot, '.dev-society', 'work'),
   ledger: process.env.DEV_SOCIETY_LEDGER || join(repoRoot, '.dev-society', 'ledger.jsonl'),
   base: process.env.DEV_SOCIETY_BASE || 'main',
