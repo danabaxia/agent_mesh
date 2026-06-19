@@ -40,7 +40,8 @@ import { pollGhActivity } from '../src/dev-society/gh-activity.js';
 import { runHeartbeat } from '../src/mesh-health/heartbeat-runner.js';
 import { listAllSchedules } from '../src/schedule/list-all.js';
 import { computeNextRun } from '../src/schedule/schedule-cadence.js';
-import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER } from '../src/config.js';
+import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER, DEFAULT_ACTIVITY_KEEP_DAYS } from '../src/config.js';
+import { recordActivity, pruneActivity } from '../src/activity-log/log.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -63,13 +64,32 @@ const SCHED_MESH_ROOT = process.env.DEV_SOCIETY_MESH_ROOT || join(repoRoot, 'dev
 // Skipped in --once/--selftest (those paths exit early; scheduler must not start).
 let sched = null;
 let heartbeatTimer = null;
+// Activity-log emit shorthand — module-level so runOneTask (top-level fn) can reach it.
+// rec is a no-op stub until the live block below assigns the real implementation;
+// selftest/once never enter that block, so no files are written under those modes.
+let rec = () => {};
+const seenRuns = new Set();  // gh-activity dedup (module-level; populated only when live block runs)
 if (!once && !selftest) {
+  const activityDir = process.env.AGENT_MESH_ACTIVITY_DIR || join(repoRoot, '.dev-society');
+  const activityKeepDays = Number(process.env.AGENT_MESH_ACTIVITY_KEEP_DAYS) || DEFAULT_ACTIVITY_KEEP_DAYS;
+  rec = (ev) => recordActivity(ev, { dir: activityDir });            // fail-safe shorthand
+  pruneActivity({ dir: activityDir, keepDays: activityKeepDays });   // prune on startup
+
   const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY || join(repoRoot, '.dev-society', 'gh-activity.json');
   const builtins = {
     'gh-activity-poll': () => pollGhActivity({
       gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
       repo: cfg.repo,
-      writeCache: (records) => { mkdirSync(dirname(ghActivityPath), { recursive: true }); writeFileSync(ghActivityPath, JSON.stringify(records)); },
+      writeCache: (records) => {
+        mkdirSync(dirname(ghActivityPath), { recursive: true });
+        writeFileSync(ghActivityPath, JSON.stringify(records));
+        for (const r of records) {
+          if (typeof r.id !== 'string' || r.id.endsWith(':e')) continue;   // node records only (skip a2a edges)
+          if (seenRuns.has(r.id)) continue;
+          seenRuns.add(r.id);
+          rec({ source: 'gh-activity', agent: r.agent, type: 'ci.run', summary: `${r.route || 'ci'}${r.finished_at ? ' (done)' : ' (running)'}`, ref: r.id });
+        }
+      },
     }),
     // Refresh the Daily Mesh Report cache the dashboard's /api/daily reads (incl.
     // issues.openNow). Runs the existing script, which writeCache()s unconditionally
@@ -86,7 +106,11 @@ if (!once && !selftest) {
       }
     },
   };
-  sched = createScheduler({ meshRoot: SCHED_MESH_ROOT, builtins });
+  sched = createScheduler({
+    meshRoot: SCHED_MESH_ROOT, builtins,
+    onJobResult: ({ agentName, jobId, status, summary }) =>
+      rec({ source: 'scheduler', agent: agentName, type: 'job.run', level: status === 'ok' ? 'info' : 'warn', summary: `${jobId}: ${status}${summary ? ' — ' + summary : ''}`, ref: jobId }),
+  });
   sched.start();
   log('scheduler started — meshRoot=' + SCHED_MESH_ROOT);
 
@@ -134,6 +158,9 @@ if (!once && !selftest) {
     });
     if (r.status === 'fail') log('heartbeat failed:', r.error);
     else if (r.summary && (r.summary.failing || r.summary.overdue || r.summary.stuck)) log('heartbeat:', JSON.stringify(r.summary));
+    if (r && r.summary && (r.summary.failing || r.summary.overdue || r.summary.stuck || r.summary.escalated)) {
+      rec({ source: 'heartbeat', type: 'heartbeat.summary', level: r.summary.escalated ? 'error' : 'warn', summary: `health: ${JSON.stringify(r.summary)}` });
+    }
   };
 
   if (HB_INTERVAL > 0) {
@@ -164,6 +191,7 @@ async function runOneTask(issue) {
   const branch = core.branchName(issue.number);
   const wt = join(cfg.workRoot, `issue-${issue.number}`);
   log(`▶ claim #${issue.number} "${issue.title}" → ${branch}`);
+  rec({ source: 'daemon', type: 'issue.picked', summary: `picked #${issue.number}: ${String(issue.title || '').slice(0, 80)}`, ref: `#${issue.number}` });
   await addLabel(issue.number, core.IN_PROGRESS);
 
   // fresh worktree off the base branch
@@ -180,6 +208,7 @@ async function runOneTask(issue) {
     coderTask = await client.send('coder', core.a2aMessage('do', core.coderPrompt(issue)));
     const oc = core.taskOutcome(coderTask);
     log(`  ← coder status=${oc.status} files=${JSON.stringify(oc.filesChanged)}`);
+    rec({ source: 'daemon', agent: 'coder', type: 'delegate.done', level: oc.status === 'done' ? 'info' : 'warn', summary: `coder #${issue.number} → ${oc.status}`, ref: `#${issue.number}` });
 
     if (core.taskSucceeded(coderTask) && Array.isArray(oc.filesChanged) && oc.filesChanged.length) {
       // 2) Tester = shell step (workers can't run the suite — no Bash in do).
@@ -208,6 +237,7 @@ async function runOneTask(issue) {
           '--title', `${issue.title} (#${issue.number})`, '--body', body]);
         prNumber = (stdout.match(/\/pull\/(\d+)/) || [])[1] || null;
         log(`  ✓ PR opened: ${stdout.trim()}`);
+        if (prNumber) rec({ source: 'daemon', type: 'pr.opened', summary: `opened PR #${prNumber} for #${issue.number}`, ref: `pr#${prNumber}` });
         await rmLabel(issue.number, core.IN_PROGRESS);
         await addLabel(issue.number, core.PR_IN_REVIEW);
       } else {
@@ -223,6 +253,9 @@ async function runOneTask(issue) {
       await rmLabel(issue.number, core.IN_PROGRESS);
       await addLabel(issue.number, core.BLOCKED);
     }
+  } catch (taskErr) {
+    rec({ source: 'daemon', type: 'task.error', level: 'error', summary: `#${issue.number} failed: ${String(taskErr && taskErr.message || taskErr).slice(0, 120)}`, ref: `#${issue.number}` });
+    throw taskErr;  // re-throw so tick()'s catch can log it
   } finally {
     await client.close().catch(() => {});
     // record metrics for the eval/perf ledger (real-task scorecard input)
