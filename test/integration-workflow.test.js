@@ -98,6 +98,19 @@ test('integration workflow: L3/L4 eval scripts are present on this ref', () => {
     'scripts/eval-perf.mjs must exist for L4 to run');
 });
 
+test('integration workflow: l4-perf routes regressions to Analyst via workflow_dispatch', () => {
+  const l4 = wf.match(/\n  l4-perf:\n[\s\S]*?(?=\n  [a-z0-9_-]+:\n|$)/)?.[0] ?? '';
+  assert.match(l4, /permissions:\s*\n\s*contents:\s*read\s*\n\s*actions:\s*write/,
+    'actions:write permission must be scoped to the L4 dispatch job');
+  assert.doesNotMatch(wf, /^  actions:\s*write/m,
+    'actions:write must not be workflow-wide');
+  assert.match(l4, /name:\s*Route L4 regression to Analyst \(research workflow_dispatch\)/);
+  assert.match(l4, /grep -qiE "regression\|regressed\|below baseline\|gate\.\*fail" "\$PERFCARD"/);
+  assert.match(l4, /RESEARCH_WF:\s*dev-mesh-research\.yml/);
+  assert.match(l4, /gh workflow run "\$RESEARCH_WF"[\s\S]*--repo "\$\{GITHUB_REPOSITORY\}"[\s\S]*--ref "\$\{INTEGRATION_REF\}"[\s\S]*-f topic="\$topic"/);
+  assert.match(l4, /::warning::failed to dispatch \$\{RESEARCH_WF\}/);
+});
+
 test('every workflow that runs an agent uses agent-postrun (gate + usage capture)', () => {
   const dir = new URL('../.github/workflows/', import.meta.url);
   const files = readdirSync(dir).filter((f) => f.endsWith('.yml'));

@@ -168,6 +168,9 @@ jobs:
   l4-perf:
     name: L4 performance benchmark (record-only)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write   # L4 perf regression → trigger dev-mesh-research workflow_dispatch
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -206,3 +209,50 @@ jobs:
           path: perf-results/
           retention-days: 14
           if-no-files-found: ignore
+
+      # PerfCard → Analyst loop. When the L4 scorecard surfaces a regression we
+      # don't open a one-line "perf alert" issue (those overwhelm the backlog and
+      # offer no context). Instead we kick the dev-mesh-research workflow with
+      # the PerfCard summary as `topic` — Analyst then dedupes against open
+      # issues, surveys comparable OSS, and proposes 1-2 cited idea Issues
+      # (optionally a DRAFT spec). Those are then subject to the §5.3 human
+      # approval gate exactly like Analyst's daily runs.
+      #
+      # NEVER opens a code PR from here. NEVER skips the approval gate.
+      # Skipped if scorecard absent, no regression markers, or workflow file
+      # missing on this ref.
+      - name: Route L4 regression to Analyst (research workflow_dispatch)
+        if: always() && hashFiles('perf-results/perfcard.md') != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PERFCARD: perf-results/perfcard.md
+          RESEARCH_WF: dev-mesh-research.yml
+        run: |
+          set -u
+          # Regression markers — keep this conservative. Match the words the
+          # scorecard actually emits when a cell falls below baseline; add more
+          # only after seeing a real PerfCard.md (`eval-perf.mjs --list` to
+          # preview). A false negative is recoverable (next run catches it);
+          # a false positive spams Analyst.
+          if ! grep -qiE "regression|regressed|below baseline|gate.*fail" "$PERFCARD"; then
+            echo "::notice::no regression markers in PerfCard — skipping Analyst trigger"
+            exit 0
+          fi
+
+          # First non-empty markdown header / row that mentions regression — used
+          # as the topic prefix so Analyst has a concrete starting point. Trimmed
+          # to 400 chars; the full PerfCard ships as an artifact already.
+          summary=$(grep -iE "regression|regressed|below baseline|gate.*fail" "$PERFCARD" \
+                    | head -1 | tr -d '\n' | tr -s ' ' | cut -c1-400)
+          today=$(date -u +%Y-%m-%d)
+          topic="L4 perf regression ${today}: ${summary}"
+          echo "::notice::triggering ${RESEARCH_WF} with topic: ${topic}"
+
+          # Trigger Analyst; do not fail the L4 job if the dispatch itself fails
+          # (the scorecard ran fine; surfacing it is a follow-up, not a gate).
+          if ! gh workflow run "$RESEARCH_WF" \
+               --repo "${GITHUB_REPOSITORY}" \
+               --ref "${INTEGRATION_REF}" \
+               -f topic="$topic"; then
+            echo "::warning::failed to dispatch ${RESEARCH_WF} — see Actions tab. Scorecard artifact is still uploaded."
+          fi

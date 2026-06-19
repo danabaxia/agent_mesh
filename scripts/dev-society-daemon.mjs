@@ -321,7 +321,30 @@ async function runOneTask(issue) {
       await addLabel(issue.number, core.BLOCKED);
     }
   } catch (taskErr) {
-    rec({ source: 'daemon', type: 'task.error', level: 'error', summary: `#${issue.number} failed: ${String(taskErr && taskErr.message || taskErr).slice(0, 120)}`, ref: `#${issue.number}` });
+    const errMsg = String(taskErr && taskErr.message || taskErr);
+    rec({ source: 'daemon', type: 'task.error', level: 'error', summary: `#${issue.number} failed: ${errMsg.slice(0, 120)}`, ref: `#${issue.number}` });
+    // Prevent re-claim loop: when the coder/wire fails (timeout, spawn ENOENT,
+    // A2A error) the eligibility check (core.eligibleForCoder) is supposed to
+    // exclude the issue via the IN_PROGRESS label set at the top of this fn —
+    // but that addLabel call swallows its own errors (line 184 `.catch(() => {})`),
+    // so a silent label-write failure (or another agent stripping IN_PROGRESS)
+    // leaves the issue approved + route:a2a and the next sweep burns another
+    // cfg.timeoutMs cycle on the same impossible task. Empirically #98 above
+    // re-claimed 4× in 24h before we caught it. Belt-and-suspenders fix:
+    // explicitly remove `approved` and add `blocked` so the issue drops out
+    // of every "eligible" filter the mesh has, then surface the error on the
+    // issue thread for a human (who decides whether to decompose & re-approve).
+    // Mirrors the existing tests-red branch above (line 313-314).
+    await rmLabel(issue.number, core.APPROVED).catch(() => {});
+    await rmLabel(issue.number, core.IN_PROGRESS).catch(() => {});
+    await addLabel(issue.number, core.BLOCKED).catch(() => {});
+    await issueComment(
+      issue.number,
+      `🤖 A2A society Coder failed: \`${errMsg.slice(0, 400)}\`\n\n` +
+      `Removed \`approved\` and added \`blocked\` to prevent the daemon from re-claiming this issue on every sweep ` +
+      `(see https://github.com/danabaxia/agent_mesh/issues/98 for the bug this fixes). ` +
+      `Diagnose the failure, then either re-approve (if it was transient) or decompose the task into smaller issues.`
+    ).catch(() => {});
     throw taskErr;  // re-throw so tick()'s catch can log it
   } finally {
     await client.close().catch(() => {});
