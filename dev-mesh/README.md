@@ -17,9 +17,9 @@ Run/health/auth notes: [OPERATING.md](OPERATING.md). Full design:
 
 ## The agents
 
-Seven society roles — **Maintainer, Analyst, Triager, Coder, Tester, Reviewer,
-Curator** — each backed by a `dev-mesh/<role>/AGENT.md`. They're driven by 13
-workflows (10 model-agents + 3 pure scripts):
+Nine society roles — **Maintainer, Analyst, Triager, Coder, Tester, Reviewer,
+Curator, Orchestrator, Security** — each backed by a `dev-mesh/<role>/AGENT.md`.
+The GitHub-Actions side is driven by 14 workflows (11 model-agents + 3 pure scripts):
 
 | Workflow | Role | Trigger | Job |
 |---|---|---|---|
@@ -32,6 +32,7 @@ workflows (10 model-agents + 3 pure scripts):
 | `ci-sweep` | Triager+Coder | sched 30m | Scheduled backstop for `autofix` (missed CI-fail webhooks) |
 | `mergefix` | Coder | `push:main` + sched hourly | Resolve PRs that conflict with `main` |
 | `triage` | Maintainer→Triager | sched hourly | Sweep unresolved red checks; label/comment/re-kick |
+| `security` | Maintainer→Security | sched 6h + manual | Sweep injection, identity/auth, and token-budget attack surfaces; open/update security alert issues |
 | `curate` | Maintainer→Curator | `pull_request:closed` | Distill a lesson from a merged PR → open a `memory:promote` PR |
 | `memory-automerge` | *(pure script)* | sched 15m | Validate + auto-merge `memory:promote` PRs (the one sanctioned auto-merge) |
 | `health` | *(pure script)* | sched 6h | Probe mesh health (run-record envelopes, conformance) |

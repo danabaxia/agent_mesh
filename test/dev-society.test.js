@@ -1,6 +1,8 @@
 // test/dev-society.test.js — hermetic tests for the A2A Dev-Society pure core (P1).
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import * as devCore from '../src/dev-society/core.js';
 import {
   isEligible, selectTask, branchName, a2aMessage, coderPrompt, reviewerPrompt,
   taskText, taskOutcome, taskSucceeded, ledgerRecord, shouldOpenPR,
@@ -104,4 +106,128 @@ test('ledgerRecord: captures delegation edges + outcomes for the perf ledger', (
   assert.equal(rec.edges[1].mode, 'ask');
   assert.equal(rec.tests.passed, true);
   assert.equal(rec.coder_run_id, 'r1');
+});
+
+test('registryFor: launches A2A peers with the current node binary', () => {
+  assert.equal(typeof devCore.registryFor, 'function');
+  const registry = devCore.registryFor('/tmp/dev-society-worktree', {
+    binPath: '/repo/bin/agent-mesh.js',
+    nodePath: '/usr/local/Cellar/node/25.2.1/bin/node',
+  });
+
+  assert.equal(registry.peers.coder.command, '/usr/local/Cellar/node/25.2.1/bin/node');
+  assert.equal(registry.peers.reviewer.command, '/usr/local/Cellar/node/25.2.1/bin/node');
+  assert.deepEqual(registry.peers.coder.args, ['/repo/bin/agent-mesh.js', 'serve-a2a', '/tmp/dev-society-worktree']);
+  assert.equal(registry.peers.coder.cwd, '/tmp/dev-society-worktree');
+  assert.deepEqual(registry.peers.coder.env, { AGENT_MESH_ENABLED_MODES: 'ask,do' });
+  // S1 (#86 review): the reviewer peer is ask-only — never granted `do`.
+  assert.deepEqual(registry.peers.reviewer.env, { AGENT_MESH_ENABLED_MODES: 'ask' });
+});
+
+import {
+  routeFor, labelNames,
+  IDEA, QUESTION, BUG, ENHANCEMENT, DOCUMENTATION,
+  SPEC_DRAFT, SPEC_IN_REVIEW, DISCUSSING, DONE, BLOCKED,
+} from '../src/dev-society/core.js';
+
+test('routeFor: terminal + human-gated labels are skipped', () => {
+  for (const l of [DONE, 'rejected', 'wontfix', 'duplicate', 'invalid']) {
+    assert.equal(routeFor(issue(1, [l])).target, null, `${l} terminal`);
+  }
+  for (const l of [SPEC_IN_REVIEW, PR_IN_REVIEW, BLOCKED, DISCUSSING]) {
+    assert.equal(routeFor(issue(1, [l])).target, null, `${l} human-gated`);
+  }
+});
+
+test('routeFor: idea needs approval; approved idea → analyst draft (advance spec:draft)', () => {
+  assert.equal(routeFor(issue(1, [IDEA])).target, null, 'idea without approval skipped');
+  const r = routeFor(issue(2, [IDEA, APPROVED]));
+  assert.equal(r.target, 'analyst');
+  assert.equal(r.mode, 'ask');
+  assert.equal(r.advance, SPEC_DRAFT);
+});
+
+test('routeFor: spec:draft → analyst finalize (spec PR)', () => {
+  const r = routeFor(issue(3, [SPEC_DRAFT]));
+  assert.equal(r.target, 'analyst');
+  assert.equal(r.mode, 'ask');
+  assert.equal(r.spec, true);
+});
+
+test('routeFor: question → analyst; code types → coder; CI title → triager; else → triager', () => {
+  assert.equal(routeFor(issue(4, [QUESTION])).target, 'analyst');
+  for (const l of [BUG, ENHANCEMENT, DOCUMENTATION]) {
+    const r = routeFor(issue(5, [l]));
+    assert.equal(r.target, 'coder', l);
+    assert.equal(r.mode, 'do', l);
+  }
+  assert.equal(routeFor({ number: 6, title: 'infra_auth: nightly broke', labels: [] }).target, 'triager');
+  assert.equal(routeFor({ number: 7, title: 'flake: foo', labels: [] }).target, 'triager');
+  assert.equal(routeFor(issue(8, ['help wanted'])).target, 'triager', 'unrecognized → triage');
+});
+
+test('routeFor: code build is autonomous (no approved/route:a2a needed)', () => {
+  assert.equal(routeFor(issue(9, [BUG])).target, 'coder');
+});
+
+test('routeFor: in-progress skipped unless stale → coder reclaim', () => {
+  assert.equal(routeFor(issue(10, [IN_PROGRESS])).target, null, 'fresh build in flight');
+  assert.equal(routeFor(issue(10, [IN_PROGRESS]), { liveBuilds: new Set([10]) }).target, null, 'live build');
+  const r = routeFor(issue(10, [IN_PROGRESS]), { staleClaims: new Set([10]) });
+  assert.equal(r.target, 'coder');
+  assert.equal(r.clear, IN_PROGRESS);
+});
+
+test('labelNames: returns normalized label strings', () => {
+  assert.deepEqual(labelNames(issue(1, [{ name: BUG }, 'enhancement'])), [BUG, 'enhancement']);
+});
+
+import { selectCoderTask, labelsHash, shouldDispatch, recordDispatch } from '../src/dev-society/core.js';
+
+test('selectCoderTask: FIFO lowest number, null on empty', () => {
+  assert.equal(selectCoderTask([issue(9, []), issue(3, []), issue(5, [])]).number, 3);
+  assert.equal(selectCoderTask([]), null);
+});
+
+test('labelsHash: order-independent', () => {
+  assert.equal(labelsHash(issue(1, ['b', 'a'])), labelsHash(issue(1, ['a', 'b'])));
+});
+
+test('shouldDispatch/recordDispatch: fire once until target or labels change', () => {
+  const state = {};
+  const i = issue(1, [QUESTION]);
+  const r = { target: 'analyst' };
+  assert.equal(shouldDispatch(i, r, state), true, 'first time');
+  recordDispatch(state, i, r, 1000);
+  assert.equal(shouldDispatch(i, r, state), false, 'already dispatched, unchanged');
+  assert.equal(shouldDispatch(i, { target: 'triager' }, state), true, 'target changed');
+  assert.equal(shouldDispatch(issue(1, [QUESTION, 'help wanted']), r, state), true, 'labels changed');
+  assert.equal(state[1].dispatchedAt, 1000);
+});
+
+import {
+  analystDraftPrompt, analystSpecPrompt, triagePrompt, questionPrompt, advisoryRegistry,
+} from '../src/dev-society/core.js';
+
+test('advisory prompts: frame issue as data, name the issue number', () => {
+  const i = issue(42, [IDEA, APPROVED], { title: 'add widget', body: 'please' });
+  for (const p of [analystDraftPrompt(i), analystSpecPrompt(i), triagePrompt(i), questionPrompt(i)]) {
+    assert.match(p, /#42/);
+    assert.match(p, /add widget/);
+    assert.match(p, /data/i, 'frames input as data');
+  }
+  assert.match(analystSpecPrompt(i), /spec|design/i);
+  assert.match(triagePrompt(i), /classif|plan/i);
+});
+
+test('advisoryRegistry: ask-only peers rooted under meshRoot', () => {
+  const reg = advisoryRegistry({ binPath: '/x/bin.js', meshRoot: '/mesh', nodePath: '/usr/bin/node' });
+  assert.equal(reg.peers.analyst.env.AGENT_MESH_ENABLED_MODES, 'ask');
+  assert.equal(reg.peers.triager.env.AGENT_MESH_ENABLED_MODES, 'ask');
+  assert.equal(reg.peers.analyst.root, join('/mesh', 'analyst'));
+  assert.deepEqual(reg.peers.analyst.args, ['/x/bin.js', 'serve-a2a', join('/mesh', 'analyst')]);
+  assert.throws(() => advisoryRegistry({ meshRoot: '/mesh' }), /binPath/);
+  assert.throws(() => advisoryRegistry({ binPath: '/x/bin.js' }), /meshRoot/);
+  assert.equal(reg.peers.analyst.command, '/usr/bin/node');
+  assert.equal(reg.peers.triager.root, join('/mesh', 'triager'));
 });

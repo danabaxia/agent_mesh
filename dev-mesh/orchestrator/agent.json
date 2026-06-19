@@ -1,0 +1,20 @@
+{
+  "protocolVersion": "1.0",
+  "name": "orchestrator",
+  "description": "Mesh orchestrator — observes the society's GitHub-Actions activity and keeps the scheduled ops healthy.",
+  "version": "0.1.0",
+  "defaultInputModes": [
+    "text/plain"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [],
+  "x-agentmesh": {
+    "modes": [
+      "ask"
+    ],
+    "meshVersion": "0.1.0"
+  }
+}

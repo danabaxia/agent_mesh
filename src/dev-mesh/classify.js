@@ -23,7 +23,7 @@ export const ACTIONS = Object.freeze({
 // never ran" markers seen in the nightly L1 failures (Command failed: claude,
 // the e2e status assertion 'error' !== 'done', api_error_status).
 const INFRA_RE = new RegExp([
-  'not logged in', 'authentication_error', 'invalid api key', '401 unauthorized',
+  'not logged in', 'authentication_error', 'invalid auth', '401 unauthorized',
   '403 forbidden', 'resource not accessible by integration', 'secret is not set',
   'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'could not resolve host',
   'command failed: claude', "'error'\\s*!==\\s*'done'", 'claude -p failed', 'api_error_status'

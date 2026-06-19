@@ -16,7 +16,8 @@
 // Without the flag (the default — every do-mode pusher: autofix/mergefix/backlog/
 // curate) 'blocked' stays FATAL: for those, >= 5 denials means a real misconfigured
 // tool grant (the original 2026-06-15 Bash(git) vs git:* bug the gate exists to catch).
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { buildUsageRecord } from '../src/report/usage-record.js';
 import { join } from 'node:path';
 import { classifyRunHealth, extractResultEnvelope } from '../src/dev-mesh/health.js';
 
@@ -41,6 +42,15 @@ try {
 }
 
 const envelope = extractResultEnvelope(parsed);
+// Capture token usage for the daily report. Best-effort: a failure here must
+// NEVER change the health gate's verdict (the run still consumed the tokens).
+if (process.env.MESH_USAGE_OUT) {
+  try {
+    writeFileSync(process.env.MESH_USAGE_OUT, JSON.stringify(buildUsageRecord(envelope, process.env)));
+  } catch (e) {
+    console.warn(`::warning::usage capture failed (non-fatal): ${e.message}`);
+  }
+}
 const health = classifyRunHealth(envelope);
 
 // errored/noop/unknown are always fatal (a run that errored, did nothing, or wrote

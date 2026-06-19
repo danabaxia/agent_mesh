@@ -5,7 +5,7 @@ import {
   validateCadence,
   computeNextRun,
   describeCadence,
-} from '../src/dashboard/schedule-cadence.js';
+} from '../src/schedule/schedule-cadence.js';
 
 // ---------------------------------------------------------------------------
 // validateCadence — happy paths

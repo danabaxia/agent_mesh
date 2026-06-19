@@ -2,6 +2,7 @@
 .DS_Store
 .codex/
 .superpowers/
+.dev-society/
 # Per-folder run logs / denial logs (AGENT_MESH_LOG_DIR default), incl. under examples/
 .agent-mesh/
 
@@ -31,3 +32,4 @@ eval-adversarial-results/
 # local Claude Code settings (machine-specific paths — never publish)
 **/.claude/settings.json
 **/.claude/settings.local.json
+sdd/

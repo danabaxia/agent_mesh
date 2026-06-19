@@ -26,6 +26,16 @@ export const MAX_DECISIONS_INDEX_LINES = 30;
 // doctor managedOnly applies. AGENT_MESH_NO_AUTOSYNC=1 disables auto-sync.
 export const DEFAULT_AUTOSYNC_DEBOUNCE_MS = 2000;
 
+// Mesh-level heartbeat (dev-society daemon, Phase 3). AGENT_MESH_HEARTBEAT_INTERVAL_MS=0 disables.
+export const DEFAULT_HEARTBEAT_INTERVAL_MS = 300_000;       // 5m mesh-health tick (0 disables)
+export const DEFAULT_HEARTBEAT_FAIL_THRESHOLD = 3;          // consecutive fails → failing
+export const DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS = 900_000;  // 15m past nextRunAt → overdue
+export const DEFAULT_HEARTBEAT_STALE_MS = 1_800_000;        // 30m running → stuck
+export const DEFAULT_HEARTBEAT_ESCALATE_AFTER = 2;          // heartbeats a finding must persist before a GH issue
+
+export const DEFAULT_ACTIVITY_KEEP_DAYS = 30;   // prune activity-*.jsonl older than this
+export const MAX_ACTIVITY_SUMMARY = 240;        // activity event summary char cap
+
 export const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 export const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
 
