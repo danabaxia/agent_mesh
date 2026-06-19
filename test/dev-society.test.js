@@ -226,4 +226,7 @@ test('advisoryRegistry: ask-only peers rooted under meshRoot', () => {
   assert.match(reg.peers.analyst.root, /\/mesh\/analyst$/);
   assert.deepEqual(reg.peers.analyst.args, ['/x/bin.js', 'serve-a2a', '/mesh/analyst']);
   assert.throws(() => advisoryRegistry({ meshRoot: '/mesh' }), /binPath/);
+  assert.throws(() => advisoryRegistry({ binPath: '/x/bin.js' }), /meshRoot/);
+  assert.equal(reg.peers.analyst.command, '/usr/bin/node');
+  assert.match(reg.peers.triager.root, /\/mesh\/triager$/);
 });
