@@ -1,10 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { pidfilePath, reapExisting, writePidfile, removePidfile } from '../src/dashboard/single-instance.js';
 
 test('pidfilePath is port-scoped + deterministic', () => {
-  assert.match(pidfilePath(7077, '/tmp'), /\/tmp\/agent-mesh-dashboard-7077\.pid$/);
-  assert.notEqual(pidfilePath(7077, '/tmp'), pidfilePath(9000, '/tmp'));
+  // Build the expected with the same join() so this is OS-agnostic (Windows uses \ ).
+  assert.equal(pidfilePath(7077, '/tmp'), join('/tmp', 'agent-mesh-dashboard-7077.pid'));
+  assert.ok(pidfilePath(7077, '/tmp').endsWith('agent-mesh-dashboard-7077.pid'));   // port in the filename
+  assert.notEqual(pidfilePath(7077, '/tmp'), pidfilePath(9000, '/tmp'));            // port-scoped
 });
 
 // A fake process table + kill. table[pid] ∈ 'alive' | 'ignores-sigterm' | 'dead'.
