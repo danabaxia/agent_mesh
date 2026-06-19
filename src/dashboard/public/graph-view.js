@@ -64,6 +64,10 @@ const TEMPLATE = `
     <div class="shead" data-fold><span class="caret">▾</span><span>⏱ SCHEDULES</span><span class="meta" id="gv-sched-owner">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
     <div class="secbody"><div class="tscroll" id="gv-sched"></div></div>
   </div>
+  <div class="sec" id="sec-health">
+    <div class="shead" data-fold><span class="caret">▾</span><span>♥ HEALTH</span><span class="meta" id="gv-health-pill">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
+    <div class="secbody"><div class="tscroll" id="gv-health"></div></div>
+  </div>
 </div>`;
 
 export function renderGraphView(rootEl) {
@@ -112,6 +116,7 @@ function loadAll() {
   loadTokens();
   loadDaily();
   loadSchedules();
+  loadHealth();
   if (!es) {
     try { es = new EventSource('/api/events'); es.addEventListener('activity', () => loadActivity()); es.onerror = () => {}; } catch { /* no SSE */ }
   }
@@ -274,6 +279,64 @@ async function loadSchedules() {
   const pill = (s) => s === 'ok' ? '<span class="state done">ok</span>' : s === 'fail' ? '<span class="state block">fail</span>' : '<span class="state open">—</span>';
   const rows = d.jobs.map((j) => `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span></td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : ''}</td></tr>`).join('');
   el.innerHTML = `<table><thead><tr><th>agent · job</th><th>cadence</th><th>last</th><th>next run</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function loadHealth() {
+  const pillEl = root.querySelector('#gv-health-pill');
+  const el = root.querySelector('#gv-health');
+  let data;
+  try {
+    data = await (await fetch('/api/health', { credentials: 'same-origin' })).json();
+  } catch {
+    if (pillEl) pillEl.textContent = 'unavailable';
+    if (el) el.innerHTML = '<div class="gv-empty">health unavailable</div>';
+    return;
+  }
+  const { summary = {}, findings = [], openEscalations = [] } = data;
+  const bad = (summary.failing || 0) + (summary.overdue || 0) + (summary.stuck || 0);
+  // header pill
+  if (pillEl) {
+    if (bad === 0) {
+      pillEl.innerHTML = '<span class="hpill hpill-ok">All scheduled jobs healthy</span>';
+    } else {
+      const haserr = findings.some((f) => f.severity === 'error');
+      pillEl.innerHTML = `<span class="hpill ${haserr ? 'hpill-err' : 'hpill-warn'}">${bad} issue${bad === 1 ? '' : 's'}</span>`;
+    }
+  }
+  if (!findings.length) {
+    el.innerHTML = '<div class="gv-empty health-ok">All scheduled jobs healthy</div>';
+    return;
+  }
+  const order = { error: 0, warn: 1 };
+  const sorted = [...findings].sort((a, b) => (order[a.severity] ?? 9) - (order[b.severity] ?? 9));
+  const rows = sorted.map((f) => {
+    const key = `mesh-heartbeat:${f.agent}/${f.jobId}/${f.condition}`;
+    const escalated = openEscalations.includes(key);
+    const rel = relTime(f.since);
+    const sev = f.severity === 'error' ? 'state block' : 'state prog';
+    const escBadge = escalated ? ' <span class="hesc">escalated</span>' : '';
+    return `<tr>
+      <td class="title"><span class="tt"><b class="an" style="color:${agentColor(f.agent)}">${esc(f.agent)}</b></span></td>
+      <td><span class="kind issue">${esc(f.jobId)}</span></td>
+      <td><span class="${sev}">${esc(f.condition)}</span></td>
+      <td class="age">${esc(rel)}</td>
+      <td class="title"><span class="tt">${esc(f.detail || '')}${escBadge}</span></td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table><thead><tr><th>agent</th><th>job</th><th>condition</th><th>since</th><th>detail</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function relTime(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - Date.parse(iso);
+  if (isNaN(diff)) return '';
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
 }
 
 function setText(id, v) { const el = root.querySelector('#' + id); if (el) el.textContent = v; }
