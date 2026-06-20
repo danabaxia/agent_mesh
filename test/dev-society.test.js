@@ -200,6 +200,43 @@ test('planLabelRepair: spec:in-review WITHOUT approved stays human-gated (no rep
   assert.equal(devCore.planLabelRepair(issue(12, [ENHANCEMENT, SPEC_IN_REVIEW])), null);
 });
 
+test('planLabelRepair: re-arms an approved idea-lineage issue whose route was stripped post-approval (#248 deadlock)', () => {
+  // #248 reproduction: a human added `approved` at spec:in-review, then the analyst event-re-run
+  // STRIPPED `spec:in-review` (and never added a code-type or route), leaving {approved,
+  // generated:analyst}. routeFor can no longer hit approved-overrides-review (no review gate) nor
+  // any code/idea route, so it falls through to the advisory-only triager and the issue stalls.
+  const plan = devCore.planLabelRepair(issue(248, [APPROVED, 'generated:analyst']));
+  assert.equal(plan.reason, 're-arm-approved-route');
+  assert.deepEqual(plan.add, [SPEC_IN_REVIEW]);
+  assert.deepEqual(plan.remove, []);
+  assert.match(plan.comment, /spec:in-review/);
+  // After the repair, routeFor sends it to the coder via approved-overrides-review — the working
+  // pattern (#194/#195/#218 = approved,generated:analyst,spec:in-review → coder).
+  assert.equal(routeFor(issue(248, [APPROVED, 'generated:analyst', SPEC_IN_REVIEW])).reason, 'approved-overrides-review');
+  // An approved issue carrying a literal `idea` label (lineage retained) is also re-armed.
+  assert.equal(devCore.planLabelRepair(issue(249, [APPROVED, IDEA])).reason, 're-arm-approved-route');
+});
+
+test('planLabelRepair: does NOT re-arm when a routing path already exists or the issue is gated', () => {
+  // already routable: has a code-type → routeFor builds it directly, no re-arm needed.
+  assert.equal(devCore.planLabelRepair(issue(1, [APPROVED, 'generated:analyst', ENHANCEMENT])), null);
+  // already re-armed: a review gate is present → approved-overrides-review already fires.
+  assert.equal(devCore.planLabelRepair(issue(2, [APPROVED, 'generated:analyst', SPEC_IN_REVIEW])), null);
+  // already opted into the queue with route:a2a AND a review gate → routable; no re-arm.
+  assert.equal(devCore.planLabelRepair(issue(3, [APPROVED, 'generated:analyst', ROUTE_LABEL, SPEC_IN_REVIEW])), null);
+  // not approved → the analyst still owns it; never re-arm a pre-approval issue.
+  assert.equal(devCore.planLabelRepair(issue(4, ['generated:analyst'])), null);
+  // hard/active gates win — never re-arm a blocked / pr:in-review / in-progress issue. A blocked
+  // issue is handled by the existing blocked-conflict-cleanup branch (which strips `approved`),
+  // never re-armed back into the queue.
+  assert.notEqual(devCore.planLabelRepair(issue(5, [APPROVED, 'generated:analyst', BLOCKED]))?.reason, 're-arm-approved-route');
+  assert.equal(devCore.planLabelRepair(issue(6, [APPROVED, 'generated:analyst', PR_IN_REVIEW])), null);
+  assert.equal(devCore.planLabelRepair(issue(7, [APPROVED, 'generated:analyst', IN_PROGRESS])), null);
+  // no idea-lineage at all (typeless approved with no analyst/idea marker) → leave for the triager;
+  // the re-arm is scoped to idea-lineage issues so it can't hijack arbitrary typeless work.
+  assert.equal(devCore.planLabelRepair(issue(8, [APPROVED])), null);
+});
+
 test('routeFor: idea needs approval; approved idea (no review gate) → analyst draft (advance spec:draft)', () => {
   assert.equal(routeFor(issue(1, [IDEA])).target, null, 'idea without approval skipped');
   const r = routeFor(issue(2, [IDEA, APPROVED]));

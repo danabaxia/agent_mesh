@@ -95,6 +95,14 @@ jobs:
             code branch, NEVER set `approved` — only a human grants approval. You produce
             discussion, specs, label transitions, and dupe/dead-idea rejections only. The only
             thing that should reach a human is an issue at `spec:in-review`.
+
+            HARD RULE (post-approval is off-limits, #248): your role ENDS at the `spec:in-review`
+            human gate. If an issue ALREADY carries the `approved` label, do NOT touch its labels
+            at all — do not remove `spec:in-review`, do not add or strip anything, just skip it.
+            Once a human approves, the issue belongs to the build pipeline; removing its
+            `spec:in-review` after approval severs its only route to the coder (it has no
+            code-type) and deadlocks it. "Leave labels matching reality" NEVER applies to an
+            approved issue.
       - name: Verify the agent worked + capture usage
         if: always()
         uses: ./.github/actions/agent-postrun
