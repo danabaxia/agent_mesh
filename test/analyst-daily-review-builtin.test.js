@@ -59,13 +59,17 @@ test('live run files create calls with --limit 500 on the list', async () => {
   assert.ok(labeled.includes('idea') && labeled.includes('generated:analyst'), `ensured: ${labeled}`);
 });
 
-test('the resolved latest MIR path is interpolated into the delegate prompt', async () => {
-  const { repoRoot, mirDir } = await repoWithMir('mir-2026-06-20.json');
+test('MIR content is embedded directly in the delegate prompt', async () => {
+  const repoRoot = await mkdtemp(join(tmpdir(), 'analyst-repo-'));
+  const mirDir = join(repoRoot, '.dev-society', 'mir');
+  await mkdir(mirDir, { recursive: true });
+  await writeFile(join(mirDir, 'mir-2026-06-20.json'), '{"signal":"mir-unique-marker"}');
   let seenTask = '';
   const delegate = async ({ input }) => { seenTask = input.task; return { status: 'done', summary: '[]' }; };
   const gh = async (args) => (args[1] === 'list' ? '[]' : '');
   await runAnalystDailyReview({ repoRoot, dryRun: true, delegate, gh });
-  assert.ok(seenTask.includes(join(mirDir, 'mir-2026-06-20.json')), 'prompt must name the exact MIR path');
+  assert.ok(seenTask.includes('mir-unique-marker'), 'MIR content must be embedded in prompt');
+  assert.ok(!seenTask.includes(join(mirDir, 'mir-2026-06-20.json')), 'MIR path must NOT appear in prompt');
 });
 
 test('no MIR present → prompt omits the pointer, still succeeds', async () => {
@@ -76,6 +80,32 @@ test('no MIR present → prompt omits the pointer, still succeeds', async () => 
   const res = await runAnalystDailyReview({ repoRoot, dryRun: true, delegate, gh });
   assert.equal(res.status, 'ok');
   assert.ok(/no MIR available/i.test(seenTask));
+});
+
+test('digest contents are embedded in the delegate prompt when digests exist', async () => {
+  const { repoRoot } = await repoWithMir('mir-2026-06-20.json');
+  const devSocietyDir = join(repoRoot, '.dev-society');
+  await writeFile(join(devSocietyDir, 'daily-report.json'), '{"report":"daily-unique-marker"}');
+  await writeFile(join(devSocietyDir, 'gh-activity.json'), '{"activity":"gh-unique-marker"}');
+  let seenTask = '';
+  const delegate = async ({ input }) => { seenTask = input.task; return { status: 'done', summary: '[]' }; };
+  const gh = async (args) => (args[1] === 'list' ? '[]' : '');
+  await runAnalystDailyReview({ repoRoot, dryRun: true, delegate, gh });
+  assert.ok(seenTask.includes('daily-unique-marker'), 'daily-report content must be embedded in prompt');
+  assert.ok(seenTask.includes('gh-unique-marker'), 'gh-activity content must be embedded in prompt');
+  const expectedReport = join(repoRoot, '.dev-society', 'daily-report.json');
+  const expectedActivity = join(repoRoot, '.dev-society', 'gh-activity.json');
+  assert.ok(!seenTask.includes(expectedReport), 'daily-report path must NOT appear in prompt');
+  assert.ok(!seenTask.includes(expectedActivity), 'gh-activity path must NOT appear in prompt');
+});
+
+test('absent digests: prompt notes unavailability without referencing paths', async () => {
+  const { repoRoot } = await repoWithMir(null);
+  let seenTask = '';
+  const delegate = async ({ input }) => { seenTask = input.task; return { status: 'done', summary: '[]' }; };
+  const gh = async (args) => (args[1] === 'list' ? '[]' : '');
+  await runAnalystDailyReview({ repoRoot, dryRun: true, delegate, gh });
+  assert.ok(/No compact digests available today/i.test(seenTask), 'absent digests must note unavailability');
 });
 
 test('a non-done delegate result fails cleanly without gh create', async () => {

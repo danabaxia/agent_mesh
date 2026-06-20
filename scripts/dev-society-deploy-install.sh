@@ -129,8 +129,10 @@ PLIST
 # Repoint a service: bootout the old, then bring up the new with a `load -w` fallback.
 # `bootstrap` is the modern API but fails with `5: Input/output error` outside a GUI
 # login session; legacy `launchctl load -w` succeeds there. On a total failure, restore
-# the previous plist (saved as <plist>.prev by the caller) and re-load it, so the
-# canonical daemon is not unnecessarily left down. See memory dev-society-247-launchd.
+# the previous plist (saved as <plist>.prev by the caller) and re-load it. NOTE: this
+# rollback only helps when the new plist content is malformed; if the launchd environment
+# itself is broken (EIO outside a GUI session), the rollback also fails and the daemon
+# remains down. See memory dev-society-247-launchd.
 reload() {   # $1 = label, $2 = plist path
   local label="$1" plist="$2" backup="$2.prev"
   launchctl bootout "gui/$UID_NUM/$label" 2>/dev/null || true
@@ -141,7 +143,7 @@ reload() {   # $1 = label, $2 = plist path
   else
     echo "error: could not start $label via 'launchctl bootstrap' or 'launchctl load -w'" >&2
     if [ -f "$backup" ]; then
-      echo "rolling back $label to its previous plist so the daemon is not unnecessarily left down" >&2
+      echo "rolling back $label to its previous plist (restores on plist-content errors; launchd environment errors will still leave the daemon down)" >&2
       cp "$backup" "$plist"
       launchctl bootstrap "gui/$UID_NUM" "$plist" 2>/dev/null || launchctl load -w "$plist" 2>/dev/null || true
     else
@@ -162,7 +164,7 @@ if [ "$DRY_RUN" = "1" ]; then
   echo "[dry-run] reload daemon: launchctl bootout gui/$UID_NUM/$LABEL || true; bootstrap (fallback: launchctl load -w); enable; kickstart -k"
   echo "[dry-run] reload sync:   launchctl bootout gui/$UID_NUM/$SYNC_LABEL || true; bootstrap (fallback: launchctl load -w); enable; kickstart -k"
   echo "[dry-run] reload dashboard: launchctl bootout gui/$UID_NUM/$DASH_LABEL || true; bootstrap (fallback: launchctl load -w); enable; kickstart -k"
-  echo "[dry-run] on start failure: roll back to <plist>.prev and re-load so the daemon is not unnecessarily left down"
+  echo "[dry-run] on start failure: roll back to <plist>.prev and re-load (restores on plist-content errors; launchd environment errors leave the daemon down)"
   echo "[dry-run] dedupe legacy: launchctl bootout gui/$UID_NUM/$LEGACY_LABEL || true; rm -f $LA_DIR/$LEGACY_LABEL.plist"
   exit 0
 fi
@@ -179,7 +181,9 @@ fi
 
 mkdir -p "$LA_DIR" "$DEPLOY_ROOT/.dev-society"
 # Stage every plist BEFORE any bootout; back up the prior plist so reload() can roll
-# back to the running daemon if the new service fails to start (no daemon-down window).
+# back to the previous plist on start failure (restores on plist-content errors; a brief
+# down window still exists between bootout and bootstrap/load, and launchd environment
+# errors such as EIO outside a GUI session will leave the daemon down regardless).
 for _lbl in "$LABEL" "$SYNC_LABEL" "$DASH_LABEL"; do
   [ -f "$LA_DIR/$_lbl.plist" ] && cp "$LA_DIR/$_lbl.plist" "$LA_DIR/$_lbl.plist.prev"
 done

@@ -30,7 +30,7 @@ export async function readAgentDescription(root, name = basename(root)) {
   try {
     human = boundDescription(await readFile(join(root, 'AGENT.md'), 'utf8'));
   } catch {
-    human = null;
+    // AGENT.md absent — fall through to auto-fingerprint
   }
   if (human && human.length >= MIN_AGENT_MD_CHARS) return human;
 
@@ -71,9 +71,11 @@ async function readPackageJson(root) {
   }
 }
 
-// `main`, else the first `bin` target (string form or first object value).
+// `main`, then `exports['.']` string (ESM), else the first `bin` target.
 function packageEntry(pkg) {
   if (typeof pkg.main === 'string' && pkg.main) return pkg.main;
+  const dotExport = pkg.exports?.['.'];
+  if (typeof dotExport === 'string' && dotExport) return dotExport;
   const { bin } = pkg;
   if (typeof bin === 'string' && bin) return bin;
   if (bin && typeof bin === 'object') {

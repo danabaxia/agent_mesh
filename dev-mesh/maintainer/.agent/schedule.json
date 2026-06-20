@@ -15,6 +15,22 @@
       "builtin": "issue-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
       "enabled": true
+    },
+    {
+      "id": "automerge-sweep",
+      "name": "Prompt drain — merge CLEAN+APPROVED PRs",
+      "kind": "builtin",
+      "builtin": "automerge-sweep",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
+    },
+    {
+      "id": "post-merge-reconcile",
+      "name": "Close issues whose closing PR merged (clear stale pr:in-review)",
+      "kind": "builtin",
+      "builtin": "post-merge-reconcile",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
     }
   ]
 }

@@ -60,3 +60,41 @@ test('readAgentDescription supplements a thin AGENT.md instead of discarding it'
   assert.match(desc, /^Owns frontend\. \[auto\] /); // human text kept, fingerprint appended
   assert.match(desc, /dirs: src/);
 });
+
+test('readAgentDescription uses AGENT.md when sufficiently long', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-desc-'));
+  const longText = 'This agent owns the authentication service and handles login, logout, and token refresh flows.';
+  await writeFile(join(root, 'AGENT.md'), longText);
+  const desc = await readAgentDescription(root, 'auth');
+  assert.ok(!desc.startsWith('[auto]'), 'should not use auto fingerprint when AGENT.md is adequate');
+  assert.ok(desc.includes('authentication service'), 'should contain AGENT.md content');
+});
+
+test('auto fingerprint handles missing package.json gracefully', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-desc-'));
+  // no package.json, no AGENT.md
+  const desc = await readAgentDescription(root, 'bare-folder');
+  assert.ok(desc.startsWith('[auto]'), `expected [auto] prefix, got: ${desc}`);
+  assert.ok(desc.includes('bare-folder'), 'should include folder name even with no metadata');
+});
+
+test('auto fingerprint respects MAX_DESCRIPTION_CHARS cap', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-desc-'));
+  await writeFile(
+    join(root, 'package.json'),
+    JSON.stringify({ description: 'x'.repeat(2000) })
+  );
+  const desc = await readAgentDescription(root, 'big');
+  assert.ok(desc.length <= 1200, `description too long: ${desc.length}`);
+  assert.ok(desc.includes('[truncated]'), 'should truncate long descriptions');
+});
+
+test('auto fingerprint prefers package.json exports string entry', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-desc-'));
+  await writeFile(
+    join(root, 'package.json'),
+    JSON.stringify({ name: 'esm-pkg', exports: { '.': './dist/index.js' } })
+  );
+  const desc = await readAgentDescription(root, 'esm-pkg');
+  assert.ok(desc.includes('dist/index.js'), `expected entry in desc, got: ${desc}`);
+});
