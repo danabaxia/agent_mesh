@@ -567,6 +567,15 @@ test('fanOutToPeers bad_input: empty peers array', async () => {
   assert.equal(res.error_code, 'bad_input');
 });
 
+test('fanOutToPeers bad_input: peers not an array', async () => {
+  const root = await agentRootWith(MARKED_TWO);
+  const bridge = createBridge({ root, env: {}, createClient: makeMultiClientFactory().factory });
+
+  const res = await bridge.fanOutToPeers({ peers: 'alpha', mode: 'ask', task: 'ping' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
+});
+
 test('fanOutToPeers bad_input: peers count exceeds maxPeers cap', async () => {
   const root = await agentRootWith(MARKED_TWO);
   const bridge = createBridge({ root, env: { AGENT_MESH_FAN_OUT_MAX_PEERS: '2' }, createClient: makeMultiClientFactory().factory });
@@ -576,6 +585,15 @@ test('fanOutToPeers bad_input: peers count exceeds maxPeers cap', async () => {
   assert.equal(res.ok, false);
   assert.equal(res.error_code, 'bad_input');
   assert.match(res.summary, /maxPeers/);
+});
+
+test('fanOutToPeers bad_input: oversized task', async () => {
+  const root = await agentRootWith(MARKED_TWO);
+  const bridge = createBridge({ root, env: {}, createClient: makeMultiClientFactory().factory });
+
+  const res = await bridge.fanOutToPeers({ peers: ['alpha'], mode: 'ask', task: 'x'.repeat(20000) });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
 });
 
 test('fanOutToPeers depth_budget: depth=0 → refusal, zero peers contacted', async () => {
