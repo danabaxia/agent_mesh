@@ -59,6 +59,7 @@ import { runDigest } from '../digest.js';
 import { buildResumeCommand } from './resume-command.js';
 import { readActivity } from '../activity-log/log.js';
 import { filterEvents } from '../activity-log/event.js';
+import { readMergeSweepApi } from './merge-sweep-api.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -802,6 +803,12 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     const schedulerOwner = dashboardOwnsScheduler ? 'dashboard' : (jobs.length ? 'daemon' : 'none');
     sendJson(res, 200, { schedulerOwner, jobs });
     return;
+  }
+
+  // GET /api/merge-sweep → latest merge-sweep report (if any), with a staleness
+  // flag computed against the report cadence. Read-only.
+  if (pathname === '/api/merge-sweep' && req.method === 'GET') {
+    return sendJson(res, 200, readMergeSweepApi(meshRoot, new Date()));
   }
 
   // GET /api/ci-schedules → read-only view of GitHub Actions cron workflows

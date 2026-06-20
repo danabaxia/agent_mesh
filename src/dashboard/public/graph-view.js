@@ -4,6 +4,12 @@
 // issues/PRs progress table from /api/daily. Visual language = board2.css.
 import { agentColor } from '/board2-model.js';
 import { reconcileObserved } from '/graph-observed.js';
+import { renderMergeSweep } from '/merge-sweep-render.js';
+import { jobResultLine, jobHasReport } from '/schedules-render.js';
+
+// Cron jobs that publish a structured report → an inline expandable detail in the
+// Schedules view. Keyed by job id so any report-producing job reuses this surface.
+const REPORT_RENDERERS = { 'merge-sweep': { endpoint: '/api/merge-sweep', render: renderMergeSweep } };
 
 const SVG = 'http://www.w3.org/2000/svg';
 const mk = (t, a = {}) => { const e = document.createElementNS(SVG, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -333,9 +339,13 @@ async function loadSchedules() {
   const pill = (s) => s === 'ok' ? '<span class="state done">ok</span>' : s === 'fail' ? '<span class="state block">fail</span>' : '<span class="state open">—</span>';
   const jobRow = (j) => {
     const desc = j.description ? `<div class="sched-desc" title="${esc(j.description)}">${esc(j.description)}</div>` : '';
+    const result = jobResultLine(j, relTime);
     const canRun = j.enabled && !j.running;
     const runBtn = `<button class="sched-run" data-run-agent="${esc(j.agent)}" data-run-id="${esc(j.id)}"${canRun ? '' : ' disabled'} title="${j.enabled ? 'run now (≤30s)' : 'enable the job to run it'}">▶ run</button>`;
-    return `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span>${desc}</td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : runBtn}</td></tr>`;
+    const expandBtn = jobHasReport(j.id) ? `<button class="sched-expand" data-report-id="${esc(j.id)}" title="show report">▾ report</button> ` : '';
+    const main = `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span>${desc}${result}</td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${expandBtn}${j.running ? '▶ running' : runBtn}</td></tr>`;
+    const detail = jobHasReport(j.id) ? `<tr class="sched-detail" id="sched-detail-${esc(j.id)}" hidden><td colspan="5"><div class="sched-report" id="sched-report-${esc(j.id)}"></div></td></tr>` : '';
+    return main + detail;
   };
   const ciRow = (w) => `<tr><td class="title"><span class="tt"><b class="an" style="color:#8b949e">GitHub Actions</b> · ${esc(w.workflow)}</span></td><td><span class="kind issue">${esc(w.cadenceLabel || '')}</span></td><td>${w.running ? '<span class="state open">▶ running</span>' : pill(w.status)}</td><td class="age" title="latest cached run (not necessarily a scheduled run)">${esc(w.lastRunAt ? new Date(w.lastRunAt).toLocaleString() : '—')}</td><td class="age">—</td></tr>`;
   const body = jobs.map(jobRow).join('') + wfs.map(ciRow).join('');
@@ -347,7 +357,19 @@ async function loadSchedules() {
     } catch { /* transient — next poll reflects state */ }
     setTimeout(loadSchedules, 1500);
   }));
+  // Expandable report for cron jobs that publish one (e.g. merge-sweep) — lazy-fetched.
+  el.querySelectorAll('.sched-expand').forEach((btn) => btn.addEventListener('click', async () => {
+    const id = btn.dataset.reportId, rr = REPORT_RENDERERS[id];
+    const row = root.querySelector(`#sched-detail-${id}`), target = root.querySelector(`#sched-report-${id}`);
+    if (!row || !target || !rr) return;
+    if (!row.hasAttribute('hidden')) { row.setAttribute('hidden', ''); btn.textContent = '▾ report'; return; }
+    row.removeAttribute('hidden'); btn.textContent = '▴ report';
+    target.innerHTML = '<div class="gv-empty">loading…</div>';
+    try { target.innerHTML = rr.render(await (await fetch(rr.endpoint)).json()); }
+    catch { target.innerHTML = '<div class="gv-empty">report unavailable</div>'; }
+  }));
 }
+
 
 async function loadHealth() {
   const pillEl = root.querySelector('#gv-health-pill');
