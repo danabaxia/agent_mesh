@@ -89,10 +89,15 @@ injected `delegate`/`gh` (defaults: real `delegateTask` + the daemon's `sh('gh',
    with the real deps; a hidden CLI/env path runs it with `--dry-run` for tests.
 
 **Latest-MIR resolution (MAJOR fix):** MIR writes **dated** `mir-YYYY-MM-DD.json` (via
-`src/mesh-improvement/run.js`), with **no stable `mir.json`**. Before building the prompt,
-`runAnalystDailyReview` resolves the newest dated file host-side — reusing the existing
-`latestMir(mirDir)` helper (`src/mesh-improvement/collect.js`) — and **interpolates that exact
-absolute path** into the prompt. A test asserts the resolver picks the most-recent dated file.
+`src/mesh-improvement/run.js`), with **no stable `mir.json`**. Note the existing
+`latestMir(mirDir)` (`src/mesh-improvement/collect.js`) is **private and returns parsed JSON**,
+not a path — but the Tester (ask-mode) needs a **path** to `Read`. So extract a tiny exported
+**`latestMirPath(mirDir) → string|null`** (the same `mir-*.json` glob+lexical-sort+`join`,
+returning the absolute path; refactor `latestMir` to call it + `readJson`). Before building the
+prompt, `runAnalystDailyReview` calls `latestMirPath(mirDir)` host-side and **interpolates that
+exact absolute path** into the prompt (if `null`, the prompt omits the MIR pointer and the
+Tester reports "no MIR available"). A test asserts `latestMirPath` picks the most-recent dated
+file and that path appears in the delegate prompt.
 
 The **prompt** (inline, concise; references `research-landscape`) tells the Analyst to:
 (a) `delegate_to_peer("tester", "Give a SHORT (≤10 line) summary of today's eval/test
@@ -157,7 +162,7 @@ daily tick → builtin analyst-daily-review:
 |------|--------|
 | `test/analyst-ideas.test.js` | `parseIdeas`: extracts the json block; malformed/absent → `[]`; `dedupeKey` regex-validated. `extractMarkers`: regex-pulls `<!-- analyst-idea:KEY -->` from issue bodies → Set. `planIdeaIssues`: marker dedup vs openMarkers; cap 2; labels `idea`+`generated:analyst`; never throws. |
 | `test/web-tools-optin.test.js` | `agentWantsWebTools` is **manifest-gated**: true only when meshRoot's manifest has a `served:true`, ask-enabled agent whose canonical root matches AND `webTools:true`; **false** for a non-served/ spoofed root, missing meshRoot, or `route:'digest'`. Assert the ask allowlist **includes** `WebSearch`/`WebFetch` for the granted analyst run and **excludes** them for (a) a non-opted agent, (b) the `do` path, (c) the **digest route** (regression for the digest BLOCKER). |
-| `test/analyst-daily-review-builtin.test.js` | `runAnalystDailyReview({dryRun:true, delegate:fake, gh:fake})` parses a fake agent output → plan, performs **no** `gh` mutation; live path issues create calls; daemon registers `analyst-daily-review`; the **latest-MIR resolver** picks the newest dated `mir-YYYY-MM-DD.json` and that exact path appears in the delegate prompt; the `gh issue list` call uses `--limit 500`. |
+| `test/analyst-daily-review-builtin.test.js` | `runAnalystDailyReview({dryRun:true, delegate:fake, gh:fake})` parses a fake agent output → plan, performs **no** `gh` mutation; live path issues create calls; daemon registers `analyst-daily-review`; **`latestMirPath`** picks the newest dated `mir-YYYY-MM-DD.json` (and `null` when the dir is empty) and that exact path appears in the delegate prompt; the `gh issue list` call uses `--limit 500`. |
 | `test/dev-society-daemon.test.js` (extend) | **daemon-ordering lint**: the source calls `doctor(...{apply:true,managedOnly:true})` before `sched.start()` (BLOCKER fix). |
 | `test/analyst-agent-schedule.test.js` | `dev-mesh/analyst/.agent/schedule.json` valid (cadence validates); `mesh.json` analyst has `webTools:true` + `peers` includes `tester`; **after `doctor` on a temp `dev-mesh` copy, `readManagedRegistry(<tmp>/analyst)` returns `tester`** (proves the bridge will inject — MAJOR fix), not just a mesh.json check. |
 | revert checks | `dev-mesh-analyst-review.yml` + its lint test + the obsolete CI spec doc gone; gated-workflow count back to 11; NAMES has no `analyst-review`; `ROLE` has no `analyst-review`. |
@@ -226,3 +231,20 @@ Full suite green after the revert + additions.
   `mir-${day}.json`/`.md`; there is no stable `mir.json`. Fixed: `runAnalystDailyReview`
   resolves the newest dated file host-side via the existing `latestMir(mirDir)`
   (`src/mesh-improvement/collect.js`) and interpolates that exact path into the prompt; tested.
+
+### Round 4 — Codex rate-limited; convergence self-review (signatures verified against code)
+
+Both Codex accounts (default + review) hit usage limits before the round-4 convergence pass.
+Rather than block, I verified the round-3 deltas' implementability against real code and fixed
+the one gap a fresh reviewer would have caught:
+
+- **`doctor(meshRoot, { apply, managedOnly })`** — confirmed exact signature in
+  `src/builder/doctor.js:53`. §3.4 daemon call is implementable as written.
+- **`latestMir` correction** — confirmed `latestMir(mirDir)` in `src/mesh-improvement/collect.js`
+  is **private and returns parsed JSON**, not a path; the Tester needs a path to `Read`. §3.3
+  updated to extract an exported **`latestMirPath(mirDir) → string|null`** (glob+sort+`join`;
+  `latestMir` refactored to call it), with a `null`-empty-dir branch.
+
+No new architectural surface introduced since the round-3 (code-verified) pass. **Treated as
+converged** for planning; a confirmatory Codex round 4 can be run later if desired (accounts
+reset ~02:00–02:26 local).
