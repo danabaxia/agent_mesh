@@ -616,5 +616,16 @@
       "source": "PR #156: feat(automerge): gate PR merge on linked-issue state",
       "ts": "2026-06-19"
     }
+  },
+  "swebench-l5-phase-split": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "L5 external benchmark: ship ask-mode Phase 1 independently; gate do-mode Phase 2 on prerequisite feature.",
+    "l1": "PR #163 (Issue #98) adds SWE-bench as an L5 eval tier (external comparability vs. OpenHands 72%, SWE-agent 65%). Two-phase split: Phase 1 ships ask-mode with text-match/keyword scoring — no Docker, no external CLI, hermetically testable. Phase 2 (do-mode, Docker swebench-cli) skipped until issue #97 (do-mode peer delegation) lands. Pattern: `phase` field in task descriptors; `do_required` tasks return {pass:false, skipped:true}. Missing `swebench` binary → exit 0 (same skip-guard as L3/L4). L5 reuses eval/harness.mjs — entirely additive, no src/ changes.",
+    "value": "Pattern for adding an external benchmark tier (L5) without breaking zero-deps or blocking on harder prerequisites:\n\n(1) Phase-split by mode: define Phase 1 (ask-only, text-match scoring) and Phase 2 (do-mode, Docker/external CLI) as separate named phases. Ship Phase 1 independently; document Phase 2's prerequisite feature in skip messages.\n\n(2) Task descriptor schema: add a `phase` field (1 or 2) and topology marker (`'ask_only'`/`'do_required'`). Check both: `if (task.phase === 2 || task.topology === 'do_required')` → skip with structured `{pass:false, skipped:true, detail:'do_required: Phase 2'}`. Never silently drop tasks.\n\n(3) External CLI skip-guard: check binary on PATH before Phase 2 runs. Absent → exit 0 with warning (same pattern as L3/L4 skip-guards). Docker is a CI runner config, not an in-repo dep — zero-deps ethos preserved.\n\n(4) Reuse eval substrate: `buildMesh`/`driveAgent`/`cleanupMesh` from eval/harness.mjs is the common substrate for all eval tiers (L2–L5). New tier adds only scripts/eval-swebench.mjs + eval/swebench/ — no src/ changes, no new dependencies.\n\n(5) Curate task corpus separately from harness code: ship a placeholder `mesh-bench.json` (empty array) and log 'mesh-bench task list is empty — human curation needed' when dry. Task selection (20–50 tasks requiring multi-peer coordination) is a human-review step — do not block harness merge on curation.\n\nProvenance: PR #163 / Issue #98 (2026-06-19).",
+    "provenance": {
+      "source": "PR #163: feat(eval): SWE-bench L5 eval harness — Phase 1 ask-mode (issue #98)",
+      "ts": "2026-06-19"
+    }
   }
 }
