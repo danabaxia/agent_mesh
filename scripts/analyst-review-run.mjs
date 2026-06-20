@@ -3,7 +3,7 @@
 // host code resolves the MIR pointer, parses the agent's idea-JSON, dedups
 // against open issues, and files ≤2 `idea` issues. See
 // docs/superpowers/specs/2026-06-20-analyst-agent-driven-review-design.md.
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { delegateTask } from '../src/delegate.js';
 import { latestMirPath } from '../src/mesh-improvement/collect.js';
@@ -17,6 +17,29 @@ const ANALYST_SCAN_LABEL_DEFAULT = 'generated:analyst';
 
 // Cap per-artifact to keep the total task well under MAX_TASK_CHARS.
 const ARTIFACT_MAX_CHARS = 5_000;
+
+// Max age, in hours, before a required daily digest counts as STALE. Default 26h
+// (a full day plus margin for clock skew / a late refresh). Tunable for ops.
+const DIGEST_MAX_AGE_HOURS_DEFAULT = 26;
+
+// Freshness/heartbeat probe for one required artifact (issue #195): assert it
+// exists and was refreshed within maxAgeMs of `now`. A dead-man's-switch on the
+// digest pipeline — mirrors dbt `source freshness` and Prometheus
+// `time()-timestamp` guards. Uses the file's mtime rather than an embedded date
+// so it works uniformly for the daily-report object AND the bare gh-activity
+// array (which carries no internal timestamp). Returns null when fresh, or a
+// short reason string ('missing' / 'stale (Nh old)') when the input is unusable.
+function staleReason(filePath, { nowMs, maxAgeMs }) {
+  let mtimeMs;
+  try {
+    mtimeMs = statSync(filePath).mtimeMs;
+  } catch {
+    return 'missing';
+  }
+  const ageMs = nowMs - mtimeMs;
+  if (ageMs > maxAgeMs) return `stale (${Math.round(ageMs / 3_600_000)}h old)`;
+  return null;
+}
 
 // Read an artifact file from the host filesystem (daemon context) and return its
 // text content, capped to ARTIFACT_MAX_CHARS. Returns null if the file is missing
@@ -71,6 +94,26 @@ export async function runAnalystDailyReview({ repoRoot, dryRun = false, delegate
   const devSocietyDir = join(repoRoot, '.dev-society');
   const dailyReport = env('AGENT_MESH_DAILY_REPORT_CACHE', join(devSocietyDir, 'daily-report.json'));
   const ghActivity = env('AGENT_MESH_GH_ACTIVITY', join(devSocietyDir, 'gh-activity.json'));
+
+  // Freshness/heartbeat guard (issue #195): the daily-report/gh-activity digest
+  // step has failed silently — leaving NO artifacts and emitting no error — so the
+  // review degraded to an empty run instead of alerting. Before the Analyst reasons,
+  // assert each required daily digest exists and is fresh; if any is missing or
+  // stale, emit ONE explicit 'inputs unavailable' failure and skip the run rather
+  // than fabricating a degraded review off absent inputs.
+  const maxAgeMs = (Number(env('AGENT_MESH_DIGEST_MAX_AGE_HOURS', '')) || DIGEST_MAX_AGE_HOURS_DEFAULT) * 3_600_000;
+  const nowMs = now().getTime();
+  const unavailable = [
+    ['daily-report.json', dailyReport],
+    ['gh-activity.json', ghActivity],
+  ]
+    .map(([name, p]) => ({ name, reason: staleReason(p, { nowMs, maxAgeMs }) }))
+    .filter((a) => a.reason);
+  if (unavailable.length) {
+    const detail = unavailable.map((a) => `${a.name} ${a.reason}`).join('; ');
+    return { status: 'fail', output: `inputs unavailable: ${detail} — skipped analyst review (no degraded run)` };
+  }
+
   const mirPath = latestMirPath(mirDir);
   const mirContent = mirPath ? readArtifact(mirPath) : null;
   const dailyReportContent = readArtifact(dailyReport);
