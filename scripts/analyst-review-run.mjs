@@ -4,6 +4,7 @@
 // against open issues, and files ≤2 `idea` issues. See
 // docs/superpowers/specs/2026-06-20-analyst-agent-driven-review-design.md.
 import { readFileSync } from 'node:fs';
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { delegateTask } from '../src/delegate.js';
 import { latestMirPath } from '../src/mesh-improvement/collect.js';
@@ -17,6 +18,26 @@ const ANALYST_SCAN_LABEL_DEFAULT = 'generated:analyst';
 
 // Cap per-artifact to keep the total task well under MAX_TASK_CHARS.
 const ARTIFACT_MAX_CHARS = 5_000;
+
+// Required daily artifacts — if missing or older than today the review would
+// fabricate answers from a void, so we refuse loudly instead.
+const REQUIRED_ARTIFACTS = ['daily-report.json', 'gh-activity.json'];
+
+async function checkDigestFreshness(repoRoot, now) {
+  const devSocietyDir = join(repoRoot, '.dev-society');
+  const today = now().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+  const stale = [];
+  for (const name of REQUIRED_ARTIFACTS) {
+    try {
+      const s = await stat(join(devSocietyDir, name));
+      const fileDate = s.mtime.toISOString().slice(0, 10);
+      if (fileDate !== today) stale.push(`${name} (last modified ${fileDate}, expected ${today})`);
+    } catch {
+      stale.push(`${name} (missing)`);
+    }
+  }
+  return stale;
+}
 
 // Read an artifact file from the host filesystem (daemon context) and return its
 // text content, capped to ARTIFACT_MAX_CHARS. Returns null if the file is missing
@@ -67,6 +88,14 @@ export async function runAnalystDailyReview({ repoRoot, dryRun = false, delegate
 
   const runDelegate = delegate || ((opts) => delegateTask(opts));
   if (!gh) throw new Error('runAnalystDailyReview requires a gh executor');
+
+  const staleArtifacts = await checkDigestFreshness(repoRoot, now);
+  if (staleArtifacts.length > 0) {
+    return {
+      status: 'inputs_unavailable',
+      output: `daily review skipped — digest artifacts missing or stale: ${staleArtifacts.join(', ')}`,
+    };
+  }
 
   const devSocietyDir = join(repoRoot, '.dev-society');
   const dailyReport = env('AGENT_MESH_DAILY_REPORT_CACHE', join(devSocietyDir, 'daily-report.json'));
