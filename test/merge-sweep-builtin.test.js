@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 
 function recordingGh(map) {
@@ -22,7 +23,7 @@ test('runMergeSweep is read-only (no mutating commands) and writes one report', 
   });
   const forbidden = calls.filter((c) => /pr merge|pr edit|pr comment|git (push|commit|merge|checkout)/.test(c));
   assert.deepEqual(forbidden, [], 'must issue no mutating commands');
-  assert.ok(written && written.path.endsWith('mesh/reports/merge-sweep.json'));
+  assert.ok(written && written.path.endsWith(join('mesh', 'reports', 'merge-sweep.json')));   // OS-agnostic (Windows uses \)
   assert.equal(written.rep.mode, 'report');
   assert.equal(r.status, 'ok');
 });
