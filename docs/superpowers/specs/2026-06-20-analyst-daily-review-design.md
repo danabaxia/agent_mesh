@@ -15,10 +15,16 @@ are **unavailable to a daemon ask-mode scheduled job**: those run `delegateTask`
 `AGENT_MESH_ENABLED_MODES=ask`, whose tool allowlist is `READ_TOOLS` only
 (`Read/Glob/Grep/LS`) plus `readOnly`-marked MCP — no `WebSearch`/`WebFetch`, no `Bash`,
 and (per the MIR finding) no GitHub mutation. The capable context is a **GitHub Actions
-cron** running the Analyst via `anthropics/claude-code-action@v1` (WebSearch + `Bash(gh:*)`
-+ `issues: write`), exactly like the existing `dev-mesh-research.yml`. Bonus: it appears in
-the dashboard **SCHEDULES panel** (the "GitHub Actions" group shipped 2026-06-19) under the
-analyst's executor, so it IS a visible "agent schedule task."
+cron** running the Analyst via `anthropics/claude-code-action@v1` with `Bash(gh:*)` +
+`issues: write`, modeled on `dev-mesh-research.yml`. **Web tools caveat:**
+`dev-mesh-research.yml` does NOT actually list `WebSearch`/`WebFetch` in its
+`--allowedTools` (its skill asks for search but the allowlist omits them) — so it is NOT
+proof web search works. This workflow therefore **explicitly adds `WebSearch,WebFetch`** to
+`--allowedTools`, and the lint test asserts their presence. (Fixing `dev-mesh-research.yml`'s
+omission is out of scope here — noted as a v2.) Visibility: it appears in the dashboard
+**SCHEDULES panel** (the "GitHub Actions" group shipped 2026-06-19) as the workflow
+`dev-mesh-analyst-review` with executor label **"GitHub Actions"** (CI rows always carry
+that literal executor; the per-workflow agent attribution is a separate concern — §5.2).
 
 **"Delegate with other agents to get the summary"** is realized by **consuming the
 artifacts/outputs those agents publish** — the cross-agent information flow available in
@@ -60,20 +66,27 @@ GitHub Issues/PRs ──────── gh (issue history, backlog, failures)
 Mirrors `dev-mesh-research.yml`'s proven shape (OAuth sanitize, model via
 `vars.DEV_MESH_MODEL` w/ sonnet fallback, `agent-postrun`), with these specifics:
 
-- **Triggers:** `workflow_dispatch` + `schedule: cron '0 8 * * *'` (daily 08:00 UTC — after
-  the 07:00 integration nightly so the MIR is fresh; distinct from research's 06:00).
-- **`permissions:`** `contents: read`, `issues: write`.
+- **Triggers:** `workflow_dispatch` + `schedule: cron '30 9 * * *'` (daily 09:30 UTC —
+  comfortably after the 07:00 integration nightly *and* its `mir` job finish, so the MIR
+  artifact exists; distinct from research's 06:00).
+- **`permissions:`** `contents: read`, `issues: write`, **`pull-requests: read`**
+  (`gh pr list`), **`actions: read`** (`gh run list`/`gh run download` of another
+  workflow's `mir-artifact`). No `contents: write`.
 - **`concurrency:`** group `dev-mesh-analyst-review`, `cancel-in-progress: false`.
 - **`--allowedTools`** (explicit): `Read,Grep,Glob,Bash(gh:*),WebSearch,WebFetch` —
-  note `WebSearch,WebFetch` are listed **explicitly** (the goal requires web research); no
-  `Edit`/`Write` (issues-only).
+  `WebSearch,WebFetch` listed **explicitly** (the goal requires web research); **no
+  `Edit`/`Write`** (issues-only, least privilege).
 - **`github_token: ${{ secrets.GITHUB_TOKEN }}`** for `gh`/issue write.
 - **Prompt** drives the Analyst to:
-  1. Read its role (`dev-mesh/analyst/AGENT.md`, skills `research-landscape`).
+  1. Read its role (`dev-mesh/analyst/AGENT.md`). Use the **search → fetch → adversarially
+     verify → cited synthesis** steps of the `research-landscape` skill **only** — this task
+     is **issues-only**: do NOT write draft specs, do NOT absorb/write memory, do NOT touch
+     files (no `Edit`/`Write` is granted anyway).
   2. **Gather the eval/test summary** (Tester's MIR): `gh run list --workflow integration.yml`
-     → `gh run download <latest-with-mir> -n mir-artifact` → read `mir-*.json`/`.md`
-     (regressions/fileable findings). If no MIR artifact is available, say so and continue
-     with the other signals (degrade, don't fail).
+     → pick the **latest COMPLETED run that has a `mir-artifact`** → `gh run download <id>
+     -n mir-artifact` → read `mir-*.json` (the integration `mir` job uploads JSON only — no
+     `.md`). If no MIR artifact is available, say so and continue with the other signals
+     (degrade, don't fail).
   3. **Gather issue history / performance**: `gh issue list --state all` (recent + open
      backlog), `gh pr list --state all`, and the committed daily report if present — to spot
      stuck issues, repeated failures, and trends.
@@ -85,6 +98,14 @@ Mirrors `dev-mesh-research.yml`'s proven shape (OAuth sanitize, model via
      PR, no approval** (§5.3).
 - **`agent-postrun`** verify + usage step (`if: always()`), as in `dev-mesh-research.yml`.
 
+### 5.2 Optional: attribute the workflow to the analyst in activity (`src/dev-society/gh-activity.js`)
+The CI-schedules panel's executor label is always `GitHub Actions`, but the **activity
+graph** maps a workflow→agent via `workflowToAgent` (strips `dev-mesh-`, looks up `ROLE`,
+defaults to `orchestrator`). To attribute this workflow's runs to the analyst (and emit the
+orchestrator→analyst `:e` edge so its conclusion shows), add `'analyst-review': 'analyst'`
+to the `ROLE` map. One line + a `gh-activity` test case. (Without it, runs attribute to
+orchestrator — harmless, but the mapping makes the activity story correct.)
+
 ## 6. Testing
 
 Hermetic workflow-lint test (zero-dep regex over the YAML text — the repo's established
@@ -92,7 +113,8 @@ pattern, cf. `test/integration-workflow.test.js` / the dev-mesh workflow lints):
 
 | Test | Asserts |
 |------|---------|
-| `test/dev-mesh-analyst-review-workflow.test.js` | triggers = `schedule` (cron) + `workflow_dispatch`, NOT `push`/`pull_request`; `permissions` = `contents: read` + `issues: write` (no `contents: write`); `--allowedTools` includes `WebSearch`, `WebFetch`, `Bash(gh:*)` and **excludes `Edit`/`Write`**; OAuth sanitize + `add-mask` present; uses `claude-code-action` + `agent-postrun`; prompt forbids code/PR (contains the §5.3 "propose only / STOP" + "do NOT write code"/"do NOT open a code PR" language) and the dedupe instruction; model via `vars.DEV_MESH_MODEL` with `sonnet` fallback. |
+| `test/dev-mesh-analyst-review-workflow.test.js` | triggers = `schedule` (cron) + `workflow_dispatch`, NOT `push`/`pull_request`; `permissions` block contains `contents: read`, `issues: write`, `pull-requests: read`, `actions: read`, and **no `contents: write`**; the **`--allowedTools` string specifically** (extract that line, not the whole YAML) includes `WebSearch`, `WebFetch`, `Bash(gh:*)` and **excludes `Edit`/`Write`**; OAuth sanitize + `add-mask` present; uses `claude-code-action` + `agent-postrun`; prompt forbids code/PR (§5.3 "propose only / STOP" + "do NOT write code"/"do NOT open a code PR"), is issues-only (no draft-spec/memory), and has the dedupe instruction; model via `vars.DEV_MESH_MODEL` with `sonnet` fallback. |
+| `test/gh-activity.test.js` (extend) | `workflowToAgent('dev-mesh-analyst-review') === 'analyst'` (the new `ROLE` entry, §5.2). |
 
 (The Analyst's actual behavior is exercised live by the cron / `workflow_dispatch`, like
 `dev-mesh-research.yml`; there is no real-`claude` unit gate.)
@@ -115,3 +137,15 @@ pattern, cf. `test/integration-workflow.test.js` / the dev-mesh workflow lints):
 - **Backlog hygiene** — dedupe-first, ≤2 new issues/run, file nothing if nothing new.
 - **No daemon/runtime change** — additive CI workflow only; the mesh ask-mode safety model
   is untouched (this deliberately runs where web/gh are legitimately available).
+
+## Review log
+
+### Round 1 — Codex (gpt-5.5), VERDICT: CHANGES_REQUESTED → all 7 findings accepted
+
+- **[BLOCKER] missing perms** — added `pull-requests: read` (`gh pr list`) + `actions: read` (`gh run download` of another workflow's `mir-artifact`); kept no `contents: write` (§5).
+- **[MAJOR] cron too soon** — moved to `30 9 * * *` (well after the 07:00 integration + its `mir` job); prompt picks the latest COMPLETED run that HAS a `mir-artifact` (§5).
+- **[MAJOR] web tools not proven by research.yml** — reworded §2: research.yml omits WebSearch from its allowlist (not proof); this workflow explicitly adds `WebSearch,WebFetch` + lint asserts it; research.yml's gap noted as v2.
+- **[MAJOR] issues-only vs research-landscape spec-writing** — prompt now uses only research-landscape's search→synthesis steps, explicitly issues-only (no draft specs/memory/file writes); no `Edit`/`Write` granted (§5).
+- **[MINOR] MIR `.md` not uploaded** — prompt reads `mir-*.json` only (integration uploads JSON) (§5).
+- **[MINOR] lint scoping** — test extracts the `--allowedTools` line for the Edit/Write exclusion and asserts `actions: read`/`pull-requests: read` in permissions (§6).
+- **[MINOR] dashboard attribution** — reworded the visibility claim (CI executor is literally "GitHub Actions"); added §5.2 `ROLE['analyst-review']='analyst'` (one line + test) so activity attributes runs to the analyst.
