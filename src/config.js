@@ -8,6 +8,10 @@ export const MAX_TASK_CHARS = 16_384;
 // without limit. Generously above MAX_TASK_CHARS to allow JSON envelope/metadata.
 export const MAX_LINE_CHARS = 1_048_576;
 export const MAX_DESCRIPTION_CHARS = 1200;
+// Below this normalized length an AGENT.md is too thin to route on (issue #184):
+// readAgentDescription supplements/replaces it with an auto-harvested [auto]
+// fingerprint (package.json + top-level dir listing) so list_peers stays useful.
+export const MIN_AGENT_MD_CHARS = 80;
 export const MAX_PROMPT_CHARS = 8_000;
 // Per-memory-file cap inside the assembled runtime prompt. Memory sections come
 // before the mode prompt and skills, so an uncapped runaway memory file could

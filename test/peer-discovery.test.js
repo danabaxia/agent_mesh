@@ -45,10 +45,10 @@ test('list_peers returns bounded description + capabilities from each peer AGENT
   assert.match(lib.description, /catalog/i);
   assert.ok(Array.isArray(lib.capabilities) && lib.capabilities.includes('catalog lookup'));
 
-  // missing AGENT.md → auto-fingerprint fallback, never a throw
+  // missing AGENT.md → auto-harvested [auto] fingerprint (issue #184), never a throw
   const scr = peers.find((p) => p.name === 'scratch');
   assert.ok(scr, 'scratch present');
-  assert.match(scr.description, /\[auto\]/);
+  assert.match(scr.description, /^\[auto\] name: scratch/);
 });
 
 test('list_peers tolerates a peer entry without a usable root', async () => {
