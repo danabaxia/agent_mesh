@@ -29,7 +29,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, appendFileSync, rmSync, realpathSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, appendFileSync, rmSync, realpathSync, writeFileSync, readFileSync, renameSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createA2AClient } from '../src/a2a/stdio-client.js';
@@ -47,6 +47,7 @@ import { doctor } from '../src/builder/doctor.js';
 import { ensureLabels } from '../src/gh-labels.js';
 import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-lock.js';
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
+import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 
 const sh = promisify(execFile);
@@ -146,6 +147,13 @@ if (!once && !selftest) {
     'issue-sweep': () => sweep()
       .then(() => ({ status: 'ok', output: 'issue-sweep complete' }))
       .catch((e) => { log('issue-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    'merge-sweep': async () => runMergeSweep({
+      gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo, meshRoot: SCHED_MESH_ROOT,
+      readReport: (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return {}; } },
+      writeReport: (p, rep) => { mkdirSync(dirname(p), { recursive: true }); const t = `${p}.tmp`; writeFileSync(t, JSON.stringify(rep)); renameSync(t, p); },
+      now: new Date(),
+    }),
     // Daemon-driven prompt drain: merge CLEAN+APPROVED PRs on the daemon's reliable ~10min
     // cadence instead of waiting on GitHub Actions' throttled cron (which leaves ready PRs
     // idle ~1-2h). Reuses the gated, tested runSweep (AUTOMERGE_ENABLED + isAutoMergeable);
