@@ -671,5 +671,16 @@
       "source": "PR #165: feat(mir): Mesh Improvement Report — Tester-owned self-evolve signal",
       "ts": "2026-06-20"
     }
+  },
+  "graph-two-layers-capability-vs-observed": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Graph: split capability layer (who can) from observed layer (who is) — conflating them hides cross-plane communication.",
+    "l1": "PR #171: graph only rendered peer-wire capability edges, hiding real traffic between agents with no formal wire. Two honest layers: (1) capability — who can delegate (faint dashed, /api/mesh); (2) observed — who is communicating (persistent teal edges, /api/activity), rendered whether or not a wire exists. Symptom: 'links are not accurate — agents can still talk without wires connected.' Reconcile logic is a pure module (reconcileObserved(prevKeys, edges) → {add,update,remove}) unit-tested without DOM; graph-view.js is the thin impure shell.",
+    "value": "Pattern for multi-agent graph visualizations with layered truth:\n\n(1) Two-layer model: render BOTH capability edges (who has wires — from the mesh registry/peer config) AND observed edges (who is communicating — from actual traffic logs). Never collapse them into one layer. Symptom of collapse: 'the links between agents are not accurate — they can still talk without wires connected.'\n\n(2) Visual distinction: capability edges = faint + dashed (always-present, low-key). Observed edges = solid + dynamic (teal when active, faint when recently-seen, removed when aged out of the activity window). Legend is mandatory: readers must know which layer they are reading.\n\n(3) Observed edges render regardless of whether a capability wire exists: cross-plane communication (daemon-driven delegation, GitHub-mediated handoffs, out-of-band calls) must show up even with no formal wire. Formal wires document intent; observed edges document reality.\n\n(4) Data-driven aging — no client-side fade timers: age is derived from the activity window timestamp in the data source (/api/activity). Client polls data; renderer applies the current state. Avoids drift between visual state and actual signal.\n\n(5) Pure reconcile function: the set-diff logic (reconcileObserved(prevKeys, edges) → {add, update, remove}) belongs in a standalone module with no DOM imports. Unit-testable with node --test and no browser. The impure shell (graph-view.js) applies the diff to the SVG. Matches the pure-core/impure-shell architectural split.\n\n(6) No new graph nodes from observed edges: observed layer adds edges, never nodes. Nodes represent known agents in the registry. An unknown agent appearing as a node would be alarming and should be a separate, explicit concern.\n\nProvenance: PR #171 (2026-06-20), spec: docs/superpowers/specs/2026-06-19-mesh-graph-both-layers-design.md.",
+    "provenance": {
+      "source": "PR #171: feat(graph): both-layers delegation graph — capability wires + observed traffic",
+      "ts": "2026-06-20"
+    }
   }
 }
