@@ -121,6 +121,7 @@ test('convention: agent-postrun advisory_blocked iff the role lacks Bash(git:*)'
   // Track the ACTUAL gated count. An exact match forces a deliberate update when a workflow
   // is added OR un-gated — the lint's whole point is "nobody silently dropped one". Current
   // 11: autofix, backlog, ci-sweep, curate, intake, mergefix, research,
-  // review-respond, review, security, triage (6 strict pushers + 5 --advisory-blocked light roles).
+  // review-respond, review, security, triage (7 strict pushers + 4 --advisory-blocked light roles).
+  // intake moved to strict (Bash(git:*) for spec branches, #227).
   assert.equal(checked, 11, `expected exactly 11 gated dev-mesh workflows, saw ${checked}`);
 });

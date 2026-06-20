@@ -13,9 +13,11 @@ on:
     - cron: '5,35 * * * *' # poll: advance stuck pre-approval issues toward spec:in-review
   workflow_dispatch:
 
-# Discuss + draft specs + manage labels. May open a spec PR (pull-requests: write)
-# but must NOT push code to the repo — read-only repo contents keeps the approval
-# gate honest.
+# Discuss + draft specs + manage labels + commit spec documents to a branch so the
+# Analyst can open spec PRs without a human hand-off. contents stays read (GITHUB_TOKEN
+# is still blocked from writing); git push uses DEV_MESH_PAT credentials configured
+# by the checkout step. Scope discipline (only docs/superpowers/specs/) is enforced
+# by the prompt — the same trust level as the Coder for code commits.
 permissions:
   contents: read
   issues: write
@@ -32,6 +34,13 @@ jobs:
     if: github.event.sender.type != 'Bot'
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Push spec branches via DEV_MESH_PAT (same pattern as dev-mesh-backlog.yml).
+          # The GITHUB_TOKEN permissions keep contents: read (code pushes stay blocked);
+          # only the PAT has write access, so only the prompt-scoped Analyst can push.
+          # Falls back to GITHUB_TOKEN when the secret is absent (spec PRs stay blocked
+          # until DEV_MESH_PAT is configured — non-breaking, just requires human handoff).
+          token: ${{ secrets.DEV_MESH_PAT || secrets.GITHUB_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -53,7 +62,7 @@ jobs:
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
-            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(gh:*)"
+            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(gh:*),Bash(git:*)"
           prompt: |
             You are the **Analyst** of the agent_mesh Dev-mesh. Read your role at
             `dev-mesh/analyst/AGENT.md` and skills under `dev-mesh/analyst/skills/`.
@@ -77,6 +86,11 @@ jobs:
             worth pursuing, label it `rejected`, close it with a one-line reason, and move on.
             Always leave each issue's lifecycle label matching reality.
 
+            SPEC PR FLOW: when a spec is ready, commit it under `docs/superpowers/specs/`
+            on a new branch (`spec/issue-<N>`), push with `git push`, and open a spec PR
+            with `gh pr create`. ONLY touch `docs/superpowers/specs/` — never modify source
+            code, tests, workflows, or any file outside that directory.
+
             HARD RULE (approval gate, §5.3): do NOT implement anything. No code edits, no
             code branch, NEVER set `approved` — only a human grants approval. You produce
             discussion, specs, label transitions, and dupe/dead-idea rejections only. The only
@@ -86,4 +100,4 @@ jobs:
         uses: ./.github/actions/agent-postrun
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}
-          advisory_blocked: "true"
+          advisory_blocked: "false"

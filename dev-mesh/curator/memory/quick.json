@@ -847,5 +847,16 @@
       "source": "PR #242: feat(merge-sweep): report-first state machine ① (read-only, dashboard-visible)",
       "ts": "2026-06-20"
     }
+  },
+  "cron-job-no-dedicated-panel": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Dashboard cron jobs: Schedules view only, not dedicated panels; report output in a generic job-keyed expand slot.",
+    "l1": "PR #249: a dedicated MERGE-SWEEP panel was removed because merge-sweep is ONE cron job; the Schedules view (unified daemon-cron + GitHub-Actions view) renders all jobs with description + lastSummary. Report-producing jobs get a generic expand keyed by job id (not job type) — merge-sweep is the first; future jobs reuse the same slot. No backend change: /api/schedules already carries lastSummary. New test: schedules-render.test.js covers the pure render fns.",
+    "value": "When a new dashboard feature represents one instance of a known class (cron job, scheduled task, agent), place it in the class's existing view — not as a new top-level panel.\n\n(1) Anti-pattern: a dedicated panel for a specific job (e.g., MERGE-SWEEP) duplicates the Schedules view, adds a special-case rendering path, and establishes a precedent where every future job gets its own panel — dashboard sprawl.\n\n(2) Class-view placement: the Schedules view is the correct home for all cron jobs. Render each job's description + lastSummary inline on its row. /api/schedules already carries lastSummary — no backend change needed.\n\n(3) Generic expand slot for structured output: when a job produces report content, add a generic expand slot keyed by job id (not by job type). New jobs that produce reports populate the existing slot; they do not add new slot types. Implementation: a jobHasReport predicate + a per-job render fn registered by job id (e.g., 'merge-sweep' → renderMergeSweep).\n\n(4) Test coverage: unit-test the pure render functions (jobResultLine escaping, fail/empty states, jobHasReport predicate) rather than the per-job output format — keeps tests stable when job content changes.\n\nProvenance: PR #249 (2026-06-20).",
+    "provenance": {
+      "source": "PR #249: refactor(dashboard): cron jobs show description + result; merge-sweep is a Schedules row, not a panel",
+      "ts": "2026-06-20"
+    }
   }
 }

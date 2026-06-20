@@ -180,6 +180,9 @@ if [ -z "$CLAUDE_BIN" ]; then
 fi
 
 mkdir -p "$LA_DIR" "$DEPLOY_ROOT/.dev-society"
+# Clean up .plist.prev backup files on exit (success, error, or interrupt) so they
+# never linger on disk after a partial/aborted install.
+trap 'rm -f "$LA_DIR/$LABEL.plist.prev" "$LA_DIR/$SYNC_LABEL.plist.prev" "$LA_DIR/$DASH_LABEL.plist.prev"' EXIT
 # Stage every plist BEFORE any bootout; back up the prior plist so reload() can roll
 # back to the previous plist on start failure (restores on plist-content errors; a brief
 # down window still exists between bootout and bootstrap/load, and launchd environment
@@ -193,7 +196,6 @@ dashboard_plist > "$LA_DIR/$DASH_LABEL.plist"
 reload "$LABEL"      "$LA_DIR/$LABEL.plist"
 reload "$SYNC_LABEL" "$LA_DIR/$SYNC_LABEL.plist"
 reload "$DASH_LABEL" "$LA_DIR/$DASH_LABEL.plist"
-rm -f "$LA_DIR/$LABEL.plist.prev" "$LA_DIR/$SYNC_LABEL.plist.prev" "$LA_DIR/$DASH_LABEL.plist.prev"
 launchctl bootout "gui/$UID_NUM/$LEGACY_LABEL" 2>/dev/null || true
 rm -f "$LA_DIR/$LEGACY_LABEL.plist"
 echo "installed daemon + deploy-sync + dashboard from $DEPLOY_ROOT; removed legacy $LEGACY_LABEL"
