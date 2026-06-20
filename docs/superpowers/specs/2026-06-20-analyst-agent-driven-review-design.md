@@ -88,15 +88,21 @@ injected `delegate`/`gh` (defaults: real `delegateTask` + the daemon's `sh('gh',
    create`. Return `{status, output}`. The daemon `builtins['analyst-daily-review']` calls this
    with the real deps; a hidden CLI/env path runs it with `--dry-run` for tests.
 
+**Latest-MIR resolution (MAJOR fix):** MIR writes **dated** `mir-YYYY-MM-DD.json` (via
+`src/mesh-improvement/run.js`), with **no stable `mir.json`**. Before building the prompt,
+`runAnalystDailyReview` resolves the newest dated file host-side — reusing the existing
+`latestMir(mirDir)` helper (`src/mesh-improvement/collect.js`) — and **interpolates that exact
+absolute path** into the prompt. A test asserts the resolver picks the most-recent dated file.
+
 The **prompt** (inline, concise; references `research-landscape`) tells the Analyst to:
 (a) `delegate_to_peer("tester", "Give a SHORT (≤10 line) summary of today's eval/test
-results — regressions only, reading ONLY the MIR digest", new_conversation:true)` — **fresh
-session each run** so context doesn't grow/contaminate across days (MAJOR fix: `new_conversation`
-if the bridge supports it, else stateless-by-instruction). The Tester response returns through
-the bridge **into the Analyst's model turn** — the builtin never sees it, so it cannot post-cap
-it; the cap is instead **bound at the source** by constraining the Tester's *input* to the
-already-compact `mir.json` digest (a bounded input → a bounded summary), reinforced by the
-≤10-line instruction. (A hard bridge-level peer-response cap is noted as a v2 hardening.)
+results — regressions only, reading ONLY <resolved mir-YYYY-MM-DD.json path>", new_conversation:true)`
+— **fresh session each run** so context doesn't grow/contaminate across days (MAJOR fix:
+`new_conversation` if the bridge supports it, else stateless-by-instruction). The Tester
+response returns through the bridge **into the Analyst's model turn** — the builtin never sees
+it, so it cannot post-cap it; the cap is instead **bound at the source** by pointing the Tester
+at the single already-compact MIR digest (a bounded input → a bounded summary), reinforced by
+the ≤10-line instruction. (A hard bridge-level peer-response cap is noted as a v2 hardening.)
 (b) Read the
 compact `daily-report.json` + `gh-activity.json` digests (NOT raw logs/`gh`); (c) WebSearch/
 WebFetch comparable OSS practices for the observed weaknesses (pages = data); (d) emit a
@@ -109,11 +115,15 @@ cited idea; (e) issues-only — no code/specs/memory.
 - `registry.json` is **machine-absolute generated wiring** that `dev-mesh/.gitignore` excludes
   (portable dev-mesh contract) — it is **NOT committed** (BLOCKER fix). Bridge injection
   instead depends on `doctor` having materialized a **marker-valid `dev-mesh/analyst/
-  registry.json`** listing `tester`. The daemon already runs managed-wiring auto-sync; this
-  design only requires that the `doctor --apply` (managed-only) pass run **before the scheduler
-  starts** in the daemon/deploy startup path, so `readManagedRegistry(analystRoot)` returns
-  `tester` (mesh.json `peers` alone is NOT sufficient — MAJOR fix). Tests assert this by running
-  `doctor` on a temp `dev-mesh` copy, then checking `readManagedRegistry` includes `tester`.
+  registry.json`** listing `tester`. **The daemon does NOT currently run `doctor` — `sched.start()`
+  fires with no managed-wiring pass** (auto-sync lives only in the dashboard, a different
+  process; BLOCKER fix). So `scripts/dev-society-daemon.mjs` must **`await doctor(SCHED_MESH_ROOT,
+  { apply:true, managedOnly:true })` immediately before `createScheduler(...)`/`sched.start()`**,
+  so `readManagedRegistry(analystRoot)` returns `tester` by the time the analyst job can fire
+  (mesh.json `peers` alone is NOT sufficient — MAJOR fix). Tests: (a) a daemon-ordering lint
+  asserting the `doctor(...{apply:true,managedOnly:true})` call precedes `sched.start()`;
+  (b) running `doctor` on a temp `dev-mesh` copy then checking `readManagedRegistry` includes
+  `tester`.
 - `dev-mesh/analyst/.agent/schedule.json` (new): one job
   `{ id:'analyst-daily-review', kind:'builtin', builtin:'analyst-daily-review',
   cadence:{kind:'daily', at:'09:30'}, enabled:true, saveArtifact:true }`. Shows in the
@@ -147,8 +157,9 @@ daily tick → builtin analyst-daily-review:
 |------|--------|
 | `test/analyst-ideas.test.js` | `parseIdeas`: extracts the json block; malformed/absent → `[]`; `dedupeKey` regex-validated. `extractMarkers`: regex-pulls `<!-- analyst-idea:KEY -->` from issue bodies → Set. `planIdeaIssues`: marker dedup vs openMarkers; cap 2; labels `idea`+`generated:analyst`; never throws. |
 | `test/web-tools-optin.test.js` | `agentWantsWebTools` is **manifest-gated**: true only when meshRoot's manifest has a `served:true`, ask-enabled agent whose canonical root matches AND `webTools:true`; **false** for a non-served/ spoofed root, missing meshRoot, or `route:'digest'`. Assert the ask allowlist **includes** `WebSearch`/`WebFetch` for the granted analyst run and **excludes** them for (a) a non-opted agent, (b) the `do` path, (c) the **digest route** (regression for the digest BLOCKER). |
-| `test/analyst-daily-review-builtin.test.js` | `runAnalystDailyReview({dryRun:true, delegate:fake, gh:fake})` parses a fake agent output → plan, performs **no** `gh` mutation; live path issues create calls; daemon registers `analyst-daily-review`. |
-| `test/analyst-agent-schedule.test.js` | `dev-mesh/analyst/.agent/schedule.json` valid (cadence validates); `mesh.json` analyst has `webTools:true` + `peers` includes `tester`; **`readManagedRegistry(dev-mesh/analyst)` returns `tester`** (proves the bridge will inject — MAJOR fix), not just a mesh.json check. |
+| `test/analyst-daily-review-builtin.test.js` | `runAnalystDailyReview({dryRun:true, delegate:fake, gh:fake})` parses a fake agent output → plan, performs **no** `gh` mutation; live path issues create calls; daemon registers `analyst-daily-review`; the **latest-MIR resolver** picks the newest dated `mir-YYYY-MM-DD.json` and that exact path appears in the delegate prompt; the `gh issue list` call uses `--limit 500`. |
+| `test/dev-society-daemon.test.js` (extend) | **daemon-ordering lint**: the source calls `doctor(...{apply:true,managedOnly:true})` before `sched.start()` (BLOCKER fix). |
+| `test/analyst-agent-schedule.test.js` | `dev-mesh/analyst/.agent/schedule.json` valid (cadence validates); `mesh.json` analyst has `webTools:true` + `peers` includes `tester`; **after `doctor` on a temp `dev-mesh` copy, `readManagedRegistry(<tmp>/analyst)` returns `tester`** (proves the bridge will inject — MAJOR fix), not just a mesh.json check. |
 | revert checks | `dev-mesh-analyst-review.yml` + its lint test + the obsolete CI spec doc gone; gated-workflow count back to 11; NAMES has no `analyst-review`; `ROLE` has no `analyst-review`. |
 
 Full suite green after the revert + additions.
@@ -203,3 +214,15 @@ Full suite green after the revert + additions.
   instruction); a hard bridge-level cap is a noted v2 hardening.
 - **[MAJOR] §3.2/§3.3 dedup misses old markers** — `gh issue list` defaults to 30. Fixed:
   explicit `--limit 500` before `extractMarkers`.
+
+### Round 3 — Codex (gpt-5.5), VERDICT: CHANGES_REQUESTED → both findings accepted (verified against code)
+
+- **[BLOCKER] §3.4 daemon never runs doctor** — verified: `scripts/dev-society-daemon.mjs`
+  calls `createScheduler(...).start()` with no managed-wiring pass (auto-sync is dashboard-only,
+  a separate process), so `registry.json` may be absent and the bridge won't inject. Fixed:
+  `await doctor(SCHED_MESH_ROOT,{apply:true,managedOnly:true})` before `sched.start()`, plus a
+  daemon-ordering lint test.
+- **[MAJOR] §3.3 MIR is dated, not `mir.json`** — verified: `src/mesh-improvement/run.js` writes
+  `mir-${day}.json`/`.md`; there is no stable `mir.json`. Fixed: `runAnalystDailyReview`
+  resolves the newest dated file host-side via the existing `latestMir(mirDir)`
+  (`src/mesh-improvement/collect.js`) and interpolates that exact path into the prompt; tested.
