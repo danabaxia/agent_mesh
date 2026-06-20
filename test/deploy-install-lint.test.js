@@ -8,6 +8,13 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+// The deploy install script is a macOS/launchd bash artifact (POSIX PATH semantics,
+// chmod-executable stubs, launchctl). Its lint is POSIX-only — skip on Windows,
+// mirroring test/demo-e2e.test.js. deploy-sync.test.js stays cross-platform.
+const POSIX_ONLY = process.platform === 'win32'
+  ? 'POSIX-only: deploy install targets macOS launchd'
+  : false;
+
 const script = fileURLToPath(new URL('../scripts/dev-society-deploy-install.sh', import.meta.url));
 
 // PATH-shadow launchctl with a stub that fails loudly if invoked, so any real
@@ -28,7 +35,7 @@ function stubPath() {
   return `${dir}:${process.env.PATH}`;
 }
 
-test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchctl', () => {
+test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchctl', { skip: POSIX_ONLY }, () => {
   const stubDir = mkdtempSync(join(tmpdir(), 'stub-'));
   for (const name of ['launchctl', 'claude', 'gh', 'node']) {
     const p = join(stubDir, name);
@@ -70,7 +77,7 @@ test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchc
   assert.ok(out.includes(stubDir), `expected stub dir ${stubDir} in PATH output`);
 });
 
-test('live mode rejects a mismatching DEV_SOCIETY_DEPLOY_ROOT before any side effect', () => {
+test('live mode rejects a mismatching DEV_SOCIETY_DEPLOY_ROOT before any side effect', { skip: POSIX_ONLY }, () => {
   const fakeLaDir = mkdtempSync(join(tmpdir(), 'la-'));
   const r = spawnSync('bash', [script], {   // no --dry-run
     encoding: 'utf8',
@@ -83,7 +90,7 @@ test('live mode rejects a mismatching DEV_SOCIETY_DEPLOY_ROOT before any side ef
   assert.ok(!existsSync(la) || readdirSync(la).length === 0);
 });
 
-test('live mode rejects empty DEV_SOCIETY_REPO before any mkdir/write', () => {
+test('live mode rejects empty DEV_SOCIETY_REPO before any mkdir/write', { skip: POSIX_ONLY }, () => {
   // Builds a stub PATH that includes fake claude/gh/node + fail-loud launchctl.
   // DEV_SOCIETY_REPO is explicitly unset (empty string) — preflight must exit 1
   // before any mkdir or plist write.
