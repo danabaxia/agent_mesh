@@ -59,3 +59,7 @@ export const DEFAULT_MIR_TREND_N = 10;           // trend-history length + ledge
 export const DEFAULT_MESH_SCAN_LABEL = 'generated:mesh-scan';
 // finding.id controlled vocabulary — becomes a label/marker, so it must be injection-safe.
 export const MIR_ID_RE = /^[a-z0-9:_-]+$/;
+
+// Task-board stale detection (mesh-health list_stale_tasks verb).
+// A non-terminal task whose last history transition is older than this is surfaced as stale.
+export const DEFAULT_BOARD_STALE_MS = 86_400_000; // 24 h

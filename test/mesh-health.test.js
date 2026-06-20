@@ -215,6 +215,100 @@ test('ping_agent crash: an instantly-exiting server fails fast as probe_failed',
 });
 
 // ---------------------------------------------------------------------------
+// list_stale_tasks
+// ---------------------------------------------------------------------------
+
+async function makeTask(meshRoot, { id = 'a-b-001', from = 'a', to = 'b', state = 'assigned', lastAt = null } = {}) {
+  const { mkdir: mkd, writeFile: wf } = await import('node:fs/promises');
+  const tasksDir = join(meshRoot, 'mesh', 'board', 'tasks');
+  await mkd(tasksDir, { recursive: true });
+  const at = lastAt ?? new Date().toISOString();
+  const task = {
+    id, from, to, title: 'test', objective: 'do X', context: '', requirements: 'Y', pointers: '',
+    state,
+    created_at: at,
+    result: null,
+    seen_by_from: false,
+    history: [{ state, at, by: from }]
+  };
+  const { join: pjoin } = await import('node:path');
+  await wf(pjoin(tasksDir, `${id}.json`), JSON.stringify(task, null, 2) + '\n');
+  return task;
+}
+
+test('listStaleTasks returns stale non-terminal tasks', async (t) => {
+  const meshRoot = await makeMesh(t);
+  const oldAt = new Date(Date.now() - 10_000).toISOString(); // 10 s ago
+  await makeTask(meshRoot, { id: 'a-b-001', state: 'assigned', lastAt: oldAt });
+  await makeTask(meshRoot, { id: 'a-b-002', state: 'in-progress', lastAt: oldAt });
+
+  const health = createMeshHealth({ meshRoot });
+  const out = await health.listStaleTasks({ stale_ms: 5_000 }); // 5 s threshold → both stale
+
+  assert.equal(out.error, undefined);
+  assert.equal(out.stale_ms, 5_000);
+  assert.equal(out.tasks.length, 2);
+  assert.ok(out.tasks.every((t2) => t2.age_ms >= 5_000));
+  assert.ok(out.tasks.every((t2) => ['assigned', 'in-progress'].includes(t2.state)));
+});
+
+test('listStaleTasks excludes done tasks', async (t) => {
+  const meshRoot = await makeMesh(t);
+  const oldAt = new Date(Date.now() - 10_000).toISOString();
+  await makeTask(meshRoot, { id: 'a-b-001', state: 'done', lastAt: oldAt });
+
+  const health = createMeshHealth({ meshRoot });
+  const out = await health.listStaleTasks({ stale_ms: 1 });
+
+  assert.equal(out.error, undefined);
+  assert.equal(out.tasks.length, 0);
+});
+
+test('listStaleTasks excludes fresh tasks', async (t) => {
+  const meshRoot = await makeMesh(t);
+  // lastAt = now, so age_ms ≈ 0 — below the 1-hour threshold
+  await makeTask(meshRoot, { id: 'a-b-001', state: 'assigned' });
+
+  const health = createMeshHealth({ meshRoot });
+  const out = await health.listStaleTasks({ stale_ms: 3_600_000 });
+
+  assert.equal(out.error, undefined);
+  assert.equal(out.tasks.length, 0);
+});
+
+test('listStaleTasks returns empty when board dir is absent', async (t) => {
+  const meshRoot = await makeMesh(t);
+  const health = createMeshHealth({ meshRoot });
+  const out = await health.listStaleTasks({ stale_ms: 1 });
+  assert.equal(out.error, undefined);
+  assert.deepEqual(out.tasks, []);
+});
+
+test('listStaleTasks rejects bad stale_ms as error data', async (t) => {
+  const meshRoot = await makeMesh(t);
+  const health = createMeshHealth({ meshRoot });
+  for (const bad of [0, -1, 'abc', NaN]) {
+    const out = await health.listStaleTasks({ stale_ms: bad });
+    assert.equal(out.error, 'bad_input: stale_ms', `stale_ms=${String(bad)}`);
+  }
+});
+
+test('listStaleTasks respects env AGENT_MESH_BOARD_STALE_MS default', async (t) => {
+  const meshRoot = await makeMesh(t);
+  const oldAt = new Date(Date.now() - 2_000).toISOString(); // 2 s ago
+  await makeTask(meshRoot, { id: 'a-b-001', state: 'acknowledged', lastAt: oldAt });
+
+  // env default of 1 s → task is stale; without override it uses DEFAULT_BOARD_STALE_MS (24 h) → not stale
+  const health = createMeshHealth({ meshRoot, env: { ...process.env, AGENT_MESH_BOARD_STALE_MS: '1000' } });
+  const out = await health.listStaleTasks();
+
+  assert.equal(out.error, undefined);
+  assert.equal(out.stale_ms, 1_000);
+  assert.equal(out.tasks.length, 1);
+  assert.equal(out.tasks[0].state, 'acknowledged');
+});
+
+// ---------------------------------------------------------------------------
 // stdio MCP wire (serve-mesh-health)
 // ---------------------------------------------------------------------------
 
@@ -263,7 +357,7 @@ test('serve-mesh-health speaks MCP: initialize, tools/list, tools/call', async (
 
   const list = await call('tools/list', {});
   const names = list.result.tools.map((tool) => tool.name).sort();
-  assert.deepEqual(names, ['check_conformance', 'ping_agent', 'triage_logs']);
+  assert.deepEqual(names, ['check_conformance', 'list_stale_tasks', 'ping_agent', 'triage_logs']);
 
   const triage = await call('tools/call', { name: 'triage_logs', arguments: { since_hours: 1 } });
   const payload = JSON.parse(triage.result.content[0].text);
