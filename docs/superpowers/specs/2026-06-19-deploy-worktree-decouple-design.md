@@ -77,20 +77,28 @@ deploy-only — it has no legitimate local edits — so the correct primitive is
 it exactly `origin/main`", which is self-healing against any drift and works on a
 detached HEAD.
 
-- **Pure planner** `planDeploySync({ before, target }) → { action, restart }` in
-  `src/dev-society/deploy-sync.js`: `action: 'advance', restart: true` iff
-  `before !== target` (both non-empty); else `action: 'up_to_date', restart: false`.
+- **Pure planner** `planDeploySync({ head, target, lastRestartedTarget }) →
+  { reset, restart }` in `src/dev-society/deploy-sync.js` — `reset` and `restart` are
+  **independent** so a failed restart is retried on a later tick:
+  - `reset  = !!target && head !== target`         (advance the worktree to main)
+  - `restart = !!target && target !== lastRestartedTarget`  (daemon not yet running this SHA)
+  (empty/missing `target` → both false).
 - **Runner** `scripts/dev-society-deploy-sync.mjs` exporting
-  `runDeploySyncOnce({ deployPath, git, restart, now, log }) → record`, wrapped in
-  `try/catch` so a thrown git failure becomes `{ action: 'error', error }` and
-  **never restarts**:
-  1. `before = git rev-parse HEAD`
+  `runDeploySyncOnce({ deployPath, git, restart, readState, writeState, now, log }) →
+  record`, wrapped in `try/catch` so a thrown git failure becomes
+  `{ action: 'error', error }` and **never restarts**:
+  1. `head = git rev-parse HEAD`
   2. `git fetch origin --prune -q`   *(throws → error record, no restart)*
   3. `target = git rev-parse origin/main`
-  4. if `planDeploySync({before,target}).action === 'advance'`:
-     `git reset --hard origin/main`, then `await restart()`.
+  4. `lastRestartedTarget = readState()` (from `.dev-society/deploy-sync-state.json`)
+  5. `{reset, restart} = planDeploySync({head, target, lastRestartedTarget})`
+  6. if `reset`: `git reset --hard origin/main`
+  7. if `restart`: `await restart()`; **only on success** `writeState({ lastRestartedTarget: target })`.
   Default `restart` = `launchctl kickstart -k gui/<uid>/<DEV_SOCIETY_DAEMON_LABEL>`.
-  No restart when already at `origin/main`.
+  Because restart keys off `lastRestartedTarget` (persisted, written only after a
+  successful kickstart), a reset that lands but whose restart fails/crashes is
+  **retried every tick until the daemon is actually on `target`** — it is never
+  stranded running old code despite the worktree being current.
 - Runs from its own launchd plist `com.danabaxia.agent-mesh.deploy-sync`
   (`StartInterval=300`, `WorkingDirectory=$DEPLOY_ROOT`,
   `node $DEPLOY_ROOT/scripts/dev-society-deploy-sync.mjs`, with the same env block as
@@ -143,9 +151,11 @@ operator runbook: git worktree add ~/.agent-mesh/deploy origin/main   (detached 
                       → bootout+bootstrap deploy-sync plist
                       → bootout+remove legacy plist
                       → kickstart single daemon
-every 300s:  deploy-sync → fetch; before=HEAD; target=origin/main
-                  → before != target → reset --hard origin/main → kickstart -k <daemon>   (new code runs)
-                  → before == target → no-op
+every 300s:  deploy-sync → fetch; head=HEAD; target=origin/main; last=readState()
+                  → head != target        → reset --hard origin/main
+                  → target != last        → kickstart -k <daemon>; on success writeState(last=target)
+                  → (restart failed last tick) target!=last but head==target → RETRY kickstart (not stranded)
+                  → head==target && target==last → no-op
                   → git throws (fetch/network) → {action:'error'} logged, NO restart (failure-is-data)
 ```
 
@@ -174,7 +184,7 @@ release-please; retiring the dev-checkout `repo-sync`.
 
 | Test | Covers |
 |------|--------|
-| `test/deploy-sync.test.js` | `planDeploySync`: `before!=target`→`{advance,restart:true}`; equal→`{up_to_date,restart:false}`; empty/missing before or target→no restart. `runDeploySyncOnce` with injected `git`+`restart`: advance→`git reset --hard origin/main` issued AND `restart` called once; already-at-target→neither reset nor restart; **`git` throws on fetch → `{action:'error'}` returned, `restart` NOT called** (matches real git-throws-on-failure behavior). |
+| `test/deploy-sync.test.js` | `planDeploySync`: `head!=target`→`reset:true`; `target!=lastRestartedTarget`→`restart:true`; both-equal→both false; empty `target`→both false; **`head==target` but `target!=lastRestartedTarget`→`reset:false, restart:true` (retry-after-failed-restart)**. `runDeploySyncOnce` with injected `git`/`restart`/`readState`/`writeState`: advance→`git reset --hard origin/main` issued, `restart` called, `writeState(target)` called; already-current+restarted→none called; **restart throws→`writeState` NOT called (so next tick retries)**; **`git` fetch throws→`{action:'error'}`, no reset, no restart**. |
 | `test/deploy-install-lint.test.js` | Run `dev-society-deploy-install.sh --dry-run` with `DEV_SOCIETY_DEPLOY_ROOT=/tmp/x` and assert the printed output: daemon plist `ProgramArguments` includes `/tmp/x/scripts/dev-society-daemon.mjs`, `WorkingDirectory=/tmp/x`, and an `EnvironmentVariables` block containing `DEV_SOCIETY_REPO` + `PATH`; single canonical label `com.danabaxia.agent-mesh.dev-society`; deploy-sync plist with `StartInterval` 300 + `DEV_SOCIETY_DAEMON_LABEL`; a `bootout`+remove step for `com.danabaxia.dev-society`; a `bootout`→`bootstrap` (not bare kickstart) sequence; and **no real `launchctl` call** — run with a PATH-shadowing `launchctl` stub that exits non-zero if invoked, so any accidental invocation fails the test. Also assert live-mode `DEV_SOCIETY_DEPLOY_ROOT` mismatch is rejected (run without `--dry-run` in a temp dir with a mismatching env → non-zero exit, no fs/launchctl writes). |
 
 deploy-sync uses only `runGit` from repo-sync (its existing tests stand).
@@ -190,6 +200,9 @@ is the CI-safe surface.
   launchd label the deploy-sync restarts.
 - The daemon/deploy-sync plists also carry `DEV_SOCIETY_REPO`, `PATH`, `HOME`,
   `USER` (reused from `dev-society-install.sh`).
+- deploy-sync persists `lastRestartedTarget` in
+  `$DEPLOY_ROOT/.dev-society/deploy-sync-state.json` (ignored prefix); written only
+  after a successful `kickstart -k`, so restart is retryable across ticks.
 
 ## 11. Invariants preserved
 
@@ -231,3 +244,11 @@ is the CI-safe surface.
   `saveArtifact:false` invariant (§11).
 - **[MINOR] report LaunchAgent not addressed** — accepted; `…dev-society-report` is
   explicitly out of scope for this cutover (§5.3).
+
+### Round 2 — Codex (gpt-5.5), VERDICT: CHANGES_REQUESTED → 1 MAJOR accepted (0 blockers)
+
+- **[MAJOR] restart-after-reset failure strands daemon on old code** — accepted.
+  Split the planner into independent `reset`/`restart` decisions; `restart` now keys
+  off a persisted `lastRestartedTarget` (`.dev-society/deploy-sync-state.json`),
+  written only after a successful `kickstart -k`. A reset whose restart fails is
+  retried every tick until the daemon is actually on `target` (§5.2/§6/§9/§10).
