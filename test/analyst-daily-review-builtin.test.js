@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAnalystDailyReview } from '../scripts/analyst-review-run.mjs';
@@ -25,8 +25,69 @@ async function repoWithMir(dateName, { digests = true } = {}) {
   return { repoRoot, mirDir };
 }
 
+// Write both required digest files (today by default) and return paths.
+async function writeDigests(repoRoot, { mtime } = {}) {
+  const dir = join(repoRoot, '.dev-society');
+  await mkdir(dir, { recursive: true });
+  const daily = join(dir, 'daily-report.json');
+  const ghAct = join(dir, 'gh-activity.json');
+  await writeFile(daily, JSON.stringify({ generatedAt: new Date().toISOString() }));
+  await writeFile(ghAct, JSON.stringify([]));
+  if (mtime !== undefined) {
+    // backdate both files to simulate a stale run from a prior day
+    await utimes(daily, mtime, mtime);
+    await utimes(ghAct, mtime, mtime);
+  }
+  return { daily, ghAct };
+}
+
+const noopGh = async (args) => (args[1] === 'list' ? '[]' : '');
+const noopDelegate = async () => ({ status: 'done', summary: '[]' });
+
+// ---------------------------------------------------------------------------
+// Freshness / heartbeat guard (issue #195)
+// ---------------------------------------------------------------------------
+
+test('fail when both digest artifacts are missing', async () => {
+  const { repoRoot } = await repoWithMir(null, { digests: false });
+  // .dev-society/mir exists but daily-report.json + gh-activity.json are absent
+  const delegateCalls = [];
+  const delegate = async (opts) => { delegateCalls.push(opts); return { status: 'done', summary: '[]' }; };
+  const res = await runAnalystDailyReview({ repoRoot, dryRun: true, delegate, gh: noopGh, now: () => new Date() });
+  assert.equal(res.status, 'fail');
+  assert.match(res.output, /daily-report\.json.*missing/i);
+  assert.match(res.output, /gh-activity\.json.*missing/i);
+  assert.equal(delegateCalls.length, 0, 'agent must NOT be called when artifacts missing');
+});
+
+test('fail when daily-report.json is missing (gh-activity.json present)', async () => {
+  const { repoRoot } = await repoWithMir(null, { digests: false });
+  const dir = join(repoRoot, '.dev-society');
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, 'gh-activity.json'), JSON.stringify([]));
+  // daily-report.json still absent
+  const res = await runAnalystDailyReview({ repoRoot, dryRun: true, delegate: noopDelegate, gh: noopGh, now: () => new Date() });
+  assert.equal(res.status, 'fail');
+  assert.match(res.output, /daily-report\.json.*missing/i);
+});
+
+test('fresh digest artifacts → proceeds to delegate', async () => {
+  const { repoRoot } = await repoWithMir('mir-2026-06-20.json');
+  await writeDigests(repoRoot); // today's mtime
+  let delegateCalled = false;
+  const delegate = async () => { delegateCalled = true; return { status: 'done', summary: '[]' }; };
+  const res = await runAnalystDailyReview({ repoRoot, dryRun: true, delegate, gh: noopGh, now: () => new Date() });
+  assert.equal(res.status, 'ok', 'should succeed when digests are fresh');
+  assert.ok(delegateCalled, 'delegate must be called when digests are fresh');
+});
+
+// ---------------------------------------------------------------------------
+// Existing behaviour (now requires fresh digests)
+// ---------------------------------------------------------------------------
+
 test('dry-run plans issues and performs NO gh mutation', async () => {
   const { repoRoot } = await repoWithMir('mir-2026-06-20.json');
+  await writeDigests(repoRoot);
   const ghCalls = [];
   const gh = async (args) => {
     ghCalls.push(args);
@@ -46,6 +107,7 @@ test('dry-run plans issues and performs NO gh mutation', async () => {
 
 test('live run files create calls with --limit 500 on the list', async () => {
   const { repoRoot } = await repoWithMir('mir-2026-06-20.json');
+  await writeDigests(repoRoot);
   const ghCalls = [];
   const gh = async (args) => {
     ghCalls.push(args);
@@ -85,6 +147,7 @@ test('MIR content is embedded directly in the delegate prompt', async () => {
 
 test('no MIR present → prompt omits the pointer, still succeeds', async () => {
   const { repoRoot } = await repoWithMir(null);
+  await writeDigests(repoRoot);
   let seenTask = '';
   const delegate = async ({ input }) => { seenTask = input.task; return { status: 'done', summary: '[]' }; };
   const gh = async (args) => (args[1] === 'list' ? '[]' : '');
@@ -146,6 +209,7 @@ test('stale digest → inputs-unavailable fail', async () => {
 
 test('a non-done delegate result fails cleanly without gh create', async () => {
   const { repoRoot } = await repoWithMir('mir-2026-06-20.json');
+  await writeDigests(repoRoot);
   const ghCalls = [];
   const gh = async (args) => { ghCalls.push(args); return '[]'; };
   const delegate = async () => ({ status: 'timeout', summary: 'partial' });
