@@ -34,6 +34,15 @@
       "description": "Read-only inspect: issue-gate -> automerge -> memory; writes mesh/reports/merge-sweep.json. No merges/labels."
     },
     {
+      "id": "merge-sweep-remediate",
+      "name": "Merge-sweep remediation (backstop)",
+      "kind": "builtin",
+      "builtin": "merge-sweep-remediate",
+      "cadence": { "kind": "every", "minutes": 30 },
+      "enabled": true,
+      "description": "Backstop: escalate report items the fixers couldn't clear as deduped needs-human issues; track lifecycle. No code changes."
+    },
+    {
       "id": "post-merge-reconcile",
       "name": "Close issues whose closing PR merged (clear stale pr:in-review)",
       "kind": "builtin",
