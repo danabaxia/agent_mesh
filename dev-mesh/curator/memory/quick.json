@@ -826,17 +826,6 @@
       "ts": "2026-06-20"
     }
   },
-  "gha-cron-throttle-use-daemon-builtin": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "GHA `*/15` cron fires every ~1-2h in practice — use a daemon builtin at 10-min cadence for time-sensitive sweeps.",
-    "l1": "GitHub Actions cron (even `*/15`) is throttled; observed fire rate ~1-2h. dev-mesh-automerge `*/15` left ready PRs (CLEAN+APPROVED) idle for hours. Fix (PR #231): register `runSweep` as a `kind:builtin` (`automerge-sweep`) on maintainer schedule.json at 10-min cadence — same reliable cadence as `issue-sweep`. GHA cron stays as cold-start backstop. Time-critical sweeps (latency target << 1h) belong in daemon builtins, not GHA cron alone.",
-    "value": "When a sweep must complete within minutes, not hours:\n\n(1) Register a daemon builtin in the target agent's schedule.json: {\"id\": \"automerge-sweep\", \"kind\": \"builtin\", \"name\": \"automerge-sweep\", \"enabled\": true, \"every\": 10}. The daemon scheduler dispatches by kind — no LLM spawn.\n\n(2) Register the function in the daemon's builtin registry (scripts/dev-society-daemon.mjs):\n  builtins['automerge-sweep'] = async () => {\n    if (!enabled) return {status:'ok', output:'disabled'};\n    await runAutomergeSweep({...});\n    return {status:'ok'};\n  };\nGate on the sweep's kill-switch env var (AUTOMERGE_ENABLED). Return {status:'ok'} explicitly — void breaks onJobResult (see scheduler-builtin-return-shape).\n\n(3) Keep the GHA cron workflow as a cold-start backstop. Share the same runSweep/isAutoMergeable logic — no duplication between daemon and GHA paths.\n\n(4) Test: assert (a) daemon registers the builtin name; (b) builtin gates on the env flag; (c) schedule.json has the job at every ≤10; (d) existing GHA cron schedule remains present.\n\nRed flag: PRs idle for hours while the automerge workflow claims `*/15` → GHA cron is throttled; migrate sweep to daemon builtin. Provenance: PR #231 (2026-06-20).",
-    "provenance": {
-      "source": "PR #231: feat(daemon): automerge-sweep builtin — prompt drain of ready PRs (no idle)",
-      "ts": "2026-06-20"
-    }
-  },
   "github-autoclose-reconciler-backstop": {
     "status": "active",
     "valid_to": null,
@@ -848,14 +837,14 @@
       "ts": "2026-06-20"
     }
   },
-  "daemon-repovar-env-gap": {
+  "report-first-sweep-phase": {
     "status": "active",
     "valid_to": null,
-    "l0": "Daemon env ≠ repo variable: fetch feature flags via `gh variable get`; launchd/systemd env doesn't carry repo vars.",
-    "l1": "PR #246: automerge-sweep logged 'disabled (AUTOMERGE_ENABLED != true)' even though the operator had set the GitHub repo variable to true. Daemon launchd env is fixed at install time — repo variable changes never reach it. The GitHub-Actions sweep reads `vars.AUTOMERGE_ENABLED` at runtime (correct). Fix: resolveAutomergeEnabled tries `gh variable get AUTOMERGE_ENABLED` first, falls back to process.env, safe-off on read error. 8 CLEAN+APPROVED PRs idled ≥5 cycles before the monitor caught it.",
-    "value": "Pattern for daemon feature flags controlled by GitHub repo variables:\n\n(1) Repo variable is the authoritative source — launchd/systemd env is fixed at install time. `gh variable set AUTOMERGE_ENABLED --body true` updates the repo store immediately but NEVER the daemon's process.env. The GitHub-Actions sweep reads `vars.AUTOMERGE_ENABLED` at call time (correct by design); the daemon must do the same work explicitly.\n\n(2) Two-source resolver: try `gh variable get FLAG` first; fall back to `process.env.FLAG` if gh read errors (local dev, no gh auth); safe-off (false) if both absent.\n\n(3) Dependency injection for hermetic tests: expose a `resolver` param (async fn → bool). Unit-test: gh returns 'true' → enabled; gh returns 'false' → disabled; gh errors + env 'true' → enabled; gh errors + env absent → disabled (safe-off).\n\n(4) Never inline `process.env.FLAG === 'true'` in daemon code paths. The stale-env gap is silent — no error, just permanently disabled, masking the operator's decision for ≥5 cycles.\n\nRelated: `default-off-three-layer-kill-switch` (YAML vars + predicate layers are correct; this closes the daemon CLI layer gap). Provenance: PR #246 (2026-06-20), monitor cycle 5.",
+    "l0": "New automation: Phase ① read-only (pure classifiers + allowlist test + dashboard report) before Phase ② mutation.",
+    "l1": "PR #242: merge-sweep ① is structurally read-only — no merges, no label writes. Three pure classifiers extracted from existing mutators (classifyIssueGate, classifyAutomergePr, classifyMemoryPr) re-express each gate decision as data; mutators are untouched. classifyAutomergePr fail-closes: gate-unknown on ambiguous inputs, never overclaims would-merge. A hermetic allowlist test asserts only read-only gh commands in the daemon builtin. State report surfaces on the dashboard (◆ MERGE-SWEEP panel) + /api/merge-sweep. Mutation deferred to Phase ②.",
+    "value": "Pattern: report-first phase split for any new sweep automation.\n\n(1) Phase ① = read-only only. No gh mutations in the daemon builtin or API endpoint. Prove this via a hermetic allowlist test: iterate every command executed in runMergeSweep (or equivalent) and fail on any write command (pr merge, issue edit, label add/remove). The test is a CI gate — mutation that slips in fails CI before it ships.\n\n(2) Extract pure classifiers from existing mutators. Map:\n   runIssueGate()    → classifyIssueGate()    {status, reason}\n   isAutoMergeable() → classifyAutomergePr()  {state, reason}\n   automerge guard   → classifyMemoryPr()     {state, reason}\nThe classifier re-expresses the same decision logic as a {state,reason} return. The mutator delegates to the classifier then applies side effects. Behavior is unchanged; the classifier is testable in isolation with no gh calls.\n\n(3) Fail-closed classification. Never overclaim a ready state. Use gate-unknown (not would-merge) when inputs are ambiguous or missing. Overlay semantics (CLEAN+APPROVED PR whose linked issue is gate-held) must produce blocked/pending-issue-gate, not a false positive. The safe default is 'not yet' — a false negative delays a merge; a false positive merges prematurely.\n\n(4) Dashboard + API surfacing in Phase ①. Build the state report, expose it as a GET endpoint with a staleness header, and render a dashboard panel. Operators validate the classifier logic live before any mutation exists. Panel security: HTML-escape all strings; use numeric PR refs in links, never raw branch names.\n\n(5) Phase ② adds mutation atop Phase ①. Classifiers and report survive unchanged. Phase ② only wires execution (call gh pr merge / gh pr edit) gated by the Phase ① classification. No redesign needed.\n\nApply when any new sweep will eventually mutate GitHub state (auto-merge, auto-label, auto-close, issue routing). The read-only phase ships in days; the mutation phase ships after operators have observed and validated the classification logic on the dashboard.\n\nRelated: default-off-three-layer-kill-switch (gate the mutation phase off by default). Provenance: PR #242 (2026-06-20).",
     "provenance": {
-      "source": "PR #246: fix(daemon): automerge self-activates from the repo variable (no idle ready PRs)",
+      "source": "PR #242: feat(merge-sweep): report-first state machine ① (read-only, dashboard-visible)",
       "ts": "2026-06-20"
     }
   },
@@ -867,6 +856,28 @@
     "value": "When a new dashboard feature represents one instance of a known class (cron job, scheduled task, agent), place it in the class's existing view — not as a new top-level panel.\n\n(1) Anti-pattern: a dedicated panel for a specific job (e.g., MERGE-SWEEP) duplicates the Schedules view, adds a special-case rendering path, and establishes a precedent where every future job gets its own panel — dashboard sprawl.\n\n(2) Class-view placement: the Schedules view is the correct home for all cron jobs. Render each job's description + lastSummary inline on its row. /api/schedules already carries lastSummary — no backend change needed.\n\n(3) Generic expand slot for structured output: when a job produces report content, add a generic expand slot keyed by job id (not by job type). New jobs that produce reports populate the existing slot; they do not add new slot types. Implementation: a jobHasReport predicate + a per-job render fn registered by job id (e.g., 'merge-sweep' → renderMergeSweep).\n\n(4) Test coverage: unit-test the pure render functions (jobResultLine escaping, fail/empty states, jobHasReport predicate) rather than the per-job output format — keeps tests stable when job content changes.\n\nProvenance: PR #249 (2026-06-20).",
     "provenance": {
       "source": "PR #249: refactor(dashboard): cron jobs show description + result; merge-sweep is a Schedules row, not a panel",
+      "ts": "2026-06-20"
+    }
+  },
+  "gha-cron-throttle-use-daemon-builtin": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GHA `*/15` cron fires every ~1-2h in practice — use a daemon builtin at 10-min cadence for time-sensitive sweeps.",
+    "l1": "GitHub Actions cron (even `*/15`) is throttled; observed fire rate ~1-2h. dev-mesh-automerge `*/15` left ready PRs (CLEAN+APPROVED) idle for hours. Fix (PR #231): register `runSweep` as a `kind:builtin` (`automerge-sweep`) on maintainer schedule.json at 10-min cadence — same reliable cadence as `issue-sweep`. GHA cron stays as cold-start backstop. Time-critical sweeps (latency target << 1h) belong in daemon builtins, not GHA cron alone.",
+    "value": "When a sweep must complete within minutes, not hours:\n\n(1) Register a daemon builtin in the target agent's schedule.json: {\"id\": \"automerge-sweep\", \"kind\": \"builtin\", \"name\": \"automerge-sweep\", \"enabled\": true, \"every\": 10}. The daemon scheduler dispatches by kind — no LLM spawn.\n\n(2) Register the function in the daemon's builtin registry (scripts/dev-society-daemon.mjs):\n  builtins['automerge-sweep'] = async () => {\n    if (!enabled) return {status:'ok', output:'disabled'};\n    await runAutomergeSweep({...});\n    return {status:'ok'};\n  };\nGate on the sweep's kill-switch env var (AUTOMERGE_ENABLED). Return {status:'ok'} explicitly — void breaks onJobResult (see scheduler-builtin-return-shape).\n\n(3) Keep the GHA cron workflow as a cold-start backstop. Share the same runSweep/isAutoMergeable logic — no duplication between daemon and GHA paths.\n\n(4) Test: assert (a) daemon registers the builtin name; (b) builtin gates on the env flag; (c) schedule.json has the job at every ≤10; (d) existing GHA cron schedule remains present.\n\nRed flag: PRs idle for hours while the automerge workflow claims `*/15` → GHA cron is throttled; migrate sweep to daemon builtin. Provenance: PR #231 (2026-06-20).",
+    "provenance": {
+      "source": "PR #231: feat(daemon): automerge-sweep builtin — prompt drain of ready PRs (no idle)",
+      "ts": "2026-06-20"
+    }
+  },
+  "daemon-repovar-env-gap": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon env ≠ repo variable: fetch feature flags via `gh variable get`; launchd/systemd env doesn't carry repo vars.",
+    "l1": "PR #246: automerge-sweep logged 'disabled (AUTOMERGE_ENABLED != true)' even though the operator had set the GitHub repo variable to true. Daemon launchd env is fixed at install time — repo variable changes never reach it. The GitHub-Actions sweep reads `vars.AUTOMERGE_ENABLED` at runtime (correct). Fix: resolveAutomergeEnabled tries `gh variable get AUTOMERGE_ENABLED` first, falls back to process.env, safe-off on read error. 8 CLEAN+APPROVED PRs idled ≥5 cycles before the monitor caught it.",
+    "value": "Pattern for daemon feature flags controlled by GitHub repo variables:\n\n(1) Repo variable is the authoritative source — launchd/systemd env is fixed at install time. `gh variable set AUTOMERGE_ENABLED --body true` updates the repo store immediately but NEVER the daemon's process.env. The GitHub-Actions sweep reads `vars.AUTOMERGE_ENABLED` at call time (correct by design); the daemon must do the same work explicitly.\n\n(2) Two-source resolver: try `gh variable get FLAG` first; fall back to `process.env.FLAG` if gh read errors (local dev, no gh auth); safe-off (false) if both absent.\n\n(3) Dependency injection for hermetic tests: expose a `resolver` param (async fn → bool). Unit-test: gh returns 'true' → enabled; gh returns 'false' → disabled; gh errors + env 'true' → enabled; gh errors + env absent → disabled (safe-off).\n\n(4) Never inline `process.env.FLAG === 'true'` in daemon code paths. The stale-env gap is silent — no error, just permanently disabled, masking the operator's decision for ≥5 cycles.\n\nRelated: `default-off-three-layer-kill-switch` (YAML vars + predicate layers are correct; this closes the daemon CLI layer gap). Provenance: PR #246 (2026-06-20), monitor cycle 5.",
+    "provenance": {
+      "source": "PR #246: fix(daemon): automerge self-activates from the repo variable (no idle ready PRs)",
       "ts": "2026-06-20"
     }
   },
