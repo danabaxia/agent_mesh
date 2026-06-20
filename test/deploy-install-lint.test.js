@@ -79,6 +79,14 @@ test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchc
   // bootout must be described before bootstrap (stage → bootout → bootstrap ordering)
   assert.ok(out.indexOf('stage plists before any bootout') < out.indexOf('reload daemon'),
     'plists must be staged before the reload/bootout step');
+  // Issue #209: state the rollback guarantee honestly. Rollback only restores the
+  // daemon when the NEW plist content is bad; a broken launchd environment (EIO
+  // outside a GUI session) fails identically and leaves the daemon down. Guard
+  // against the "never left down" overclaim creeping back into the dry-run output.
+  assert.doesNotMatch(out, /never left down/,
+    'dry-run must not overclaim the daemon is "never left down"');
+  assert.match(out, /restores on plist-content errors; launchd environment errors leave the daemon down/,
+    'dry-run must document that environmental launchd failures leave the daemon down');
   // Fix 2: RunAtLoad present in both daemon and sync plists
   assert.match(out, /<key>RunAtLoad<\/key>/);
   assert.match(out, /<true\/>/);
