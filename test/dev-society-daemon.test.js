@@ -50,6 +50,22 @@ test('maintainer schedule runs post-merge-reconcile every ~10min', () => {
   assert.ok(job.cadence.minutes <= 10);
 });
 
+test('daemon registers the autofix-pr-sweep builtin (escalates stale bug-autofix PRs)', () => {
+  assert.match(src, /'autofix-pr-sweep'\s*:/);
+  assert.match(src, /planAutofixPrSweep/);
+  // closes the feedback loop: strip pr:in-review, add blocked
+  assert.match(src, /'--state',\s*'closed'/, 'must list closed (unmerged) PRs');
+  assert.match(src, /ensureLabels\(gh,\s*\['blocked'\]/, 'must self-heal the blocked label before adding it');
+});
+
+test('maintainer schedule runs autofix-pr-sweep every ~10min', () => {
+  const job = maintainerSchedule.jobs.find((j) => j.builtin === 'autofix-pr-sweep');
+  assert.ok(job, 'autofix-pr-sweep job must be scheduled');
+  assert.equal(job.enabled, true);
+  assert.equal(job.cadence.kind, 'every');
+  assert.ok(job.cadence.minutes <= 10);
+});
+
 test('runOneTask holds the build-lock (acquire before build, release in finally)', () => {
   const acq = src.indexOf('acquireBuildLock(repoRoot');
   const rel = src.indexOf('releaseBuildLock(repoRoot)');

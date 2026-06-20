@@ -48,6 +48,7 @@ import { ensureLabels } from '../src/gh-labels.js';
 import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-lock.js';
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
+import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -165,6 +166,13 @@ if (!once && !selftest) {
     'post-merge-reconcile': () => postMergeReconcile()
       .then((r) => ({ status: 'ok', output: `post-merge-reconcile: closed ${r.closed}` }))
       .catch((e) => { log('post-merge-reconcile error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Stale bug-autofix PR sweep: a `bug` + `pr:in-review` issue whose closing PR was closed
+    // WITHOUT merging (abandoned/wrong fix/conflicts) hangs at pr:in-review forever — the
+    // feedback loop PR #215's bug-autofix gate opened. Strip pr:in-review, add `blocked`,
+    // and comment so a human re-triages it (no auto-retry — a failed build must not loop, #98).
+    'autofix-pr-sweep': () => autofixPrSweep()
+      .then((r) => ({ status: 'ok', output: `autofix-pr-sweep: escalated ${r.escalated}` }))
+      .catch((e) => { log('autofix-pr-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
   };
   // Materialize managed wiring (registry.json / .mcp.json) before the scheduler
   // can fire any job — the daemon (unlike the dashboard) has no auto-sync, so
@@ -282,6 +290,37 @@ async function postMergeReconcile() {
     } catch (e) { log(`post-merge-reconcile: close #${item.issue} failed`, e.message); }
   }
   return { closed };
+}
+
+async function autofixPrSweep() {
+  if (!cfg.repo) { log('autofix-pr-sweep: set DEV_SOCIETY_REPO'); return { escalated: 0 }; }
+  let closedPrs = [], openPrs = [], openIssues = [];
+  try {
+    closedPrs = JSON.parse((await gh(['pr', 'list', '--repo', cfg.repo, '--state', 'closed', '--limit', '100', '--json', 'number,closingIssuesReferences'])).stdout);
+  } catch (e) { log('autofix-pr-sweep: closed pr list failed', e.message); return { escalated: 0 }; }
+  try {
+    openPrs = JSON.parse((await gh(['pr', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '100', '--json', 'closingIssuesReferences'])).stdout);
+  } catch (e) { log('autofix-pr-sweep: open pr list failed', e.message); return { escalated: 0 }; }
+  try {
+    openIssues = JSON.parse((await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '100', '--json', 'number,labels'])).stdout);
+  } catch (e) { log('autofix-pr-sweep: issue list failed', e.message); return { escalated: 0 }; }
+  // Issues that still have an OPEN PR (the coder retried) must not be escalated as abandoned.
+  const openPrIssues = new Set();
+  for (const pr of openPrs) for (const ref of (pr?.closingIssuesReferences || [])) if (typeof ref?.number === 'number') openPrIssues.add(ref.number);
+  const plan = planAutofixPrSweep(openIssues, closedPrs, { openPrIssues });
+  let escalated = 0;
+  // Self-heal the `blocked` label before adding it — addLabel swallows a 422 on an unknown
+  // label, which would strip pr:in-review without parking the issue (the #182 bug class).
+  if (plan.length) await ensureLabels(gh, ['blocked'], { repo: cfg.repo });
+  for (const item of plan) {
+    for (const l of item.removeLabels) await rmLabel(item.issue, l);
+    for (const l of item.addLabels) await addLabel(item.issue, l);
+    await issueComment(item.issue, `🤖 Auto-fix PR #${item.closedPr} was closed without merging — needs re-triage. Escalated to \`blocked\` by the dev-society autofix-pr sweep.`);
+    escalated++;
+    rec({ source: 'daemon', type: 'issue.autofix.escalated', level: 'warn', summary: `#${item.issue}: PR #${item.closedPr} closed unmerged → blocked`, ref: `#${item.issue}` });
+    log(`autofix-pr-sweep: escalated #${item.issue} (PR #${item.closedPr} closed unmerged)`);
+  }
+  return { escalated };
 }
 
 // Issue numbers whose deterministic head branch (dev-society/issue-N) already MERGED. Feeds
