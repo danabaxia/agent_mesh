@@ -759,5 +759,16 @@
       "source": "PR #197: fix(deploy-sync): defer daemon restart during in-flight coder builds (build-lock)",
       "ts": "2026-06-20"
     }
+  },
+  "deploy-sync-tiered-restart": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "deploy-sync multi-service: required restarts gate state advancement; best-effort restarts log-only and never block.",
+    "l1": "PR #200: dashboard brought under CD alongside daemon via makeMultiRestart. Required services (daemon): failure rejects, state not advanced, retry next tick. Best-effort services (dashboard): errors caught and logged, never propagated — dashboard failure never wedges daemon CD. Pattern lets new services join CD without raising blast radius on the critical path.",
+    "value": "When multiple services share a deploy-sync cycle, classify by restart criticality:\n\n(1) Required (daemon): kicked first; failure rejects → state not advanced → retry next tick.\n\n(2) Best-effort (dashboard): kicked after; errors logged, never thrown — failure never blocks critical path.\n\nNew services: best-effort by default; wire via env var (DASHBOARD_LABEL). Planner unchanged. PR #200.",
+    "provenance": {
+      "source": "PR #200: feat(cd): bring the dashboard under deploy-sync CD (auto-update on push to main)",
+      "ts": "2026-06-20"
+    }
   }
 }
