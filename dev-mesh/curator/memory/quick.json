@@ -836,5 +836,16 @@
       "source": "PR #235: feat(daemon): post-merge-reconcile — auto-close merged-but-open issues",
       "ts": "2026-06-20"
     }
+  },
+  "report-first-sweep-phase": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New automation: Phase ① read-only (pure classifiers + allowlist test + dashboard report) before Phase ② mutation.",
+    "l1": "PR #242: merge-sweep ① is structurally read-only — no merges, no label writes. Three pure classifiers extracted from existing mutators (classifyIssueGate, classifyAutomergePr, classifyMemoryPr) re-express each gate decision as data; mutators are untouched. classifyAutomergePr fail-closes: gate-unknown on ambiguous inputs, never overclaims would-merge. A hermetic allowlist test asserts only read-only gh commands in the daemon builtin. State report surfaces on the dashboard (◆ MERGE-SWEEP panel) + /api/merge-sweep. Mutation deferred to Phase ②.",
+    "value": "Pattern: report-first phase split for any new sweep automation.\n\n(1) Phase ① = read-only only. No gh mutations in the daemon builtin or API endpoint. Prove this via a hermetic allowlist test: iterate every command executed in runMergeSweep (or equivalent) and fail on any write command (pr merge, issue edit, label add/remove). The test is a CI gate — mutation that slips in fails CI before it ships.\n\n(2) Extract pure classifiers from existing mutators. Map:\n   runIssueGate()    → classifyIssueGate()    {status, reason}\n   isAutoMergeable() → classifyAutomergePr()  {state, reason}\n   automerge guard   → classifyMemoryPr()     {state, reason}\nThe classifier re-expresses the same decision logic as a {state,reason} return. The mutator delegates to the classifier then applies side effects. Behavior is unchanged; the classifier is testable in isolation with no gh calls.\n\n(3) Fail-closed classification. Never overclaim a ready state. Use gate-unknown (not would-merge) when inputs are ambiguous or missing. Overlay semantics (CLEAN+APPROVED PR whose linked issue is gate-held) must produce blocked/pending-issue-gate, not a false positive. The safe default is 'not yet' — a false negative delays a merge; a false positive merges prematurely.\n\n(4) Dashboard + API surfacing in Phase ①. Build the state report, expose it as a GET endpoint with a staleness header, and render a dashboard panel. Operators validate the classifier logic live before any mutation exists. Panel security: HTML-escape all strings; use numeric PR refs in links, never raw branch names.\n\n(5) Phase ② adds mutation atop Phase ①. Classifiers and report survive unchanged. Phase ② only wires execution (call gh pr merge / gh pr edit) gated by the Phase ① classification. No redesign needed.\n\nApply when any new sweep will eventually mutate GitHub state (auto-merge, auto-label, auto-close, issue routing). The read-only phase ships in days; the mutation phase ships after operators have observed and validated the classification logic on the dashboard.\n\nRelated: default-off-three-layer-kill-switch (gate the mutation phase off by default). Provenance: PR #242 (2026-06-20).",
+    "provenance": {
+      "source": "PR #242: feat(merge-sweep): report-first state machine ① (read-only, dashboard-visible)",
+      "ts": "2026-06-20"
+    }
   }
 }
