@@ -869,5 +869,16 @@
       "source": "PR #249: refactor(dashboard): cron jobs show description + result; merge-sweep is a Schedules row, not a panel",
       "ts": "2026-06-20"
     }
+  },
+  "agent-builtin-input-freshness-guard": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Agent builtin with required artifacts: fail-loud inputs_unavailable, never silent delegation on stale/absent inputs.",
+    "l1": "PR #224: runAnalystDailyReview silently delegated to the agent when required digests (daily-report.json/gh-activity.json) were absent or stale. Agent received empty context, wasted tokens, and emitted low-quality output with no diagnostic signal. Fix: checkDigestFreshness() stats each REQUIRED_ARTIFACT path, returns {status:'inputs_unavailable', missing:[{path, reason}]} if any artifact is absent or older than today. Delegation only happens when all artifacts are fresh. Replaces silent 'prompt notes unavailability' fallback with a loud, zero-token fail-closed refusal. Closes #195.",
+    "value": "Apply to any agent builtin that reads pre-generated data artifacts (daily digests, nightly reports, cache files) before calling delegateTask.\n\n(1) REQUIRED_ARTIFACTS array: declare the list of file paths the builtin MUST have. Only existence and mtime are checked in the guard — file content is consumed later by the normal buildPrompt path (no behavioral regression).\n\n(2) checkDigestFreshness(artifacts, now): for each path, call stat(). If ENOENT → reason:'absent'; if mtime.toDateString() !== now.toDateString() → reason:'stale'. Returns {fresh:true} or {fresh:false, missing:[{path, reason}]}. Pure function — inject a `stat` stub for hermetic tests.\n\n(3) Return inputs_unavailable: when the guard fails, return {status:'inputs_unavailable', missing:[...]} immediately before calling delegateTask. Include each artifact's path and reason. Zero tokens spent; the scheduler's onJobResult logs it as a structured fail.\n\n(4) Test matrix (all four cases required): (a) both artifacts present + today → proceeds to delegation (regression guard); (b) one absent → inputs_unavailable; (c) both absent → inputs_unavailable; (d) present but yesterday mtime → stale → inputs_unavailable. Absent and stale are distinct failure modes — test them separately.\n\n(5) Behavior change: 'prompt notes unavailability' asks the agent to reason about missing data — it wastes tokens, produces unpredictable output, and buries the root cause inside a model turn. A pre-flight refusal surfaces the failure cleanly in run-logs before the model is ever called.\n\n(6) Related: mir-deterministic-backlog-bridge (MIR builtin reads L0–L4 artifact JSON — same pattern applies); cached-report-compute-and-schedule (ensuring artifacts are generated on schedule so the guard rarely fires).\n\nProvenance: PR #224 (2026-06-20), closes #195.",
+    "provenance": {
+      "source": "PR #224: fix(analyst): freshness guard for daily digest inputs (#195)",
+      "ts": "2026-06-20"
+    }
   }
 }
