@@ -1,7 +1,7 @@
 # Merge-Sweep Remediation Loop Design (Sub-project ②)
 
 **Date:** 2026-06-20
-**Status:** Draft — pending Codex review
+**Status:** Codex round 1 reviewed (3 BLOCKER + 3 MAJOR, all fixed). Round 2 pending — Codex usage limit (resets 2026-06-24); self-review clean.
 **Topic:** A level-triggered **backstop** controller that reads the merge-sweep report (①), escalates only items the automatic fixers couldn't clear (or don't cover) as one deduped `needs-human` issue per item, and tracks every flagged item through a per-item state machine (`watching → escalated → done`) surfaced on the dashboard. It never re-runs a fixer and never double-files.
 
 ## Problem
@@ -26,8 +26,9 @@ Kubernetes reconcile-loop contract, re-reads the report each tick and:
    — only when `ageRuns ≥ ESCALATE_AFTER` (the fixers' budgets are spent), it is
    not exempt, under a per-run cap, and **no existing escalation already covers
    it** (its own marker *or* `escalation-sweep`'s issue);
-2. **self-closes** that issue when the item resolves, gated by **resolve
-   hysteresis + reopen backoff** so a flapping item can't storm;
+2. **self-closes** that issue once the item has been resolved for **K consecutive
+   sweeps** (resolve hysteresis — the issue stays *open* through a brief flap so it
+   isn't closed-then-reopened), with exponential backoff on repeat flaps;
 3. **tracks** every flagged item's lifecycle in `mesh/reports/merge-sweep-remediation.json`
    and surfaces it on the dashboard.
 
@@ -45,13 +46,18 @@ Kubernetes reconcile-loop contract, re-reads the report each tick and:
 ## Non-Goals (hold the line)
 
 - **Not a fixer.** ② never re-runs autofix/mergefix and never edits code/PRs. Its
-  only writes are: create/close `needs-human` issues + write its state file.
+  only writes are: create/close `needs-human` issues, the idempotent
+  `gh label create needs-human` self-heal, and its state file. (Round-1 MAJOR: the
+  allowlist test must include `label create`.)
 - **No agent assignment / task board.** ② files **human** escalation issues only.
   Routing escalations to agents for research-driven fixes is **sub-project ③**.
 - **No new detection.** ② reads ①'s report; it does not re-scan PRs itself.
-- **No double-escalation.** It dedups against `escalation-sweep`'s `needs-triage`
-  issues; it never files a second issue for a PR already escalated.
-- **No change to ① / merge-sweep, the fixers, or escalation-sweep.**
+- **No double-escalation — bidirectional.** ② dedups against `escalation-sweep`'s
+  `needs-triage` issues, **and** `escalation-sweep` is taught to dedup against ②'s
+  `needs-human` markers (Round-1 BLOCKER: one-way dedup let `escalation-sweep` file
+  a second issue *after* ② filed for the same PR). One small edit to
+  `escalation-sweep` is in scope; the fixers and ①/merge-sweep are untouched.
+- **No change to ① / merge-sweep or the fixers.**
 
 ## Background (verified against code)
 
@@ -126,45 +132,79 @@ two-layer: the shared `needs-human` **label** (fast list) + the per-key **marker
 For each **currently-stuck** actionable item (from the report), in order:
 - Our marker-issue exists but is **closed** (we only self-close *resolved* items, so
   a closed issue on a still-stuck item means a **human** closed it) → `state:'acked'`
-  (terminal; never re-file).
-- An existing **open** escalation covers it (our open marker, or an
-  `escalation-sweep` `needs-triage` issue for the PR) → `state:'escalated'`, **no
-  file** (track only).
+  (terminal; never re-file). Detecting this requires querying closed issues — see runner.
+- Already `acked` → stay `acked`, no file.
+- A `cooldown` item (its issue is still open) becomes stuck again → `state:'escalated'`,
+  **same open issue, no new file** (delayed-close kept it open through the flap).
+- An existing **open** escalation already covers it (our open marker, or an
+  `escalation-sweep` `needs-triage` for the PR) → `state:'escalated'`, **no file**.
 - Exempt (the item's PR carries an exempt label) → `skip`, `state:'watching'`.
-- Previously `acked` → stay `acked`, no file.
 - `ageRuns < escalateAfter` → `state:'watching'`, no action (let the fixers work).
-- `now < nextEligibleAt` (flap backoff active) → `state:'cooldown'`, no action.
-- A `done`/`cooldown` item re-stuck with `healthyStreak < hysteresisK` (a flap) →
-  `reopenCount++`, `nextEligibleAt = now + backoffBaseMs * 2^reopenCount`,
-  `state:'cooldown'`, no file.
-- Otherwise (eligible) and `< capPerRun` files used this run → **`file`**,
+- `now < nextEligibleAt` (backoff after a `done`→re-stuck flap) → `state:'cooldown'`, no file.
+- Otherwise eligible and `< capPerRun` filed this run → **propose `file`**,
   `state:'escalated'`, stamp `firstEscalatedAt`, `healthyStreak=0`.
 
-For each **tracked item NOT currently stuck** (resolve edge):
-- `state:'escalated'` with our `issueNumber` still open → **`close`** it
-  (self-clean), `state:'done'`, `healthyStreak=1`.
-- `state:'done'`/`'cooldown'`/already-healthy → increment `healthyStreak` each
-  consecutive healthy sweep (this is what later satisfies the `≥ hysteresisK`
-  reopen gate above).
+For each **tracked item NOT currently stuck** (resolve edge) — **close is delayed by
+hysteresis** so a flapping item keeps one open issue instead of churning closed/reopened:
+- `state:'escalated'` → `state:'cooldown'`, `healthyStreak=1`, **issue stays open** (no close).
+- `state:'cooldown'`, `healthyStreak+1 < hysteresisK` → stay `cooldown`, `healthyStreak++`, issue open.
+- `state:'cooldown'`, `healthyStreak+1 ≥ hysteresisK` → **propose `close`** (self-clean), `state:'done'`.
+- `state:'done'` that later re-sticks then resolves again → `reopenCount++`,
+  `nextEligibleAt = now + backoffBaseMs * 2^reopenCount` (widening flap backoff).
 - `state:'acked'` → terminal, unchanged.
+
+`planRemediation` only **proposes** `file`/`close`; the runner commits the
+post-action state (`escalated` with the *actual* created issue number, or `done`)
+**only after** the `gh` create/close succeeds. A failed create/close leaves the item
+in its prior state to retry next tick — failures never advance the state machine
+(Round-1 MAJOR). So `nextState` is the plan's *non-action* transitions; action
+outcomes are merged by the runner.
 
 Pure: no I/O, `now` injected, deterministic.
 
 ### 2. `merge-sweep-remediate` builtin — `scripts/dev-society-daemon.mjs`
 
-Mirrors `runEscalation`'s injected, failure-is-data shape. Read-mostly:
+Mirrors `runEscalation`'s injected, failure-is-data shape. The orchestration lives
+in a testable `src/merge-sweep/remediation-run.js`
+`runRemediation({gh, repo, meshRoot, readReport, readState, writeState, now, cfg})`
+(fake-`gh` testable, exactly as ① split `runMergeSweep`):
+
 ```
-gh issue list --label needs-human --json number,body,state,closedAt   (own escalations + markers)
-gh issue list --label needs-triage --json number,title,state          (escalation-sweep dedup)
-read report (mergeSweepReportPath) + prev state (remediationPath)
-reconcile: for each tracked PR, gh pr view <n> --json number,state,updatedAt,mergeStateStatus (guard/fingerprint)
-plan = planRemediation(...)
-for f in plan.file:  ensureLabels([needs-human]); gh issue create --label needs-human --title … --body "<marker>\n\n…"
-for c in plan.close: gh issue close <n> --comment "🤖 ② resolved — closing."
-writeJsonAtomic(remediationPath, plan.nextState)
-return { status:'ok', output:`escalated ${file.length}, closed ${close.length}, tracking ${n}` }
+report = readReport()                         // {available:bool, ...} — distinguishes valid-empty from unavailable
+if (!report.available) {                       // ROUND-1 BLOCKER: never close live issues on a read failure
+  return { status:'fail', error:'merge-sweep report unavailable — no remediation this tick (state preserved)' }
+}
+prev = readState() || {}
+own  = gh issue list --label needs-human --state all --json number,body,state   // OPEN *and CLOSED* → human-ack detection
+triage = gh issue list --label needs-triage --state open --json number,title     // escalation-sweep dedup
+liveByKey = reconcile: for each tracked item still referenced, gh pr view <n> --json number,state,updatedAt,mergeStateStatus
+plan = planRemediation({ report, prev, openIssues:own, triage, liveByKey, now, cfg })   // pure → { file, close, skip, nextState }
+state = { ...plan.nextState }
+for f in plan.file:                            // commit state ONLY on success
+  try { ensureLabels(['needs-human']); const n = parseNewIssueNumber(gh issue create --label needs-human --title … --body "<marker>\n\n…")
+        state[f.key] = { ...state[f.key], state:'escalated', issueNumber:n, firstEscalatedAt:iso } }
+  catch (e) { log(...); state[f.key] = prev[f.key] || { state:'watching' } }   // leave prior state to retry
+for c in plan.close:
+  try { gh issue close <c.issueNumber> --comment "🤖 ② resolved — closing."; state[c.key] = { ...state[c.key], state:'done' } }
+  catch (e) { log(...); state[c.key] = prev[c.key] }                            // stay cooldown/escalated, retry
+writeJsonAtomic(remediationPath, state)
+return { status:'ok', output:`escalated ${plan.file.length}, closed ${plan.close.length}, tracking ${Object.keys(state).length}` }
 ```
-A new pure `src/merge-sweep/remediation-run.js` `runRemediation({gh, repo, meshRoot, readReport, readState, writeState, now, cfg})` holds the orchestration (so it's testable with a fake `gh`), exactly as ① split `runMergeSweep` from the builtin. Per-item `gh` failures are logged and skipped.
+Per-item `gh` failures are logged and skipped; the run still writes state and returns
+`ok` (failure is data). `ensureLabels(['needs-human'])` is an idempotent
+`gh label create` — see the mutation boundary below.
+
+### 2b. `escalation-sweep` — bidirectional dedup (one small edit)
+
+To close the one-way-dedup BLOCKER, `src/automerge/escalation-sweep.js` is taught
+to also skip a PR that ② has already escalated. It already lists open
+`needs-triage` issues and builds `existingPrNums`; add a second list of open
+`needs-human` issues and union their PR numbers (parsed from ②'s
+`<!-- needs-human:automerge:PR#N -->` markers) into `existingPrNums` before the
+file loop. ~6 lines; the existing escalation tests are extended with "an open
+`needs-human` for PR #N suppresses the `needs-triage` open." No other behavior
+changes. (Now neither sweep can file a second issue for the same PR, regardless of
+order.)
 
 ### 3. Schedule entry — `dev-mesh/maintainer/.agent/schedule.json`
 ```json
@@ -191,10 +231,17 @@ issue create/close + the state file.
 
 ## Error Handling
 
-- Per-item `gh` failure (create/close/view) → logged, that item skipped; the run
-  continues and still writes state (failure is data).
-- Missing/corrupt report or state file → treated as empty; `ageRuns`-based gating
-  simply won't fire; never throws.
+- Per-item `gh` failure (create/close/view) → logged, that item left in its prior
+  state to retry next tick (never advances on failure); the run continues and still
+  writes state (failure is data).
+- **Report unavailable vs valid-empty (Round-1 BLOCKER).** `readReport` returns
+  `{available:false}` when the report file is missing/corrupt/unreadable — distinct
+  from a present report with zero flagged items. On `available:false`, ② performs
+  **no create or close** (which would otherwise wrongly close every live escalation)
+  and returns `status:'fail'` with state **preserved**. Only a present, parseable
+  report drives close decisions.
+- Missing/corrupt state file → treated as empty (no prior tracking); `ageRuns`
+  gating simply won't fire on first sight; never throws.
 - Reconcile guard: before acting on a tracked PR, re-fetch its live state; if the
   PR is closed/merged, the item converges to `done`/`acked`, never escalated.
 - State write is atomic (temp + rename).
@@ -204,25 +251,49 @@ issue create/close + the state file.
 
 ## Testing (hermetic, `node --test`, zero deps)
 
-`planRemediation` (pure) carries the weight — one test per research rule:
-- **open-gate:** `ageRuns < N` → watching, no file; `≥ N` → file. Exempt label → skip.
-- **dedup:** existing own-marker issue → no second file; existing `needs-triage`
-  for the same PR → no file (escalation-sweep dedup); never dedups by title alone.
-- **cap:** more than `capPerRun` eligible → only `capPerRun` filed; rest stay watching.
-- **self-close:** escalated item absent from the stuck set → close, state `done`.
-- **human-ack:** our issue closed by a human while still stuck → `acked`, never re-file.
-- **hysteresis:** a `done` item re-stuck before `hysteresisK` healthy sweeps → not
-  re-escalated (cooldown); re-stuck after `≥ hysteresisK` → re-escalated.
-- **reopen backoff:** repeated flaps widen `nextEligibleAt` (2^reopenCount); within
-  the window → no re-file.
+`planRemediation` (pure) carries the weight — one test per rule:
+- **open-gate:** `ageRuns < N` → watching, no file; `≥ N` → propose file. Exempt label → skip.
+- **dedup:** an open own-marker issue → no second file; an open `needs-triage` for the
+  same PR → no file; never dedups by title alone.
+- **cap:** more than `capPerRun` eligible → only `capPerRun` proposed; rest stay watching.
+- **delayed close (hysteresis):** escalated item absent for 1 sweep → `cooldown`, issue
+  stays open (no close proposed); absent for `hysteresisK` sweeps → propose close, `done`;
+  a `cooldown` item re-stuck before K → back to `escalated`, **no new file**.
+- **human-ack:** our marker-issue is *closed* while the item is still stuck → `acked`,
+  never re-file (the runner must have surfaced the closed issue via `--state all`).
+- **reopen backoff:** a `done` item that flaps → `reopenCount++`, `nextEligibleAt`
+  widens (2^reopenCount); within the window → no re-file.
 - **actionable filter:** `would-merge`/`held`/`pending-issue-gate`/`merge-candidate`/
   `resolved` never escalate; `not-clean:*` and memory `needs-human` do.
 
-`runRemediation` (with a fake recording `gh`): read-mostly allowlist (only
-`issue list`, `pr view`, `issue create`, `issue close` — **no** `pr merge`/`pr edit`/
-`api`/`git`), writes one state file, dedups against seeded `needs-triage`/`needs-human`
-issues. `/api/merge-sweep` overlay shape test + a panel render test for the badge
-(escaped). Schedule lint: the job has `builtin:"merge-sweep-remediate"`.
+`runRemediation` (fake recording `gh`):
+- **read-mostly allowlist:** only `issue list`, `pr view`, `issue create`, `issue close`,
+  `label create` — **no** `pr merge`/`pr edit`/`pr comment`/`api`/`git`.
+- **report-unavailable safety:** with `readReport()→{available:false}`, it issues **no
+  `issue close`/`create`**, preserves the prior state file, and returns `status:'fail'`.
+- **closed-issue ack:** the `needs-human` list is queried `--state all`; a seeded closed
+  marker issue for a still-stuck item → `acked`, no create.
+- **state after mutation:** a failing `issue create` leaves that item in its prior state
+  (not `escalated`); a failing `issue close` leaves it `cooldown` (not `done`).
+
+`escalation-sweep` (extend existing test): an open `needs-human` issue carrying
+`<!-- needs-human:automerge:PR#N -->` suppresses the `needs-triage` open for PR #N
+(bidirectional dedup).
+
+Dashboard: `/api/merge-sweep` overlay shape test + a panel render test for the badge
+(escaped, numeric issue link). Schedule lint: the job has `builtin:"merge-sweep-remediate"`.
+
+---
+
+### Review log
+
+**Round 1 — Codex (gpt-5.5): VERDICT CHANGES_REQUESTED** (3 BLOCKER, 3 MAJOR).
+- *BLOCKER one-way dedup* → **fixed**: bidirectional — `escalation-sweep` also dedups against ②'s `needs-human` PR markers (§2b).
+- *BLOCKER human-ack invisible (no `--state all`)* → **fixed**: runner queries `needs-human --state all`; closed-marker-while-stuck → `acked`; test added.
+- *BLOCKER report-unavailable → closes live issues* → **fixed**: `readReport` returns `{available}`; on `false`, no create/close, state preserved, `status:'fail'`.
+- *MAJOR resolve-hysteresis claim vs close-on-first-absent* → **fixed**: switched to **delayed close** (keep the issue open K sweeps, `keep_firing_for` semantics); claim now matches.
+- *MAJOR `ensureLabels` = `label create` outside the mutation boundary* → **fixed**: `label create` added to the allowed-writes list + allowlist test.
+- *MAJOR state set before mutation results* → **fixed**: `planRemediation` only *proposes* file/close; the runner commits `escalated`(real issue #)/`done` only on success, leaving failures in prior state.
 
 ## Verification (manual, on the host — after merge)
 
