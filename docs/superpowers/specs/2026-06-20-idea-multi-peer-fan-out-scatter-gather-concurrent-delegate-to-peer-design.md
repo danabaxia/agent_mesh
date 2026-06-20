@@ -20,7 +20,7 @@ The existing onward-delegation spec (`2026-06-06-onward-delegation-design.md`) e
 
 - Add `fan_out_to_peers({ peers, mode, task })` to `src/a2a/peer-bridge.js`.
 - Dispatch calls to all named peers concurrently (true parallelism via `Promise.allSettled`, not sequential).
-- Return a per-peer `FanOutResult` array in arrival order (first settled, first in array).
+- Return a per-peer `FanOutResult` array in **input order** (matching the `peers` input array, as returned by `Promise.allSettled`).
 - Preserve all v1 invariants: registry gate, depth budget, ask-only, anti-spoof, failure-as-data.
 - Cap simultaneous fan-out width via `AGENT_MESH_FAN_OUT_MAX_PEERS` (default `8`, defined in `src/config.js`).
 
@@ -46,11 +46,11 @@ The existing onward-delegation spec (`2026-06-06-onward-delegation-design.md`) e
 }
 ```
 
-`maxPeers` is controlled by the env var `AGENT_MESH_FAN_OUT_MAX_PEERS` (default `8`). The constant `DEFAULT_FAN_OUT_MAX_PEERS = 8` lives in `src/config.js` alongside `DEFAULT_DEPTH`. This cap guards against accidental O(depth × peers) explosion when a fan-out is nested inside a delegated ask.
+`maxPeers` is controlled by the env var `AGENT_MESH_FAN_OUT_MAX_PEERS` (default `8`). The constant `DEFAULT_FAN_OUT_MAX_PEERS = 8` lives in `src/config.js` alongside `DEFAULT_DEPTH`. This cap guards against accidental **O(peers^depth)** explosion (exponential in depth) when a fan-out is nested inside a delegated ask. At the defaults (`AGENT_MESH_DEPTH = 3`, `maxPeers = 8`), worst-case is 8³ = 512 spawned agents (plus intermediate levels) — operators setting a higher `maxPeers` should reason in exponential terms, not linear.
 
 ### 4.2 Output
 
-An array of `FanOutResult`, one per named peer, in **settlement order** — accumulated then returned as a single batch once all peers have settled (since streaming is out of scope). "Settlement order" means the entry for the first peer whose `Promise.allSettled` slot resolved appears first; peers in `peers` that happen to respond at the same time appear in their input order relative to each other. Each entry:
+An array of `FanOutResult`, one per named peer, in **input order** — `result[i]` is always the outcome for `peers[i]`, matching the index contract of `Promise.allSettled`. Results are accumulated then returned as a single batch once all peers have settled (streaming is out of scope). Each entry:
 
 ```typescript
 {
@@ -85,7 +85,7 @@ Runtime failures per peer (after validation passes) are returned as `FanOutResul
 - **Depth enforcement.** `currentDepth + 1 <= AGENT_MESH_DEPTH` is checked once before the batch — all peers run at depth `d+1`. A fan-out at the depth ceiling is rejected before contacting any peer.
 - **Reserved env.** Per-peer spawns inherit the same `RESERVED_BRIDGE_ENV` threading from the v1 spec — `AGENT_MESH_MODE`, `AGENT_MESH_PATH`, `AGENT_MESH_DEPTH`, `AGENT_MESH_MESH_ROOT`, `AGENT_MESH_MESH_CEILING`.
 - **Failure is data.** A peer timeout or error does not abort the other calls; it becomes a `FanOutResult` entry. The overall call "succeeds" structurally so long as validation passed.
-- **`maxPeers` cap.** `AGENT_MESH_FAN_OUT_MAX_PEERS` limits the fan-out width so an operator cannot inadvertently cause O(depth × peers) combinatorial depth explosions.
+- **`maxPeers` cap.** `AGENT_MESH_FAN_OUT_MAX_PEERS` limits the fan-out width so an operator cannot inadvertently cause O(peers^depth) exponential depth explosions.
 
 ## 6. Components
 
@@ -103,13 +103,13 @@ Runtime failures per peer (after validation passes) are returned as `FanOutResul
 3. **Scatter:** dispatch an `ask` call to each peer concurrently at depth `d+1`, reusing the single-peer ask path.
 4. **Gather:** await all child calls to settle via `Promise.allSettled`. Each yields `ok` (with answer), `error`, or `timeout`. One slow/failed peer does not abort the others.
 5. **Normalize:** wrap each settled outcome into a `FanOutResult`, applying per-peer truncation and `truncated` marking.
-6. **Return** the array in settlement order to the orchestrating LLM. All peers have settled before the array is returned (no streaming); settlement order is the order in which `Promise.allSettled` resolved each slot, not the original `peers` input order.
+6. **Return** the array in **input order** to the orchestrating LLM — `result[i]` corresponds to `peers[i]`, as `Promise.allSettled` always returns results in index order regardless of which peer settled first. All peers have settled before the array is returned (no streaming).
 7. **Synthesize (model-side):** the LLM reads the array and produces consensus / best-of-N / adversarial reconciliation itself. The framework does nothing here.
 
 ## 8. Testing
 
 - **Happy path:** fan-out to 3 valid peers returns 3 `ok` entries, each tagged with the correct `peer` and answer.
-- **Arrival-order tagging:** with peers responding at staggered latencies, assert entries appear in settle order and each `peer` tag matches its answer (no cross-attribution).
+- **Input-order guarantee:** with peers responding at staggered latencies, assert entries appear in input order (matching the `peers` array index), not arrival/settlement order, and each `peer` tag matches its answer (no cross-attribution). `Promise.allSettled` always preserves index order — no explicit accumulator needed.
 - **Partial failure:** one peer forced to time out → result has 2 `ok` + 1 `timeout`; the other two answers are intact and present.
 - **All-fail vs. fail-fast distinction:** (a) all peers error at runtime → array of 3 `error` entries (call still "succeeds" structurally); (b) one peer name not in registry → whole call rejected, **zero** peers contacted (assert no child dispatch occurred).
 - **Depth enforcement:** at `currentDepth == AGENT_MESH_DEPTH`, a fan-out is rejected before dispatch; at `cap - 1`, a fan-out to N peers succeeds and each child is recorded at `d+1`.
