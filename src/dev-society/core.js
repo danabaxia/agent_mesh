@@ -407,6 +407,21 @@ export function ledgerRecord({ issue, coderTask, reviewerTask, tests, prNumber, 
   };
 }
 
+/** True when the issue went through bug-autofix (has both `bug` and `pr:in-review`). */
+export function isAutofixIssue(issue) {
+  const have = new Set(labelNames(issue));
+  return have.has(BUG) && have.has(PR_IN_REVIEW);
+}
+
+/** Label/comment mutation plan for an abandoned bug-autofix issue (PR closed without merging). */
+export function abandonedAutofixPlan() {
+  return {
+    add: [BLOCKED],
+    remove: [PR_IN_REVIEW],
+    comment: 'Auto-fix PR was closed without merging — needs re-triage.',
+  };
+}
+
 /** Whether the run should proceed to open a PR: coder succeeded, changed files, tests green. */
 export function shouldOpenPR({ coderTask, tests }) {
   const c = taskOutcome(coderTask);

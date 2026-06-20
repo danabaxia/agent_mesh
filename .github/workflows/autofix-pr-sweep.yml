@@ -1,0 +1,34 @@
+name: autofix-pr-sweep
+# Detect `bug + pr:in-review` issues whose linked autofix PR was closed without merging
+# and transition them to `blocked` for human re-triage.
+on:
+  schedule:
+    - cron: '27 * * * *'   # hourly at :27
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry-run (no mutations)'
+        required: false
+        default: 'false'
+
+permissions:
+  issues: write     # add/remove labels, post comments
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    if: github.repository == 'danabaxia/agent_mesh'
+    env:
+      AUTOMERGE_ENABLED: ${{ vars.AUTOMERGE_ENABLED }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run autofix PR sweep
+        run: |
+          flags=""
+          [ "$DRY_RUN" = "true" ] && flags="--dry-run"
+          node scripts/autofix-pr-sweep.mjs $flags
