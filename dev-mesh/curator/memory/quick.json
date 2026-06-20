@@ -892,6 +892,17 @@
       "ts": "2026-06-20"
     }
   },
+  "pr-in-review-abandonment-sweep": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Bug issues in `pr:in-review` with no open PR are abandoned — sweep to `blocked` for human re-triage.",
+    "l1": "PR #240: an issue labelled `bug + pr:in-review` becomes permanently stuck when its autofix PR closes without merging — no existing sweep covers this gap. `pr:in-review` is HARD_GATED: the daemon won't re-build it, and no other sweep escalates it. Fix: query open issues with both labels; for each, check `gh pr list --search '#N' --state open`. If no open PR found → add `blocked`, remove `pr:in-review`, post comment. Per-item errors are logged and skipped; sweep always exits 0 (cron-safe). Gated on AUTOMERGE_ENABLED.",
+    "value": "Pattern: mid-lifecycle abandonment detection when automation creates PRs that can close without merging.\n\n(1) Detect: query open issues with BOTH in-flight labels (`bug + pr:in-review`). For each, check `gh pr list --search '#N' --state open` — if no open PR exists, the autofix is abandoned.\n\n(2) Mutation plan (pure helper, no gh calls): add `blocked`, remove `pr:in-review`, post comment 'Auto-fix PR was closed without merging — needs re-triage.'\n\n(3) Pure helpers: `isAutofixIssue(issue)` (labels check only) and `abandonedAutofixPlan()` (returns mutation spec) — hermetically testable without mocking gh.\n\n(4) Gate on AUTOMERGE_ENABLED (same kill-switch as other mutation sweeps — see default-off-three-layer-kill-switch). Use `gh variable get` for the runtime value, not process.env (see daemon-repovar-env-gap).\n\n(5) Cron-safe: per-item errors logged and skipped; always exits 0. Offset cron: :27.\n\n(6) Permissions: issues:write + pull-requests:read only — no contents:write needed.\n\nApply whenever automation produces PRs that can close without merging, leaving the source issue perpetually stuck in an in-flight label state the daemon's HARD_GATED filter prevents from re-building. Provenance: PR #240 (2026-06-20).",
+    "provenance": {
+      "source": "PR #240: feat(#218): detect abandoned bug-autofix PRs and escalate to blocked",
+      "ts": "2026-06-20"
+    }
+  },
   "state-after-mutation": {
     "status": "active",
     "valid_to": null,
