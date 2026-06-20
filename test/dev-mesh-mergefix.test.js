@@ -109,6 +109,30 @@ test('mergefix: CONFLICTS_FOUND branches, Drive Coder gate, and Push step covera
   assert.match(wf, /git ls-files -u/, 'non-zero merge exit must be verified via git ls-files -u');
 });
 
+test('mergefix: selector survives lazy-mergeability (picks DIRTY or UNKNOWN/blank, then forces a per-PR view)', () => {
+  // GitHub computes mergeability lazily, so a freshly-conflicting PR reads UNKNOWN/blank in a
+  // bulk `gh pr list` — a strict ==DIRTY-only filter silently drops it (the bug that stuck #199).
+  assert.match(wf, /mergeStateStatus=="UNKNOWN"/, 'candidate filter must also accept UNKNOWN');
+  assert.match(wf, /mergeStateStatus==""/, 'candidate filter must also accept blank mergeability');
+  // and it must force a per-PR computation (gh pr view) before acting on a candidate
+  assert.match(wf, /gh pr view "\$c" --json mergeStateStatus/, 'must force per-PR mergeability via gh pr view');
+  assert.match(wf, /\[ "\$st" = "DIRTY" \]/, 'must confirm a candidate is truly DIRTY before picking it');
+  // the strict bulk-only `==DIRTY` selector must be gone (it dropped lazy-UNKNOWN PRs)
+  assert.doesNotMatch(wf, /select\([^)]*mergeStateStatus=="DIRTY"\)\]\[0\]/, 'must not use the bulk ==DIRTY-only [0] picker');
+});
+
+test('mergefix: sets a git identity before merging (no `fatal: empty ident name`)', () => {
+  // `git merge origin/main` makes a merge commit; a fresh runner has no identity → exit 128
+  // aborts the drain (observed live on #199). The merge step must configure user.email/name.
+  assert.match(wf, /git config user\.email/, 'merge step must set git user.email');
+  assert.match(wf, /git config user\.name/, 'merge step must set git user.name');
+  // identity must be set BEFORE the merge that needs it
+  assert.ok(
+    wf.indexOf('git config user.email') < wf.indexOf('git merge origin/main'),
+    'git identity must be configured before `git merge origin/main`',
+  );
+});
+
 test('mergefix: bounded + safe — never force-push, never merge, same-repo only', () => {
   assert.match(wf, /\[mergefix\]/, 'commits are tagged [mergefix] for the budget count');
   assert.doesNotMatch(wf, /--force\b/, 'must never force-push');
