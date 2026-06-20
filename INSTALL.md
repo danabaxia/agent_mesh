@@ -67,6 +67,21 @@ a same-origin check. Without `--allow-shell` the board shows status only.
   your managed-settings policy is compatible with the path-guard (see
   `docs/superpowers/specs/2026-06-06-settings-inheritance-design.md`).
 
+## Deploy-worktree cutover (24/7 daemon)
+
+To run the dev-society daemon from a dedicated worktree pinned to `main` (isolated
+from dev checkouts other agents branch-switch):
+
+```bash
+git fetch origin
+git worktree add ~/.agent-mesh/deploy origin/main
+bash ~/.agent-mesh/deploy/scripts/dev-society-deploy-install.sh --dry-run   # preview
+export DEV_SOCIETY_REPO=danabaxia/agent_mesh   # replace with your actual owner/repo
+bash ~/.agent-mesh/deploy/scripts/dev-society-deploy-install.sh             # wire launchd + dedupe + restart
+```
+
+Full design + rollback: `docs/superpowers/specs/2026-06-19-deploy-worktree-decouple-design.md`.
+
 ## Uninstall
 
 ```sh
