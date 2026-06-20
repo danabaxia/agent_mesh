@@ -12,7 +12,9 @@ on:
         default: 'false'
 
 permissions:
-  issues: write     # add/remove labels, post comments
+  contents: read        # actions/checkout@v4
+  issues: write         # add/remove labels, post comments
+  pull-requests: read   # gh pr list (open-PR check)
 
 jobs:
   sweep:
