@@ -58,6 +58,22 @@ The default dashboard is read-only. Add `--allow-shell` only when the browser
 should launch or mirror native Claude CLI sessions. Add `--enable-chat` when
 you want the in-dashboard ask-only A2A chat composer.
 
+### Always-on / auto-updating operation (optional)
+
+For a host that should keep the mesh running and **update itself on every push to
+`main`**, install the dev-society services with
+`scripts/dev-society-deploy-install.sh`. It provisions three launchd jobs from a
+dedicated deploy checkout (`~/.agent-mesh/deploy`) pinned to `main`:
+
+- the **dev-society daemon** (builds issues through the mesh),
+- **deploy-sync** — polls `origin/main` (~5 min), hard-resets the deploy checkout, and
+- the **dashboard** — served read-only on `:7077` from the deploy checkout's `dev-mesh`.
+
+When `main` advances, deploy-sync restarts the daemon **and** the dashboard, so the
+running services always reflect merged code. The manual `dashboard` command above
+remains the ad-hoc/dev path. Design:
+[`docs/superpowers/specs/2026-06-20-cd-dashboard-deploy-design.md`](docs/superpowers/specs/2026-06-20-cd-dashboard-deploy-design.md).
+
 Common mesh setup:
 
 ```sh

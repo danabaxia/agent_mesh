@@ -31,9 +31,28 @@ export function makeFileState(statePath) {
   };
 }
 
+function launchctlKick(label) {
+  return sh('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/${label}`], { maxBuffer: 1 << 20 });
+}
+
 export function makeLaunchctlRestart(label) {
+  return () => launchctlKick(label);
+}
+
+// Restart several launchd labels per advance: `required` labels are kicked first
+// and any failure propagates (so deploy-sync does NOT persist state → retried next
+// tick); `optional` labels (e.g. the dashboard) are best-effort — a failure is
+// logged and swallowed so it can never wedge the daemon's retry state.
+export function makeMultiRestart({ required = [], optional = [], kick = launchctlKick, log = () => {} }) {
   return async () => {
-    await sh('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/${label}`], { maxBuffer: 1 << 20 });
+    for (const label of required) await kick(label);
+    for (const label of optional) {
+      try {
+        await kick(label);
+      } catch (e) {
+        log({ ts: new Date().toISOString(), action: 'dashboard_restart_failed', label, error: e?.message || String(e) });
+      }
+    }
   };
 }
 
@@ -71,15 +90,24 @@ export async function runDeploySyncOnce({
 // CLI: node scripts/dev-society-deploy-sync.mjs  (run from inside the deploy worktree)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const deployPath = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
-  const label = process.env.DEV_SOCIETY_DAEMON_LABEL || 'com.danabaxia.agent-mesh.dev-society';
+  const daemonLabel = process.env.DEV_SOCIETY_DAEMON_LABEL || 'com.danabaxia.agent-mesh.dev-society';
+  const dashLabel = process.env.DEV_SOCIETY_DASHBOARD_LABEL || '';   // optional; unset → daemon-only (back-compat)
   const statePath = join(deployPath, '.dev-society', 'deploy-sync-state.json');
   const logPath = join(deployPath, '.dev-society', 'deploy-sync.log');
   const { readState, writeState } = makeFileState(statePath);
+  const appendLog = (r) => {
+    try { mkdirSync(dirname(logPath), { recursive: true });
+          writeFileSync(logPath, JSON.stringify(r) + '\n', { flag: 'a' }); } catch { /* best effort */ }
+  };
+  const restart = makeMultiRestart({
+    required: [daemonLabel],
+    optional: dashLabel ? [dashLabel] : [],
+    log: (r) => { appendLog(r); console.log(r.ts, r.action, r.label || ''); },
+  });
   const rec = await runDeploySyncOnce({
-    deployPath, restart: makeLaunchctlRestart(label), readState, writeState,
+    deployPath, restart, readState, writeState,
     log: (r) => {
-      try { mkdirSync(dirname(logPath), { recursive: true });
-            writeFileSync(logPath, JSON.stringify(r) + '\n', { flag: 'a' }); } catch { /* best effort */ }
+      appendLog(r);
       console.log(r.ts, r.action, r.target || '', r.restarted ? 'restarted' : (r.deferredRestart ? 'restart-deferred(build-busy)' : ''));
     },
   });
