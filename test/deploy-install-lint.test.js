@@ -68,6 +68,14 @@ test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchc
   assert.match(out, /bootstrap/);
   assert.match(out, /enable/);
   assert.match(out, /kickstart/);
+  // Issue #175: bootstrap → `load -w` fallback documented for the non-GUI EIO case
+  assert.match(out, /fallback: launchctl load -w/);
+  // Issue #175: plists staged before bootout, with rollback to <plist>.prev on failure
+  assert.match(out, /stage plists before any bootout/);
+  assert.match(out, /roll back to <plist>\.prev/);
+  // bootout must be described before bootstrap (stage → bootout → bootstrap ordering)
+  assert.ok(out.indexOf('stage plists before any bootout') < out.indexOf('reload daemon'),
+    'plists must be staged before the reload/bootout step');
   // Fix 2: RunAtLoad present in both daemon and sync plists
   assert.match(out, /<key>RunAtLoad<\/key>/);
   assert.match(out, /<true\/>/);

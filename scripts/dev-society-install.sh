@@ -76,6 +76,23 @@ preflight() {
 plist_path() { echo "$HOME/Library/LaunchAgents/$LABEL.plist"; }
 gui_target() { echo "gui/$(id -u)/$LABEL"; }
 
+# Bring up a LaunchAgent: bootout the old, then bootstrap the new with a legacy
+# `launchctl load -w` fallback. `bootstrap` is the modern API but fails with
+# `5: Input/output error` outside a GUI login session; `load -w` succeeds there.
+macos_bring_up() {  # $1 = gui target (gui/<uid>/<label>), $2 = plist path
+  local tgt="$1" plist="$2"
+  launchctl bootout "$tgt" 2>/dev/null || true
+  if launchctl bootstrap "gui/$(id -u)" "$plist" 2>/dev/null; then
+    :
+  elif launchctl load -w "$plist" 2>/dev/null; then
+    echo "note: 'launchctl bootstrap' failed (EIO outside a GUI session?); used 'launchctl load -w' for $tgt" >&2
+  else
+    echo "error: could not start $tgt via 'launchctl bootstrap' or 'launchctl load -w'" >&2
+    echo "hint: run from a GUI Terminal/login session, or manually: launchctl load -w \"$plist\"" >&2
+    return 1
+  fi
+}
+
 macos_install() {
   preflight
   local plist; plist="$(plist_path)"
@@ -114,8 +131,7 @@ $( [ -n "$CLAUDE_BIN" ] && printf '        <key>AGENT_MESH_CLAUDE</key><string>%
 </plist>
 PLIST
   local tgt; tgt="$(gui_target)"
-  launchctl bootout "$tgt" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist"
+  macos_bring_up "$tgt" "$plist"
   launchctl enable "$tgt" 2>/dev/null || true
   launchctl kickstart -p "$tgt" || true
   echo "installed launchd agent: $tgt"
@@ -160,8 +176,7 @@ $( [ -n "$CLAUDE_BIN" ] && printf '        <key>AGENT_MESH_CLAUDE</key><string>%
 </dict>
 </plist>
 PLIST
-  launchctl bootout "gui/$(id -u)/$REPORT_LABEL" 2>/dev/null || true
-  launchctl bootstrap "gui/$(id -u)" "$plist"
+  macos_bring_up "gui/$(id -u)/$REPORT_LABEL" "$plist"
   echo "installed daily-report LaunchAgent (${REPORT_HOUR}:00 local): $plist"
 }
 
