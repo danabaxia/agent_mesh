@@ -33,7 +33,12 @@ export const DUPLICATE = 'duplicate';
 export const INVALID = 'invalid';
 
 const TERMINAL = [DONE, REJECTED, WONTFIX, DUPLICATE, INVALID];
-const HUMAN_GATED = [SPEC_IN_REVIEW, PR_IN_REVIEW, BLOCKED, DISCUSSING];
+// Hard gates: never auto-build even when `approved`. `pr:in-review` already has a PR;
+// `blocked` is a failed/parked build needing a human (re-driving it loops — see #98).
+const HARD_GATED = [PR_IN_REVIEW, BLOCKED];
+// Review gates: hold an issue for human review ONLY until a human adds `approved`.
+// `approved` is the authoritative "build it" signal and overrides these (see routeFor).
+const REVIEW_GATED = [SPEC_IN_REVIEW, DISCUSSING];
 const CODE_TYPES = [BUG, ENHANCEMENT, DOCUMENTATION];
 const CI_PREFIX = /^(flake|real_bug|infra_auth|out_of_scope):/;
 
@@ -63,15 +68,12 @@ const present = (want, have) => want.filter((l) => have.has(l));
 export function planLabelRepair(issue) {
   const have = new Set(names(issue));
 
-  // Approved overrides the spec-review gate for code-typed issues. A human's
-  // natural action on a finished spec is to ADD `approved` — but `routeFor`
-  // human-gates `spec:in-review` ahead of the code route, so `approved` +
-  // `spec:in-review` deadlocks forever (not blocked → no repair; gated → no
-  // build). Once approved, the spec review is satisfied: clear it and let the
-  // daemon drain to the coder. Scoped to code-types (bug/enhancement/doc) so
-  // approved IDEAs don't ping-pong through the spec-draft loop; never touches an
-  // issue already at `pr:in-review`/`in-progress` (past this stage) or `blocked`
-  // (handled below).
+  // Tidy the board for the common case: an APPROVED code-typed issue still carrying
+  // `spec:in-review` gets that label cleared (its review is satisfied). routeFor already
+  // BUILDS any approved review-gated issue regardless of type (approved-overrides-review),
+  // so this is cosmetic — and deliberately scoped to code-types: clearing the review gate
+  // off a typeless issue would divert it to the triager, and off an `idea` would restart
+  // the spec-draft loop. Never touches blocked/pr:in-review/in-progress.
   if (!have.has(BLOCKED) && have.has(APPROVED) && have.has(SPEC_IN_REVIEW)
       && !have.has(PR_IN_REVIEW) && !have.has(IN_PROGRESS)
       && CODE_TYPES.some((l) => have.has(l))) {
@@ -82,7 +84,7 @@ export function planLabelRepair(issue) {
       comment: [
         'Auto-cleared `spec:in-review` because this code-typed issue is `approved`.',
         '',
-        'Approval satisfies the spec review gate; removing `spec:in-review` lets the dev-society daemon route it to the coder. Without this, an approved issue still carrying `spec:in-review` deadlocks (approved but human-gated).',
+        'Approval satisfies the spec review gate; the human only adds `approved` and the daemon routes it to the coder (routeFor builds any approved review-gated issue regardless).',
       ].join('\n'),
     };
   }
@@ -136,13 +138,24 @@ export function routeFor(issue, { liveBuilds = new Set(), staleClaims = new Set(
   const has = (l) => ls.includes(l);
   const n = issue?.number;
   if (TERMINAL.some(has)) return { target: null, reason: 'terminal' };
-  if (HUMAN_GATED.some(has)) return { target: null, reason: 'human-gated' };
+  if (HARD_GATED.some(has)) return { target: null, reason: 'human-gated' };
   if (has(IN_PROGRESS)) {
     if (!liveBuilds.has(n) && staleClaims.has(n)) {
       return { target: 'coder', mode: 'do', reason: 'stale-reclaim', clear: IN_PROGRESS };
     }
     return { target: null, reason: 'building' };
   }
+  // `approved` is the single human "build it" signal — the human's only action is
+  // adding the label. It OVERRIDES the review gates (spec:in-review / discussing): an
+  // approved issue at review never sits idle, it routes straight to the coder. (Hard
+  // gates pr:in-review/blocked + terminal still win above — those aren't idle states.
+  // An approved issue with NO review gate falls through to its normal route below —
+  // idea→draft, code-type→coder, else→triage — so an approved issue is ALWAYS worked.)
+  if (has(APPROVED) && REVIEW_GATED.some(has)) {
+    return { target: 'coder', mode: 'do', reason: 'approved-overrides-review', clear: REVIEW_GATED.filter(has) };
+  }
+  // Not approved: the review gates hold (awaiting a human's `approved`).
+  if (REVIEW_GATED.some(has)) return { target: null, reason: 'human-gated' };
   if (has(IDEA) && !has(APPROVED)) return { target: null, reason: 'idea-needs-approval' };
   if (CI_PREFIX.test(String(issue?.title || ''))) return { target: 'triager', mode: 'ask', reason: 'ci-failure' };
   if (has(SPEC_DRAFT)) return { target: 'analyst', mode: 'ask', reason: 'spec-finalize', spec: true };

@@ -41,6 +41,20 @@ npm install -g ./agent-mesh-*.tgz  # add --prefix ~/.local if you lack admin rig
 agent-mesh --help                  # verify
 ```
 
+Or install a prebuilt release straight from GitHub (no clone or pack needed):
+
+```sh
+# edge — rebuilt on every green push to main (moving target):
+npm i -g https://github.com/danabaxia/agent_mesh/releases/download/edge/agent-mesh.tgz
+# latest stable version (advances only on a package.json version bump):
+npm i -g https://github.com/danabaxia/agent_mesh/releases/latest/download/agent-mesh.tgz
+# a pinned version:
+npm i -g https://github.com/danabaxia/agent_mesh/releases/download/v0.1.0/agent-mesh.tgz
+```
+
+These are published by [`.github/workflows/release.yml`](.github/workflows/release.yml)
+after CI passes on `main`.
+
 To deploy to another machine, copy the `.tgz` over and run
 `npm i -g ./agent-mesh-<version>.tgz` there. Full options (per-platform notes,
 PATH setup, uninstall) are in [`INSTALL.md`](INSTALL.md).
@@ -57,6 +71,22 @@ node ./bin/agent-mesh.js dashboard /path/to/mesh --allow-shell --enable-chat
 The default dashboard is read-only. Add `--allow-shell` only when the browser
 should launch or mirror native Claude CLI sessions. Add `--enable-chat` when
 you want the in-dashboard ask-only A2A chat composer.
+
+### Always-on / auto-updating operation (optional)
+
+For a host that should keep the mesh running and **update itself on every push to
+`main`**, install the dev-society services with
+`scripts/dev-society-deploy-install.sh`. It provisions three launchd jobs from a
+dedicated deploy checkout (`~/.agent-mesh/deploy`) pinned to `main`:
+
+- the **dev-society daemon** (builds issues through the mesh),
+- **deploy-sync** — polls `origin/main` (~5 min), hard-resets the deploy checkout, and
+- the **dashboard** — served read-only on `:7077` from the deploy checkout's `dev-mesh`.
+
+When `main` advances, deploy-sync restarts the daemon **and** the dashboard, so the
+running services always reflect merged code. The manual `dashboard` command above
+remains the ad-hoc/dev path. Design:
+[`docs/superpowers/specs/2026-06-20-cd-dashboard-deploy-design.md`](docs/superpowers/specs/2026-06-20-cd-dashboard-deploy-design.md).
 
 Common mesh setup:
 

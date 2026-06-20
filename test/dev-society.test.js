@@ -185,12 +185,37 @@ test('planLabelRepair: spec:in-review WITHOUT approved stays human-gated (no rep
   assert.equal(devCore.planLabelRepair(issue(12, [ENHANCEMENT, SPEC_IN_REVIEW])), null);
 });
 
-test('routeFor: idea needs approval; approved idea → analyst draft (advance spec:draft)', () => {
+test('routeFor: idea needs approval; approved idea (no review gate) → analyst draft (advance spec:draft)', () => {
   assert.equal(routeFor(issue(1, [IDEA])).target, null, 'idea without approval skipped');
   const r = routeFor(issue(2, [IDEA, APPROVED]));
   assert.equal(r.target, 'analyst');
   assert.equal(r.mode, 'ask');
   assert.equal(r.advance, SPEC_DRAFT);
+});
+
+test('routeFor: `approved` overrides the review gate → coder, for EVERY type (the human only adds approved)', () => {
+  // spec:in-review + approved → coder, regardless of type label present
+  for (const extra of [[], [BUG], [ENHANCEMENT], [DOCUMENTATION], [IDEA]]) {
+    const r = routeFor(issue(1, [SPEC_IN_REVIEW, APPROVED, ...extra]));
+    assert.equal(r.target, 'coder', `approved+spec:in-review+[${extra}] → coder`);
+    assert.equal(r.mode, 'do');
+    assert.deepEqual(r.clear, [SPEC_IN_REVIEW]);
+  }
+  // discussing + approved → coder too
+  assert.equal(routeFor(issue(2, [DISCUSSING, APPROVED])).target, 'coder');
+});
+
+test('routeFor: `approved` does NOT override the HARD gates (blocked / pr:in-review) or terminal', () => {
+  assert.equal(routeFor(issue(1, [BLOCKED, APPROVED, SPEC_IN_REVIEW])).target, null, 'blocked stays a hard stop');
+  assert.equal(routeFor(issue(2, [PR_IN_REVIEW, APPROVED])).target, null, 'pr:in-review already has a PR');
+  assert.equal(routeFor(issue(3, [DONE, APPROVED])).target, null, 'terminal');
+});
+
+test('routeFor: an approved issue is NEVER idle — every non-terminal/non-hard-gated approved issue gets an agent', () => {
+  // code-type (no review gate) → coder; typeless → triager; idea (no spec) → analyst; all non-null
+  for (const labels of [[ENHANCEMENT, APPROVED], [APPROVED], [IDEA, APPROVED], [SPEC_IN_REVIEW, APPROVED]]) {
+    assert.notEqual(routeFor(issue(1, labels)).target, null, `approved [${labels}] must be worked`);
+  }
 });
 
 test('routeFor: spec:draft → analyst finalize (spec PR)', () => {

@@ -727,6 +727,17 @@
       "ts": "2026-06-20"
     }
   },
+  "label-preflight-before-issue-create": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "ensureLabels() before every gh issue create loop — label-missing 422 aborts the whole run silently, not per-label.",
+    "l1": "PR #191: `gh issue create --label X` 422s when label X is absent — GitHub never auto-creates labels, silently aborting the whole run. All 4 mesh filers had latent 422 risk: analyst (patched manually #182), MIR syncReport, daemon heartbeat, automerge escalation still exposed. Fix: src/gh-labels.js ensureLabels(gh, labels, {repo,color}) — idempotent, best-effort, injected-gh for unit testing. Call once per filer before the issue-create loop. A single-filer manual patch is a systemic-gap signal: audit all filers sharing the same create verb.",
+    "value": "Apply to any autonomous process calling `gh issue create --label X`.\n\n(1) `gh issue create --label X` returns HTTP 422 when label X is absent — GitHub does NOT auto-create labels. The run aborts silently with no issues created. A single manual `gh label create` patch leaves all other filers at risk.\n\n(2) Idempotent label preflight: call `ensureLabels(gh, labels, {repo, color})` once per filer before its issue-create loop. It calls `gh label create` for each label and silently swallows the already-exists error — never throws. Safe to call on every run.\n\n(3) Blast radius audit: when you add label preflight to ONE filer, grep for every other `gh issue create` or `gh issue edit --add-label` in the codebase. Each is a latent 422 if its label set is not pre-ensured.\n\n(4) Inject `gh` for hermetic unit testing. Test cases: dedup (labels deduplicated before calling), idempotent (already-exists swallowed), correct repo/color args, empty/non-string names ignored. Wiring test: assert `gh label create` precedes the first `gh issue create` call for each filer.\n\n(5) Filer inventory (this mesh): analyst-review-run.mjs, src/mesh-improvement/run.js, scripts/dev-society-daemon.mjs, src/automerge/escalation-sweep.js — all wired in PR #191.\n\nProvenance: PR #191 (2026-06-20), closes #188 #182.",
+    "provenance": {
+      "source": "PR #191: feat(gh-labels): self-healing ensureLabels at every mesh issue-filer",
+      "ts": "2026-06-20"
+    }
+  },
   "label-lifecycle-predecessor-clear": {
     "status": "active",
     "valid_to": null,
@@ -735,6 +746,28 @@
     "value": "For any multi-step label lifecycle where a human approval action supersedes a prior automated state:\n\n(1) Identify predecessor labels that can co-exist with 'approved' after a single human action (e.g. adding 'approved' without removing 'spec:in-review'). Co-existence that leaves the issue unrouted AND unrepaired is a deadlock.\n\n(2) Fix in planLabelRepair, not routeFor: planLabelRepair is the repair layer; routeFor is the routing layer. After the repair sweep clears the predecessor, the issue arrives at routeFor in a clean state.\n\n(3) Scope to applicable issue types: code-type (bug/enhancement/documentation). 'idea' must be excluded — idea → spec:draft → spec:in-review → cleared → idea is an infinite loop.\n\n(4) Guard on post-gate conditions: skip when blocked/pr:in-review/in-progress — the issue is already past the spec stage.\n\n(5) Latency: label-repair-sweep runs every 10 min; max 10 min after human approval before drain.\n\nTest matrix: approved+spec:in-review+code-type → removes spec:in-review → routed; approved+spec:in-review+idea → no repair; approved+spec:in-review+in-progress → no repair; spec:in-review without approved → stays human-gated.\n\nRed flag: approved+lifecycle-predecessor-label sitting unchanged >10 min → planLabelRepair is missing a rule. Provenance: PR #192 (2026-06-20), issue #175 stranded ~11h.",
     "provenance": {
       "source": "PR #192: fix(dev-society): drain the approved+spec:in-review deadlock (unblocks #175)",
+      "ts": "2026-06-20"
+    }
+  },
+  "build-lock-deploy-sync-deferral": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Deploy-sync: hold build lock for full task; restart deferred while fresh; reset runs always; stale lock = not-busy.",
+    "l1": "PR #197: deploy-sync restarts daemon every 5 min when origin/main advances; frequent memory PR merges caused restarts mid-build, orphaning issues (build finished but commit→push→gh pr create never ran). Fix: hold `.dev-society/build.lock` ({issue,pid,ts}) for the whole `runOneTask`; `planDeploySync` defers restart while lock age < 12 min (past 10-min A2A timeout = not-busy). Reset still runs harmlessly. Lock released in `finally`. Stale/absent/corrupt → not-busy; a crashed build cannot wedge deploy-sync permanently.",
+    "value": "Pattern: decouple \"reset\" (idempotent, safe) from \"restart\" (disruptive) in any deploy-sync cycle that may run concurrently with long-duration tasks.\n\n(1) Build-lock file: src/dev-society/build-lock.js exports acquireBuildLock(dir, issue), releaseBuildLock(dir), readBuildBusy(dir, staleMs). Lock payload: {issue, pid, ts}. Acquire writes atomically; release deletes; readBuildBusy reads and checks age: lock.ts + staleMs ≤ Date.now() → not-busy.\n\n(2) Stale TTL = max task timeout + margin. PR #197: 12 min (past the 10-min A2A per-task timeout). A crashed/hung build's lock becomes stale before sync can be permanently blocked.\n\n(3) runOneTask: acquire lock AFTER claiming the issue, BEFORE the build begins. Release in `finally` — a throw, reject, or timeout always frees it.\n\n(4) planDeploySync({..., buildBusy}): returns {restart:false, deferredRestart:true} when buildBusy is true. Reset runs unconditionally (the daemon is already in memory; reset is harmless). Next sync tick re-evaluates; once lock is released → restart proceeds.\n\n(5) Log the deferral: runDeploySyncOnce logs 'restart-deferred(build-busy)' so the operator can see deferral cycles in the daemon log.\n\n(6) Fail-open on lock I/O: absent/corrupt/non-JSON lock → not-busy. Never block restart on an unreadable lock — degraded safety beats a permanently-stuck daemon.\n\n(7) Tests: build-lock.test.js covers acquire/release/fresh-busy/stale-not-busy/absent/corrupt; deploy-sync.test.js covers planDeploySync with buildBusy true/false; daemon source-lint asserts acquire precedes the build and release is in finally.\n\nApplies to: any daemon with a periodic restart step (deploy-sync, rolling-update, config-reload) that may co-run with long-duration owned tasks.",
+    "provenance": {
+      "source": "PR #197: fix(deploy-sync): defer daemon restart during in-flight coder builds (build-lock)",
+      "ts": "2026-06-20"
+    }
+  },
+  "deploy-sync-tiered-restart": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "deploy-sync multi-service: required restarts gate state advancement; best-effort restarts log-only and never block.",
+    "l1": "PR #200: dashboard brought under CD alongside daemon via makeMultiRestart. Required services (daemon): failure rejects, state not advanced, retry next tick. Best-effort services (dashboard): errors caught and logged, never propagated — dashboard failure never wedges daemon CD. Pattern lets new services join CD without raising blast radius on the critical path.",
+    "value": "When multiple services share a deploy-sync cycle, classify by restart criticality:\n\n(1) Required (daemon): kicked first; failure rejects → state not advanced → retry next tick.\n\n(2) Best-effort (dashboard): kicked after; errors logged, never thrown — failure never blocks critical path.\n\nNew services: best-effort by default; wire via env var (DASHBOARD_LABEL). Planner unchanged. PR #200.",
+    "provenance": {
+      "source": "PR #200: feat(cd): bring the dashboard under deploy-sync CD (auto-update on push to main)",
       "ts": "2026-06-20"
     }
   }
