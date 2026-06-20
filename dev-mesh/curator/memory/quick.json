@@ -792,5 +792,16 @@
       "source": "PR #204: feat(release): publish tarball as GitHub Release on green main (edge + versioned)",
       "ts": "2026-06-20"
     }
+  },
+  "gh-pr-list-sort-before-select": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "gh pr list returns newest-first; [0] without sort starves older PRs — always sort_by(.updatedAt) first.",
+    "l1": "PR #220 (fix/review-respond-fair-select): review-respond picked CHANGES_REQUESTED PRs with [select(...)][0] — gh pr list is descending (newest first), so newest PR was always chosen, starving older ones. Fix: sort_by(.updatedAt) | .[0] picks longest-waiting; once a fix commit lands, updatedAt bumps newest and it rotates to back naturally. Same bug class as PR #205 mergefix selector.",
+    "value": "Any gh pr list | jq '[select(...)][0]' is a starvation trap — add sort_by(.updatedAt) before indexing:\n  gh pr list --json number,updatedAt,reviewDecision \\\n    | jq '[.[] | select(.reviewDecision==\"CHANGES_REQUESTED\")] | sort_by(.updatedAt) | .[0]'\nWorks for any single-item picker (CHANGES_REQUESTED, failing checks, needs-review). On each fix commit, updatedAt bumps to newest so the PR rotates to back — stateless, no extra state file. If you explicitly want newest-first (sprint triage), be explicit: sort_by(.updatedAt) | reverse | .[0]. Never rely on gh default order as meaningful selection. Add sort_by to any [0] selector that must be fair. Provenance: PR #220 (2026-06-20); same class as PR #205.",
+    "provenance": {
+      "source": "PR #220 (2026-06-20): fix(dev-mesh-review-respond): fair PR selection (no head-of-line starvation)",
+      "ts": "2026-06-20"
+    }
   }
 }

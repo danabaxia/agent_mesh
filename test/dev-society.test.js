@@ -218,6 +218,30 @@ test('routeFor: an approved issue is NEVER idle — every non-terminal/non-hard-
   }
 });
 
+test('routeFor: a `bug` auto-fixes WITHOUT human approval — overrides the review gate', () => {
+  // bug + spec:in-review (NO approved) → coder; this is the gap (#183 was human-gated)
+  const r = routeFor(issue(183, [BUG, SPEC_IN_REVIEW]));
+  assert.equal(r.target, 'coder');
+  assert.equal(r.mode, 'do');
+  assert.equal(r.reason, 'bug-autofix');
+  assert.deepEqual(r.clear, [SPEC_IN_REVIEW]);
+  // bug + discussing → coder too; bare bug (no gate) still → coder
+  assert.equal(routeFor(issue(2, [BUG, DISCUSSING])).target, 'coder');
+  assert.equal(routeFor(issue(3, [BUG])).target, 'coder');
+});
+
+test('routeFor: bug-autofix does NOT override hard gates (blocked / pr:in-review) or terminal', () => {
+  assert.equal(routeFor(issue(1, [BUG, BLOCKED])).target, null, 'blocked bug stays a hard stop (#98 loop guard)');
+  assert.equal(routeFor(issue(2, [BUG, PR_IN_REVIEW])).target, null, 'bug with a PR already');
+  assert.equal(routeFor(issue(3, [BUG, DONE])).target, null, 'terminal');
+});
+
+test('routeFor: ONLY `bug` auto-fixes past review — enhancement/documentation/idea still need approval', () => {
+  assert.equal(routeFor(issue(1, [ENHANCEMENT, SPEC_IN_REVIEW])).target, null, 'enhancement at review still waits for approved');
+  assert.equal(routeFor(issue(2, [DOCUMENTATION, SPEC_IN_REVIEW])).target, null, 'documentation at review still waits for approved');
+  assert.equal(routeFor(issue(3, [IDEA, SPEC_IN_REVIEW])).target, null, 'idea at review still waits for approved');
+});
+
 test('routeFor: spec:draft → analyst finalize (spec PR)', () => {
   const r = routeFor(issue(3, [SPEC_DRAFT]));
   assert.equal(r.target, 'analyst');

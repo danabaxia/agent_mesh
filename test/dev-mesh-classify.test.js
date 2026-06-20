@@ -73,6 +73,18 @@ test('extractSignals parses count / failing tests / files / duration (path-agnos
   assert.equal(s.infraError, false);
 });
 
+test('extractSignals: api_error_status:null in success envelope does not trigger infraError', () => {
+  const log = '{"result":"OK","is_error":false,"api_error_status":null,"num_turns":1}';
+  const s = extractSignals(log);
+  assert.equal(s.infraError, false);
+});
+
+test('extractSignals: api_error_status with a real error string triggers infraError', () => {
+  const log = '{"result":null,"is_error":true,"api_error_status":"overloaded_error"}';
+  const s = extractSignals(log);
+  assert.equal(s.infraError, true);
+});
+
 test('end-to-end: the real Windows process-tree flake classifies as flake', () => {
   const log = [
     'not ok 1 - spawnFile timeout kills the whole process tree',

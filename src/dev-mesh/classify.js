@@ -26,7 +26,7 @@ const INFRA_RE = new RegExp([
   'not logged in', 'authentication_error', 'invalid auth', '401 unauthorized',
   '403 forbidden', 'resource not accessible by integration', 'secret is not set',
   'ENOTFOUND', 'ECONNREFUSED', 'ETIMEDOUT', 'could not resolve host',
-  'command failed: claude', "'error'\\s*!==\\s*'done'", 'claude -p failed', 'api_error_status'
+  'command failed: claude', "'error'\\s*!==\\s*'done'", 'claude -p failed', 'api_error_status":\\s*"(?!null)'
 ].join('|'), 'i');
 
 const TESTS_RE = /# tests (\d+)/;
