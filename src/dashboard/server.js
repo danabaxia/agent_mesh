@@ -13,7 +13,7 @@
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { readFile, readdir, stat, realpath, mkdir, writeFile, rm, unlink, open } from 'node:fs/promises';
-import { readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, relative, resolve, extname, dirname, basename, isAbsolute, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,7 @@ import { fetchRemoteImage, defaultPinnedFetch } from './img-proxy.js';
 import { createScheduler } from '../schedule/scheduler.js';
 import { validateCadence, describeCadence } from '../schedule/schedule-cadence.js';
 import { listAllSchedules } from '../schedule/list-all.js';
+import { listCiSchedules } from '../dev-society/ci-schedules.js';
 import { markJobDue } from '../schedule/run-now.js';
 import { createRotationManager } from './rotation.js';
 import { runDigest } from '../digest.js';
@@ -800,6 +801,29 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     const { jobs } = await listAllSchedules({ meshRoot });
     const schedulerOwner = dashboardOwnsScheduler ? 'dashboard' : (jobs.length ? 'daemon' : 'none');
     sendJson(res, 200, { schedulerOwner, jobs });
+    return;
+  }
+
+  // GET /api/ci-schedules → read-only view of GitHub Actions cron workflows
+  // (parsed from .github/workflows) enriched with last-run/status from the
+  // gh-activity cache. No `gh` calls. Auth-gated by the upstream API gate.
+  if (pathname === '/api/ci-schedules' && req.method === 'GET') {
+    const wfDir = resolve(meshRoot, '..', '.github', 'workflows');
+    let files;
+    try {
+      files = readdirSync(wfDir)
+        .filter((f) => /\.ya?ml$/.test(f))
+        .map((f) => ({ name: f, text: readFileSync(join(wfDir, f), 'utf8') }));
+    } catch {
+      sendJson(res, 200, { workflows: [] });   // no workflows dir → empty
+      return;
+    }
+    const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY
+      || resolve(meshRoot, '..', '.dev-society', 'gh-activity.json');
+    let ghActivity = [];
+    try { const p = JSON.parse(readFileSync(ghActivityPath, 'utf8')); if (Array.isArray(p)) ghActivity = p; }
+    catch { ghActivity = []; }                  // missing/corrupt cache → still parse files
+    sendJson(res, 200, { workflows: listCiSchedules({ files, ghActivity }) });
     return;
   }
 
