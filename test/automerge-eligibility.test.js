@@ -20,7 +20,7 @@ test('non-APPROVED reviews → not mergeable', () => {
   }
 });
 test('any hold label → not mergeable', () => {
-  for (const l of ['do-not-merge', 'hold', 'wip']) {
+  for (const l of ['do-not-merge', 'hold', 'wip', 'blocked-by-issue']) {
     assert.equal(isAutoMergeable({ ...ok, labels: [{ name: 'approved' }, { name: l }] }), false, l);
   }
 });

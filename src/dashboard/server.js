@@ -11,7 +11,7 @@
  */
 
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { readFile, readdir, stat, realpath, mkdir, writeFile, rm, unlink, open } from 'node:fs/promises';
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join, relative, resolve, extname, dirname, basename, isAbsolute, sep } from 'node:path';
@@ -52,6 +52,7 @@ import { fetchRemoteImage, defaultPinnedFetch } from './img-proxy.js';
 import { createScheduler } from '../schedule/scheduler.js';
 import { validateCadence, describeCadence } from '../schedule/schedule-cadence.js';
 import { listAllSchedules } from '../schedule/list-all.js';
+import { markJobDue } from '../schedule/run-now.js';
 import { createRotationManager } from './rotation.js';
 import { runDigest } from '../digest.js';
 import { buildResumeCommand } from './resume-command.js';
@@ -211,6 +212,38 @@ function parseWorkflowMd(raw) {
 // instead of launching a real Explorer window.
 function defaultSpawnLocate(fullPath) {
   spawn('explorer.exe', ['/select,' + fullPath], { detached: true, stdio: 'ignore' }).unref();
+}
+
+// Default Daily Mesh Report regenerator for POST /api/daily/refresh: run
+// scripts/daily-report.mjs (no --post — rebuild the cache only, like the
+// daily-report-refresh builtin), inheriting env so gh auth/DEV_SOCIETY_REPO apply.
+// Injectable via createDashboardServer({ regenerateDaily }) so tests stub it.
+// Resolves on exit 0; rejects on non-zero, spawn error, or a 120s timeout.
+// Parse an owner/repo slug from a git remote URL (https or ssh form), or '' if none.
+// daily-report.mjs requires DEV_SOCIETY_REPO; a manually-launched dashboard won't have
+// it in env (only the launchd daemon pins it), so we derive it from the repo's remote.
+export function repoSlugFromRemote(url) {
+  const m = String(url || '').trim().match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?\/?$/);
+  return m ? m[1] : '';
+}
+
+function defaultRegenerateDaily(meshRoot) {
+  const repoRoot = resolve(meshRoot, '..');
+  const script = join(repoRoot, 'scripts', 'daily-report.mjs');
+  const env = { ...process.env };
+  if (!env.DEV_SOCIETY_REPO) {
+    try {
+      const url = execFileSync('git', ['-C', repoRoot, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8' });
+      const slug = repoSlugFromRemote(url);
+      if (slug) env.DEV_SOCIETY_REPO = slug;
+    } catch { /* no git/remote — daily-report.mjs will report the missing repo itself */ }
+  }
+  return new Promise((res, rej) => {
+    const child = spawn(process.execPath, [script], { cwd: repoRoot, stdio: 'ignore', env });
+    const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* already gone */ } rej(new Error('daily-report timed out')); }, 120000);
+    child.on('error', (e) => { clearTimeout(timer); rej(e); });
+    child.on('exit', (code) => { clearTimeout(timer); code === 0 ? res() : rej(new Error(`daily-report exited ${code}`)); });
+  });
 }
 
 // Text MIME types: we serve these as text; everything else → metadata stub
@@ -637,7 +670,7 @@ function consoleErrorStatus(code) {
 // Route handling
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dashboardOwnsScheduler }) {
+async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dailyRefresh, dashboardOwnsScheduler }) {
   applySecurityHeaders(res);
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenerPort}`);
@@ -711,6 +744,33 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     return;
   }
 
+  // POST /api/daily/refresh → regenerate the Daily Mesh Report cache on demand
+  // (runs daily-report.mjs via the injectable regenerator), then return the fresh
+  // report — the manual ↻ + periodic auto-refresh behind the Token/Issues/PR panels,
+  // which otherwise only update on the daily schedule. Concurrent requests coalesce
+  // onto one in-flight regeneration (dailyRefresh.inflight).
+  if (pathname === '/api/daily/refresh' && req.method === 'POST') {
+    try {
+      if (!dailyRefresh.inflight) {
+        dailyRefresh.inflight = Promise.resolve(dailyRefresh.fn(meshRoot)).finally(() => { dailyRefresh.inflight = null; });
+      }
+      await dailyRefresh.inflight;
+    } catch (err) {
+      sendJson(res, 502, { ok: false, error: { code: 'refresh_failed', message: String(err && err.message || err) } });
+      return;
+    }
+    const cachePath = dailyReportPath
+      || process.env.AGENT_MESH_DAILY_REPORT_CACHE
+      || resolve(meshRoot, '..', '.dev-society', 'daily-report.json');
+    try {
+      const report = JSON.parse(readFileSync(cachePath, 'utf8'));
+      sendJson(res, 200, { ok: true, available: true, report });
+    } catch {
+      sendJson(res, 200, { ok: true, available: false });
+    }
+    return;
+  }
+
   // GET /api/tokens?range=today|week|month → the token-consumption panel model,
   // aggregated from the per-date daily-report caches. today = the latest report;
   // week/month = sum the last 7/30 dated caches (missing days skipped).
@@ -740,6 +800,38 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     const { jobs } = await listAllSchedules({ meshRoot });
     const schedulerOwner = dashboardOwnsScheduler ? 'dashboard' : (jobs.length ? 'daemon' : 'none');
     sendJson(res, 200, { schedulerOwner, jobs });
+    return;
+  }
+
+  // POST /api/schedules/run { agent, id } → 202 re-arms the job's nextRunAt to
+  // now so the daemon's next tick (≤30 s) picks it up. Does NOT require a
+  // dashboard-side scheduler. Validates: manifest entry (404), path safety
+  // (403), job in defs (404), job enabled (409). Writes only schedule-state.json.
+  if (pathname === '/api/schedules/run' && req.method === 'POST') {
+    let body;
+    try { body = JSON.parse((await readBodyCapped(req, 4096)) || '{}'); }
+    catch (err) { sendJson(res, err.tooLarge ? 413 : 400, { ok: false, error: { code: 'bad_input' } }); return; }
+    const name = String(body.agent || '');
+    const id = String(body.id || '');
+    if (!isSafeArtifactId(id)) { sendJson(res, 400, { ok: false, error: { code: 'bad_id' } }); return; }
+    const snapshot = await loadDashboardSnapshot(meshRoot);
+    const entry = snapshot?.manifest?.agents?.find((a) => a.name === name);
+    if (!entry) { send404(res); return; }
+    const agentRoot = resolve(join(meshRoot, entry.root));
+    const inside = await isPathInsideRoot(meshRoot, agentRoot).catch(() => false);
+    if (!inside) { send403(res, 'Agent root escapes mesh boundary'); return; }
+    const defs = await readScheduleFile(agentRoot);
+    const job = defs.jobs.find((j) => j && j.id === id);
+    if (!job) { send404(res); return; }
+    if (!job.enabled) { sendJson(res, 409, { ok: false, error: { code: 'disabled', message: 'enable the job to run it' } }); return; }
+    const statePath = scheduleStatePath(agentRoot);
+    let state = {};
+    try { state = JSON.parse(await readFile(statePath, 'utf8')); } catch { state = {}; }
+    const next = markJobDue(state, id, new Date());
+    await mkdir(dirname(statePath), { recursive: true });
+    await writeFile(statePath, JSON.stringify(next, null, 2) + '\n', 'utf8');
+    if (scheduler) Promise.resolve(scheduler.runNow(name, id)).catch(() => { /* recorded in state */ });
+    sendJson(res, 202, { ok: true, queued: true, runsWithinMs: 30000 });
     return;
   }
 
@@ -2641,7 +2733,9 @@ function loadOrCreatePersistedToken(meshRoot) {
   return fresh;
 }
 
-export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir }) {
+export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir, regenerateDaily }) {
+  // Shared in-flight guard so concurrent POST /api/daily/refresh coalesce onto one run.
+  const dailyRefresh = { fn: regenerateDaily ?? defaultRegenerateDaily, inflight: null };
   // Resolve auth token. Precedence:
   //   1. Explicit `token` arg (tests inject deterministic tokens)
   //   2. Persisted token at <meshRoot>/.agent-mesh/dashboard-token (so a CLI
@@ -2770,6 +2864,7 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
       scheduler: sched,
       dailyReportPath,
       dailyReportDir,
+      dailyRefresh,
       dashboardOwnsScheduler: schedulerOwned
     }).catch((err) => {
       applySecurityHeaders(res);

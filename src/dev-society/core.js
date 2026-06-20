@@ -42,6 +42,63 @@ const names = (issue) => (issue?.labels || []).map((l) => (typeof l === 'string'
 /** Normalized label names of an issue (string | {name}). */
 export function labelNames(issue) { return names(issue); }
 
+/** An OPEN issue carrying a terminal label (done/rejected/wontfix/duplicate/invalid)
+ *  that nothing else closes — the sweep should `gh issue close` it so it doesn't hang. */
+export function isTerminalState(issue) {
+  return names(issue).some((l) => TERMINAL.includes(l));
+}
+
+const SECURITY_SWEEP_TITLE = /^dev-mesh security alert$/i;
+const SECURITY_SWEEP_BLOCKING_BODY = /Dev-mesh scheduled security sweep\s+[-—]\s+BLOCKING finding/i;
+const BLOCKED_CONFLICT_LABELS = [APPROVED, ROUTE_LABEL, IN_PROGRESS, PR_IN_REVIEW];
+
+const missing = (want, have) => want.filter((l) => !have.has(l));
+const present = (want, have) => want.filter((l) => have.has(l));
+
+/**
+ * Plan safe, deterministic label repairs for machine-obvious workflow drift.
+ * Never auto-unblocks arbitrary human-blocked work; only dev-mesh security alerts
+ * are promoted into the A2A repair path.
+ */
+export function planLabelRepair(issue) {
+  const have = new Set(names(issue));
+  if (!have.has(BLOCKED)) return null;
+
+  const title = String(issue?.title || '');
+  const body = String(issue?.body || '');
+  const isSecurityAlert = SECURITY_SWEEP_TITLE.test(title) && SECURITY_SWEEP_BLOCKING_BODY.test(body);
+  if (isSecurityAlert) {
+    return {
+      reason: 'security-alert-auto-route',
+      add: missing([APPROVED, ROUTE_LABEL, BUG], have),
+      remove: [BLOCKED],
+      comment: [
+        'Auto-normalized security alert labels for the local A2A mesh.',
+        '',
+        'This issue was created by the scheduled security sweep with a blocking finding.',
+        'Removed `blocked` and added `approved`, `route:a2a`, and `bug` so the local dev-society daemon can attempt a repair PR.',
+      ].join('\n'),
+    };
+  }
+
+  const cleanup = present(BLOCKED_CONFLICT_LABELS, have);
+  if (cleanup.length) {
+    return {
+      reason: 'blocked-conflict-cleanup',
+      add: [],
+      remove: cleanup,
+      comment: [
+        'Auto-normalized contradictory labels and kept `blocked` in place.',
+        '',
+        `Removed workflow labels: ${cleanup.map((l) => `\`${l}\``).join(', ')}.`,
+        'A human can re-add `approved` or `route:a2a` after the blocker is resolved.',
+      ].join('\n'),
+    };
+  }
+
+  return null;
+}
+
 /**
  * Decide where an open issue goes. First match wins. Returns { target, mode, reason }
  * plus optional { advance } (label to add), { spec } (use the spec-PR path), { clear }

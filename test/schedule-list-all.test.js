@@ -17,11 +17,11 @@ function fixture() {
     { name: 'reviewer', root: './reviewer' },
   ] };
   const files = {
-    // coder: one enabled daily job with state
-    [join(coderRoot, '.agent', 'schedule.json')]: { jobs: [{ id: 'j1', name: 'Nightly', cadence: { kind: 'daily', at: '07:00' }, enabled: true }] },
+    // coder: one enabled daily job with state + explicit description
+    [join(coderRoot, '.agent', 'schedule.json')]: { jobs: [{ id: 'j1', name: 'Nightly', cadence: { kind: 'daily', at: '07:00' }, enabled: true, description: 'My job desc' }] },
     [join(coderRoot, '.agent-mesh', 'schedule-state.json')]: { j1: { lastRunAt: '2026-06-18T07:00:00Z', lastStatus: 'ok', lastSummary: 'done', nextRunAt: '2026-06-19T07:00:00Z', running: false } },
-    // reviewer: one disabled job, no state
-    [join(reviewerRoot, '.agent', 'schedule.json')]: { jobs: [{ id: 'j2', name: 'Hourly', cadence: { kind: 'every', minutes: 60 }, enabled: false }] },
+    // reviewer: one disabled job with prompt fallback, no state
+    [join(reviewerRoot, '.agent', 'schedule.json')]: { jobs: [{ id: 'j2', name: 'Hourly', cadence: { kind: 'every', minutes: 60 }, enabled: false, prompt: 'Do the thing\nmore' }] },
   };
   const readManifestFn = async () => manifest;
   const readJsonFn = async (path, fallback) => (path in files ? files[path] : fallback);
@@ -43,6 +43,10 @@ test('listAllSchedules aggregates every agent job with merged state + cadence la
   assert.equal(j2.enabled, false);
   assert.equal(j2.lastStatus, null);   // no state file → nulls
   assert.equal(j2.running, false);
+  // description field: explicit description and prompt-first-line fallback
+  const byId = Object.fromEntries(jobs.map((j) => [j.id, j]));
+  assert.equal(byId['j1'].description, 'My job desc');
+  assert.equal(byId['j2'].description, 'Do the thing');   // prompt first-line fallback
 });
 
 test('listAllSchedules on unreadable manifest → empty', async () => {

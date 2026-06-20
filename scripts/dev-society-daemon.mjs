@@ -122,6 +122,9 @@ if (!once && !selftest) {
         ? { status: 'ok', output: res.summary }
         : { status: 'fail', error: res.summary };
     },
+    'label-repair-sweep': () => labelRepairSweep()
+      .then((r) => ({ status: 'ok', output: `label-repair-sweep complete (${r.repaired} repaired)` }))
+      .catch((e) => { log('label-repair-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
     'issue-sweep': () => sweep()
       .then(() => ({ status: 'ok', output: 'issue-sweep complete' }))
       .catch((e) => { log('issue-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
@@ -195,6 +198,7 @@ for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.st
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
 const git = (args, cwd) => sh('git', args, { cwd, maxBuffer: 1 << 24 });
 
+const issueClose = (n, body) => gh(['issue', 'close', String(n), '--repo', cfg.repo, '--comment', body]).catch((e) => log('  (close failed)', e.message));
 const issueComment = (n, body) => gh(['issue', 'comment', String(n), '--repo', cfg.repo, '--body', body]).catch((e) => log('  (comment failed)', e.message));
 const addLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--add-label', l]).catch(() => {});
 const rmLabel = (n, l) => gh(['issue', 'edit', String(n), '--repo', cfg.repo, '--remove-label', l]).catch(() => {});
@@ -204,6 +208,30 @@ async function listAllOpen() {
   const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
     '--limit', '100', '--json', 'number,title,body,labels']);
   return JSON.parse(stdout);
+}
+
+async function labelRepairSweep() {
+  if (!cfg.repo) { log('label-repair-sweep: set DEV_SOCIETY_REPO'); return { repaired: 0 }; }
+  const issues = await listAllOpen();
+  let repaired = 0;
+  for (const issue of issues) {
+    const plan = core.planLabelRepair(issue);
+    if (!plan) continue;
+    for (const label of plan.remove || []) await rmLabel(issue.number, label);
+    for (const label of plan.add || []) await addLabel(issue.number, label);
+    if (plan.comment) await issueComment(issue.number, plan.comment);
+    repaired++;
+    rec({
+      source: 'daemon',
+      type: 'issue.labels.repaired',
+      level: 'info',
+      summary: `#${issue.number}: ${plan.reason}`,
+      ref: `#${issue.number}`,
+    });
+    log(`label-repair-sweep: #${issue.number} ${plan.reason}`);
+  }
+  if (!repaired) log('label-repair-sweep: no repairs');
+  return { repaired };
 }
 
 async function dispatchAdvisory(issue, route) {
@@ -336,7 +364,30 @@ async function runOneTask(issue) {
       await addLabel(issue.number, core.BLOCKED);
     }
   } catch (taskErr) {
-    rec({ source: 'daemon', type: 'task.error', level: 'error', summary: `#${issue.number} failed: ${String(taskErr && taskErr.message || taskErr).slice(0, 120)}`, ref: `#${issue.number}` });
+    const errMsg = String(taskErr && taskErr.message || taskErr);
+    rec({ source: 'daemon', type: 'task.error', level: 'error', summary: `#${issue.number} failed: ${errMsg.slice(0, 120)}`, ref: `#${issue.number}` });
+    // Prevent re-claim loop: when the coder/wire fails (timeout, spawn ENOENT,
+    // A2A error) the eligibility check (core.eligibleForCoder) is supposed to
+    // exclude the issue via the IN_PROGRESS label set at the top of this fn —
+    // but that addLabel call swallows its own errors (line 184 `.catch(() => {})`),
+    // so a silent label-write failure (or another agent stripping IN_PROGRESS)
+    // leaves the issue approved + route:a2a and the next sweep burns another
+    // cfg.timeoutMs cycle on the same impossible task. Empirically #98 above
+    // re-claimed 4× in 24h before we caught it. Belt-and-suspenders fix:
+    // explicitly remove `approved` and add `blocked` so the issue drops out
+    // of every "eligible" filter the mesh has, then surface the error on the
+    // issue thread for a human (who decides whether to decompose & re-approve).
+    // Mirrors the existing tests-red branch above (line 313-314).
+    await rmLabel(issue.number, core.APPROVED).catch(() => {});
+    await rmLabel(issue.number, core.IN_PROGRESS).catch(() => {});
+    await addLabel(issue.number, core.BLOCKED).catch(() => {});
+    await issueComment(
+      issue.number,
+      `🤖 A2A society Coder failed: \`${errMsg.slice(0, 400)}\`\n\n` +
+      `Removed \`approved\` and added \`blocked\` to prevent the daemon from re-claiming this issue on every sweep ` +
+      `(see https://github.com/danabaxia/agent_mesh/issues/98 for the bug this fixes). ` +
+      `Diagnose the failure, then either re-approve (if it was transient) or decompose the task into smaller issues.`
+    ).catch(() => {});
     throw taskErr;  // re-throw so tick()'s catch can log it
   } finally {
     await client.close().catch(() => {});
@@ -351,6 +402,12 @@ async function runOneTask(issue) {
 async function sweep() {
   if (!cfg.repo) { log('sweep: set DEV_SOCIETY_REPO'); return; }
   const issues = await listAllOpen();
+  // Self-heal: an open issue carrying a terminal label (done/rejected/wontfix/duplicate/
+  // invalid) never gets closed by anything else — close it so it stops hanging open.
+  for (const i of issues.filter((x) => core.isTerminalState(x))) {
+    log(`  ✓ closing terminal issue #${i.number} (${core.labelNames(i).join(',')})`);
+    await issueClose(i.number, '🤖 dev-mesh: closing — issue is in a terminal state (done/rejected/wontfix/duplicate/invalid).');
+  }
   const state = readDispatchState();
   const now = Date.now();
   // liveBuilds stays empty by design: the scheduler runs one issue-sweep at a time
@@ -410,7 +467,7 @@ async function main() {
   }
   if (!cfg.repo) { console.error('Set DEV_SOCIETY_REPO=owner/repo'); process.exit(1); }
   mkdirSync(cfg.workRoot, { recursive: true });
-  if (once) { await sweep(); return; }
+  if (once) { await labelRepairSweep(); await sweep(); return; }
   log(`dev-society daemon up — repo=${cfg.repo} base=${cfg.base}; issue-sweep runs via the scheduler every 10m`);
   // Always-on: the scheduler started at module load drives issue-sweep; it keeps the process alive.
 }

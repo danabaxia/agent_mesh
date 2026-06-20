@@ -1,14 +1,27 @@
 import { realpath } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, resolve, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, resolve, posix as pathPosix } from 'node:path';
+
+// Normalize backslashes to forward slashes so comparisons work on Windows and
+// POSIX identically — Windows paths from realpath/canonicalizePossiblyMissing
+// use \, while callers (and test assertions) may supply / or \.
+// Always apply AFTER full canonicalization so symlink resolution sees native paths.
+function toForwardSlash(p) {
+  return p.replace(/\\/g, '/');
+}
 
 export async function isPathInsideRoot(root, candidate) {
   const canonicalRoot = await realpath(root);
-  const absoluteCandidate = isAbsolute(candidate)
-    ? candidate
-    : resolve(canonicalRoot, candidate);
+  const normalizedCandidate = toForwardSlash(candidate);
+  const absoluteCandidate = isAbsolute(normalizedCandidate)
+    ? normalizedCandidate
+    : resolve(canonicalRoot, normalizedCandidate);
   const canonicalCandidate = await canonicalizePossiblyMissing(absoluteCandidate);
-  const rel = relative(canonicalRoot, canonicalCandidate);
-  return rel === '' || (!rel.startsWith('..') && rel !== '..' && !rel.includes(`..${sep}`) && !isAbsolute(rel));
+  // Normalize both fully-resolved paths to forward slashes before comparison so
+  // Windows native-separator output from realpath/resolve never causes a mismatch.
+  const normRoot = toForwardSlash(canonicalRoot);
+  const normCandidate = toForwardSlash(canonicalCandidate);
+  const rel = pathPosix.relative(normRoot, normCandidate);
+  return rel === '' || (!rel.startsWith('..') && rel !== '..' && !rel.includes('../') && !isAbsolute(rel));
 }
 
 // Boundary 5 (PROJECT.md): an agent's trusted configuration. A normal delegated
@@ -26,13 +39,16 @@ const PROTECTED_CONFIG_DIRS = new Set(['prompts', 'tools', 'memory', 'workflows'
 // dodged via a symlink or a not-yet-created path.
 export async function isProtectedConfigPath(root, candidate) {
   const canonicalRoot = await realpath(root);
-  const absoluteCandidate = isAbsolute(candidate)
-    ? candidate
-    : resolve(canonicalRoot, candidate);
+  const normalizedCandidate = toForwardSlash(candidate);
+  const absoluteCandidate = isAbsolute(normalizedCandidate)
+    ? normalizedCandidate
+    : resolve(canonicalRoot, normalizedCandidate);
   const canonicalCandidate = await canonicalizePossiblyMissing(absoluteCandidate);
-  const rel = relative(canonicalRoot, canonicalCandidate);
+  const normRoot = toForwardSlash(canonicalRoot);
+  const normCandidate = toForwardSlash(canonicalCandidate);
+  const rel = pathPosix.relative(normRoot, normCandidate);
   if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return false;
-  const segments = rel.split(sep);
+  const segments = rel.split('/');
   const top = segments[0];
   if (segments.length === 1) {
     return PROTECTED_CONFIG_FILES.has(top) || PROTECTED_CONFIG_DIRS.has(top);

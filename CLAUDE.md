@@ -42,7 +42,7 @@ The **adversarial battery** (scripts/eval-adversarial.mjs + eval/adversarial/, L
 
 ## What this is
 
-`agent-mesh serve-a2a <folder>` is the reference A2A stdio server fronting exactly **one** project folder. A caller wires peers through a static registry, sends `SendMessage` (A2A v1.0), and receives an A2A `Task`. `agent-mesh serve <folder>` remains as the MCP compatibility server from the validated baseline. There is **no central registry, broker, or dispatcher** by design. Read `PROJECT.md` for the full PRD, security rationale, and the pinned wire contract; it is the source of truth and must stay consistent with the code.
+`agent-mesh serve-a2a <folder>` is the reference A2A stdio server fronting exactly **one** project folder. `agent-mesh serve-a2a-http <folder>` is the HTTP/JSON-RPC binding of the same contract (standard A2A interop path). A caller wires peers through a static registry, sends `SendMessage` (A2A v1.0), and receives an A2A `Task`. `agent-mesh serve <folder>` remains as the MCP compatibility server from the validated baseline. There is **no central registry, broker, or dispatcher** by design. Read `PROJECT.md` for the full PRD, security rationale, and the pinned wire contract; it is the source of truth and must stay consistent with the code.
 
 ## Architecture
 

@@ -61,6 +61,17 @@ test('memory-automerge: validates the MERGE RESULT (merges main first), then squ
   assert.ok(existsSync(scriptPath), 'scripts/validate-quick-memory.mjs must exist');
 });
 
+test('memory-automerge: resolves quick.json/md conflicts in-line via union, defers code', () => {
+  // The fix for the conflict-pileup: on conflict, run the deterministic union resolver and
+  // push the resolved merge so the squash-merge sees a clean PR. The resolver exits 3 for any
+  // non-memory conflict, so code is never auto-resolved — the else branch still defers.
+  const resolver = fileURLToPath(new URL('../scripts/union-quick-memory.mjs', import.meta.url));
+  assert.ok(existsSync(resolver), 'scripts/union-quick-memory.mjs must exist');
+  assert.match(wf, /node scripts\/union-quick-memory\.mjs/, 'conflict path must invoke the union resolver');
+  assert.match(wf, /git push origin "HEAD:\$branch"/, 'resolved merge must be pushed to the PR branch for the squash-merge');
+  assert.match(wf, /git merge --abort/, 'non-resolvable (code) conflict must still abort and defer to mergefix');
+});
+
 test('validate-quick-memory.mjs exits 1 with no args (script-level fail-closed)', () => {
   // Script property: called with no paths it errors rather than vacuously passing. (The
   // workflow now never reaches this — it handles the no-quick.json case explicitly, below —

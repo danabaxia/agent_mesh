@@ -1,6 +1,14 @@
 {
   "jobs": [
     {
+      "id": "label-repair-sweep",
+      "name": "Label repair sweep",
+      "kind": "builtin",
+      "builtin": "label-repair-sweep",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
+    },
+    {
       "id": "issue-sweep",
       "name": "Label-aware issue sweep",
       "kind": "builtin",

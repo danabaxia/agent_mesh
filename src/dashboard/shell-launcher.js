@@ -106,7 +106,7 @@ export function createShellLauncher({ meshRoot, which, platform = process.platfo
     // Seed the call context (top of chain) so onward delegation from the
     // interactive session is cycle/depth-safe; export the threaded env.
     const entered = enterCallContext(agentRoot, agentEnv, DEFAULT_DEPTH);
-    const exportEnv = buildBridgeEnv(entered.ok ? entered.env : agentEnv, agentEnv);
+    const exportEnv = buildBridgeEnv(entered.ok ? entered.env : agentEnv, agentEnv, { mode: 'ask' });
 
     const tempDir = newTempDir();
     // Native launch uses --strict-mcp-config: the generated config is the

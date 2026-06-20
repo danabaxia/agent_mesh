@@ -11,14 +11,19 @@ function usage() {
     'Usage:',
     '  agent-mesh serve <folder>',
     '  agent-mesh serve-a2a <folder>',
+    '  agent-mesh serve-a2a-http <folder> [--port N] [--host H]',
     '  agent-mesh init-mesh <folder>',
     '  agent-mesh add <mesh-root> <agent-folder> [--name X] [--modes ask,do] [--role "..."] [--apply] [--force]',
     '  agent-mesh join <mesh-root> <name-or-folder>',
     '  agent-mesh leave <mesh-root> <name>',
     '  agent-mesh validate <mesh-root> [agent]',
     '  agent-mesh doctor <mesh-root> [agent] [--apply]',
-    '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat]',
+    '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat] [--no-replace]',
     '  agent-mesh shell <mesh-root> <agent>   # open native claude in an agent folder',
+    '',
+    '  agent-mesh dev-society status [--repo OWNER/REPO]      # daemon + ledger + queue snapshot',
+    '  agent-mesh dev-society ledger [--last N]               # pretty-print ledger.jsonl',
+    '  agent-mesh issue label <num> [--add L]... [--remove L]... [--repo OWNER/REPO]',
     '',
     'Environment:',
     '  AGENT_MESH_DEPTH=3',
@@ -314,20 +319,31 @@ export async function main(argv, env = process.env) {
     // a read-only monitor and Claude is driven from the external CLI. Opt in with
     // --enable-chat (or AGENT_MESH_DASHBOARD_CHAT=1) to restore the chat composer.
     let chat = env.AGENT_MESH_DASHBOARD_CHAT === '1';
+    let replace = true;
     for (let i = 0; i < rest.length; i++) {
       const arg = rest[i];
       if (arg === '--no-open') { noOpen = true; continue; }
       if (arg === '--allow-shell') { allowShell = true; continue; }
       if (arg === '--enable-chat') { chat = true; continue; }
+      if (arg === '--no-replace') { replace = false; continue; }
       if (arg === '--port' && rest[i + 1]) { port = parseInt(rest[++i], 10); continue; }
       if (arg.startsWith('--port=')) { port = parseInt(arg.slice('--port='.length), 10); continue; }
     }
+
+    // Import single-instance helpers above the try so both the try and catch
+    // blocks can call removePidfile (the catch runs in a different scope from
+    // where we'd normally destructure inside the try).
+    const { pidfilePath, reapExisting, writePidfile, removePidfile } = await import('./dashboard/single-instance.js');
+    let pidfile = null;
 
     try {
       const { createDashboardServer } = await import('./dashboard/server.js');
       const srv = createDashboardServer({ meshRoot, port, allowShell, chat });
       if (allowShell) process.stdout.write('Native CLI launch: ENABLED (--allow-shell)\n');
       process.stdout.write(`In-dashboard chat: ${chat ? 'ENABLED (--enable-chat)' : 'disabled (read-only; drive Claude from the external CLI)'}\n`);
+      pidfile = pidfilePath(port);
+      await reapExisting({ pidfile, replace, log: (m) => process.stdout.write(m + '\n') });
+      writePidfile(pidfile, { pid: process.pid, port, now: Date.now() });
       await srv.start();
       const bootstrapUrl = srv.bootstrapUrl;
       process.stdout.write(`Dashboard running at: ${srv.url}\n`);
@@ -356,8 +372,13 @@ export async function main(argv, env = process.env) {
         process.on('SIGTERM', resolve_);
       });
       await srv.close();
+      if (pidfile) removePidfile(pidfile);
     } catch (err) {
-      process.stderr.write(`error: ${err.message}\n`);
+      const msg = err.code === 'EADDRINUSE'
+        ? `port ${port} is already in use by another process (not a tracked dashboard); free it or use --port`
+        : err.message;
+      process.stderr.write(`error: ${msg}\n`);
+      if (pidfile) removePidfile(pidfile);
       process.exitCode = 1;
     }
     return;
@@ -432,6 +453,57 @@ export async function main(argv, env = process.env) {
       process.stderr.write(`error: ${err.message}\n`);
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (command === 'serve-a2a-http') {
+    const folderArg = argv[1];
+    if (!folderArg) {
+      process.stderr.write(`${usage()}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    const httpRoot = await realpath(folderArg);
+    let port = 4747;
+    let host = '127.0.0.1';
+    for (let i = 2; i < argv.length; i++) {
+      const arg = argv[i];
+      if (arg === '--port' && argv[i + 1]) { port = parseInt(argv[++i], 10); continue; }
+      if (arg.startsWith('--port=')) { port = parseInt(arg.slice('--port='.length), 10); continue; }
+      if (arg === '--host' && argv[i + 1]) { host = argv[++i]; continue; }
+      if (arg.startsWith('--host=')) { host = arg.slice('--host='.length); continue; }
+    }
+    try {
+      const { createA2AHttpServer } = await import('./a2a/http-server.js');
+      const server = await createA2AHttpServer({ root: httpRoot, port, host, env });
+      await server.start();
+      process.stdout.write(`A2A HTTP server listening at ${server.url}\n`);
+      await new Promise((resolve_) => {
+        process.on('SIGINT', resolve_);
+        process.on('SIGTERM', resolve_);
+      });
+      await server.close();
+    } catch (err) {
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Phase-1 unified ops surface (see src/dev-society-cli.js for rationale).
+  // Lets sandbox-Claude AND host-human invoke the same verbs instead of round-
+  // tripping through `gh` + cat ledger.jsonl + ls .dev-society/work/ shell paste.
+  // ──────────────────────────────────────────────────────────────────────────
+  if (command === 'dev-society') {
+    const { runDevSocietyCli } = await import('./dev-society-cli.js');
+    await runDevSocietyCli(argv.slice(1), env);
+    return;
+  }
+
+  if (command === 'issue') {
+    const { runIssueCli } = await import('./dev-society-cli.js');
+    await runIssueCli(argv.slice(1), env);
     return;
   }
 

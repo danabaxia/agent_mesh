@@ -63,7 +63,7 @@ This line is normative — A & B (and any agent) must stay on their side of it.
 
 | Framework provides | Integrator / agent author provides |
 |---|---|
-| Transport adapter (stdio v1; HTTP later) speaking A2A JSON-RPC | The agent's `AGENT.md` + `agent.json` (`AgentCard`) |
+| Transport adapter (stdio v1; HTTP v1) speaking A2A JSON-RPC | The agent's `AGENT.md` + `agent.json` (`AgentCard`) |
 | Guard pipeline: input validation, cycle, depth, mode, boundary | The actual work executor plugged into the runner SPI |
 | Runner SPI + per-folder serialization + timeout/process-tree kill | Caller-side static registry wiring |
 | Path-guard enforcement (realpath ⊂ B's root) | — |
@@ -186,11 +186,22 @@ as **data** (an argument), never registered as a per-peer tool, and
 worker→bridge hop is local MCP, the **bridge→peer hop is A2A**, so the
 delegation path is still A2A. The bridge is framework-owned (not an agent
 `.mcp.json` declaration), is injected only when the agent's marker-validated
-`registry.json` has peers, and is **ask-only in v1** (it refuses any non-`ask`
-onward call). `do` onward delegation is deferred until there is a cross-process
-per-canonical-root write lock and downstream-Task audit propagation (see the
-onward-delegation design spec). This is the single sanctioned worker-visible MCP
-delegation surface; nothing else may model a peer as a tool.
+`registry.json` has peers. The **v2 mode policy** is:
+
+| Parent mode | arg mode | result |
+|---|---|---|
+| `ask` | `ask` | forwarded |
+| `ask` | `do`  | `readonly_parent` (laundering prevention) |
+| `do`  | `ask` | forwarded (downgrade, no lock) |
+| `do`  | `do`  | acquire cross-process advisory lock on the **peer root** → forward |
+
+The lock (`<peer-root>/.agent-mesh/do.lock`, `O_CREAT|O_EXCL`, PID-liveness
+stale detection) serializes concurrent `do→do` bridge processes that share the
+same peer root. A lock-timeout refusal returns `error_code: lock_timeout`.
+Downstream writes are surfaced as `agentmesh/downstream_changes` (an array of
+`{ peer, files_changed, best_effort }`) in the parent Task metadata. This is the
+single sanctioned worker-visible MCP delegation surface; nothing else may model a
+peer as a tool.
 
 **Task board (durable hand-off, ask-safe).** The same peer bridge also exposes
 the ask-safe task-board verbs `create_task_for_peer({ peer, title, objective,
@@ -243,7 +254,11 @@ caller's fallback logic reads:
   (string[]|null), `agentmesh/log_path`, `agentmesh/run_id`,
   `agentmesh/preexisting_dirty?`, `agentmesh/error_code` (closed set:
   `bad_input`, `cycle`, `depth_budget`, `readonly_parent`, `boundary_denied`,
-  `mode_disabled`, `spawn_failed`, `internal`, `caller_identity_unresolved`).
+  `mode_disabled`, `lock_timeout`, `spawn_failed`, `internal`,
+  `caller_identity_unresolved`). Note: `lock_timeout` is a pre-A2A
+  bridge-level refusal (the do-mode write lock could not be acquired) — it
+  appears in the bridge tool result and the a2a run log; it is not emitted in
+  A2A Task metadata directly.
 - Request-side `message.metadata` carries framework-set routing/correlation
   fields, never model-authored: `agentmesh/mode` (§1.5), `agentmesh/parent_run_id`
   (board edge correlation), and for onward delegation `agentmesh/caller` +
@@ -308,11 +323,10 @@ conformance pass rate, never against the demo's prose.
 
 ## 1.11 Non-Goals
 
-No HTTP server in v1 (stdio binding only); no federated/untrusted-peer profile
-in v1 (trusted same-owner workspaces first); no automatic FS discovery; no
-central broker; no parallel fan-out; no post-timeout rollback; no kernel-sandbox
-claim (folder safety = cwd + limited tool surface + realpath checks +
-path-guard).
+No federated/untrusted-peer profile in v1 (trusted same-owner workspaces
+first); no automatic FS discovery; no central broker; no parallel fan-out; no
+post-timeout rollback; no kernel-sandbox claim (folder safety = cwd + limited
+tool surface + realpath checks + path-guard).
 
 ### Merge policy (gated auto-merge)
 
@@ -502,7 +516,6 @@ simpler `do` happy cell on the non-MCP axis (the validated real-`claude` E2E).
 
 ## Future Work
 
-- HTTP(S) JSON-RPC binding — the standard interop path & conformance milestone.
 - Richer A2A lifecycle: `message/stream` (SSE), `tasks/get`, `tasks/cancel`,
   push notifications.
 - Federated/untrusted profile: `securitySchemes`, OS sandbox before any shell.
@@ -510,6 +523,8 @@ simpler `do` happy cell on the non-MCP axis (the validated real-`claude` E2E).
 
 ## Changelog
 
+- 2026-06-19 — **HTTP/JSON-RPC transport binding (v1 unlock)**: `serve-a2a-http` CLI verb and `createA2AHttpServer` add the standard A2A JSON-RPC over HTTP(S) binding alongside the stdio custom binding. Recursion state (call-path, depth) threads via `X-AgentMesh-Path`/`X-AgentMesh-Depth` request headers; the server caps incoming depth to its own configured maximum so untrusted callers cannot expand the recursion budget. `url:` peer entries in `registry.json` resolve through `HttpClientSession` (stateless fetch, per-request recursion headers). Spec: docs/superpowers/specs/2026-06-19-http-transport-design.md.
+- 2026-06-19 — **do-mode peer delegation (v2 unlock)**: resolved both blockers from the onward-delegation v1 deferral. BLOCKER-1: new `src/a2a/do-lock.js` advisory file lock (`<peer-root>/.agent-mesh/do.lock`, atomic `O_CREAT|O_EXCL`, PID-liveness stale detection) serializes concurrent `do→do` bridge processes on the same peer root. BLOCKER-2: bridge result now includes `peer_changes: { peer, files_changed, best_effort }` for do→do delegations; `delegate.js` reads the bridge's per-run downstream log and surfaces all peer writes as `agentmesh/downstream_changes` in the parent Task metadata. Mode policy: `ask→do` refused as `readonly_parent` (laundering prevention); `do→do` allowed with lock; `do→ask` allowed as downgrade. `buildBridgeEnv` threads the parent task mode into `AGENT_MESH_MODE` so the bridge enforces the correct policy. Added `lock_timeout` to the `agentmesh/error_code` closed set. Spec: docs/superpowers/specs/2026-06-18-do-mode-peer-delegation-design.md (note: spec was drafted in issue #97 comments; implementation is the authoritative record).
 - 2026-06-13 — managed-wiring auto-sync: the dashboard auto-runs doctor in a new Managed-only mode (registry.json + peer-bridge .mcp.json only) on startup and on a debounced watcher change, keeping wiring current after code updates / new agents; atomic config writes (temp+rename); Seeded/Authored stay propose-only; the framework applies, never an agent (mesh-manager stays propose-only). Opt out: AGENT_MESH_NO_AUTOSYNC=1. Spec: docs/superpowers/specs/2026-06-13-managed-wiring-autosync-design.md.
 - 2026-06-13 — review-first session management: copy resume-commands replace dashboard terminal spawning (EDR-proof by construction; /open-terminal deprecated in place), provenance-complete spawn tagging (worker:<route> create events at the delegateTask chokepoint — both modes), deterministic auto-follow of the user's live CLI session (pin/badge, sticky), per-agent transcript-storage transparency, stitched cross-session canvas timeline (seal-on-switch, seams, lazy history). Spec: docs/superpowers/specs/2026-06-13-review-first-session-management-design.md.
 - 2026-06-12 — session generations (v0.4 track): headroom measurement (live stream-json usage + bounded transcript-tail scan), agentmesh/metrics.headroom on multi-turn peer responses, out-of-band digest pipeline (ask-only worker, fail-closed contract, framework-applied capped writes to memory/ + propose-only deliverables), headroom-armed self-session rotation under the runner lease with rotate provenance, decisions-index 30-line cap. Spec: docs/superpowers/specs/2026-06-12-session-generations-design.md.

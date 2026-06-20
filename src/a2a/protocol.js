@@ -81,6 +81,7 @@ export function buildTaskFromDelegateResult({ result, message, id = randomUUID()
   else if (result?.status === 'timeout') metadata['agentmesh/error_code'] = 'timeout';
   if (result?.best_effort) metadata['agentmesh/best_effort'] = true;
   if (result?.note) metadata['agentmesh/note'] = result.note;
+  if (result?.downstream_changes != null) metadata['agentmesh/downstream_changes'] = result.downstream_changes;
 
   const artifacts = [];
   if (typeof result?.summary === 'string' && result.summary.length > 0) {
@@ -120,7 +121,7 @@ export function buildRejectedTask({ code, message, requestMessage, id = randomUU
   });
 }
 
-export function buildAgentCard({ self, root, url, modes }) {
+export function buildAgentCard({ self, root, url, modes, transport = 'stdio' }) {
   const capabilities = Array.isArray(self?.capabilities) ? self.capabilities : [];
   // Use explicitly passed modes, else fall back to agent.json x-agentmesh.modes, else default.
   const agentModes =
@@ -147,9 +148,13 @@ export function buildAgentCard({ self, root, url, modes }) {
     version: FRAMEWORK_VERSION,
     // v1.0: top-level protocolVersion/url/preferredTransport are replaced by an
     // ordered supportedInterfaces list (first entry = preferred). STDIO is a
-    // custom protocol binding (open-form string per spec §5.8).
+    // custom protocol binding (open-form string per spec §5.8); HTTP uses JSONRPC.
     supportedInterfaces: [
-      { url, protocolBinding: 'STDIO', protocolVersion: A2A_PROTOCOL_VERSION }
+      {
+        url,
+        protocolBinding: transport === 'http' ? 'JSONRPC' : 'STDIO',
+        protocolVersion: A2A_PROTOCOL_VERSION
+      }
     ],
     capabilities: {
       streaming: false,

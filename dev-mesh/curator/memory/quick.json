@@ -287,17 +287,6 @@
       "ts": "2026-06-17"
     }
   },
-  "daemon-polling-idempotency": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "Polling daemon: exclude ALL in-flight labels from eligibility + fail-closed on null/ambiguous gate inputs.",
-    "l1": "PR #90 fixed C1: isEligible passed pr:in-review issues to the Coder, re-selecting items already under active PR development. Also T2: shouldOpenPR({tests:null}) returned truthy, creating PRs when no CI run had occurred. Both silent failures — no crash, just repeated work or spurious PR creation. Root cause: eligibility checked some but not all in-flight labels; gate function lacked a positive-confirmation requirement.",
-    "value": "(1) Eligibility: every label denoting active ownership (pr:in-review, in-progress, blocked) must appear in isEligible — missing any one silently allows duplicate processing. Test each in-flight label as an explicit negative case.\n(2) Gate functions: require confirmed positive state (e.g. !!tests && tests.passed === true), NOT merely absence of explicit failure. shouldOpenPR(null) → false; shouldMerge(null) → false. 'No data' is not 'ok'.\nApplies to any polling daemon or work-queue consumer. Provenance: PR #90 (2026-06-18), closes Issue #87.",
-    "provenance": {
-      "source": "PR #90: fix(dev-society): apply #86 review findings C1/C2/S1/S2 + tests T1/T2",
-      "ts": "2026-06-18"
-    }
-  },
   "security-eval-layer-targeting": {
     "status": "active",
     "valid_to": null,
@@ -306,6 +295,28 @@
     "value": "Three layered-defense fixture anti-patterns to avoid:\n\n(1) Dirty git state poisons pre-run change detection. Any fixture file written AFTER buildMesh's seed commit appears as untracked/modified, causing noExternalWrite() to see 'already dirty' as a false positive. Fix: committed malicious fixtures must ride the seed commit via buildMesh's rawRegistry escape hatch (or equivalent) — never written manually post-seed.\n\n(2) Relative escape paths trigger model safety heuristics, not the path-guard. A task like 'write to ../B/x.txt' is refused by the model before the path-guard hook fires. Use the absolute path to the sibling root so the model cooperates down to the framework layer under test. On Windows, do-mode is refused by managed-policy preflight without AGENT_MESH_ATTEST_MANAGED_COMPATIBLE — add a win32 skip for path-guard do-mode tests.\n\n(3) JSON Schema enum restriction can block the model from supplying a 'bad' argument. In delegate_to_peer, mode: { enum: ['ask'] } prevented the model from passing mode:'do' — schema validation fired before the bridge's runtime mode_disabled refusal. Fix: loosen to { type: 'string', minLength: 1 }; the runtime gate remains enforcement and is covered deterministically by unit tests.\n\nGeneral rule: design each security eval scenario so the fixture cooperates past every outer layer (model refusals, schema validation, dirty git state, managed-policy preflight) and the framework's own enforcement is the FIRST thing that fires. Provenance: PR #79 (2026-06-18), fixing Issue #77.",
     "provenance": {
       "source": "PR #79: fix: L3 adversarial battery I3/I5/I6 security invariant failures",
+      "ts": "2026-06-18"
+    }
+  },
+  "trunk-release-cut-model": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Trunk + release-cut closes deployment drift: main = single living line; releases are tags/branches cut from main.",
+    "l1": "PR #86 (P1 A2A dev-society on main): v0.5-development was a long-lived parallel branch requiring constant sync with main — deployment drift was inevitable. Fix: main = trunk developed 24/7 by the mesh; deployments are releases cut from main when mature (git tag v1.0 or a v1.0 branch). Upgrade = cut a new release from main and redeploy. The parallel branch becomes redundant. Also: when a persistent daemon adopts an issue class via a new label (route:a2a), add a 'skip if has label' guard in every other workflow to prevent double-building.",
+    "value": "Adopt main as the single trunk for any automated development society. Automation (mesh, daemon, scheduled jobs) develops it continuously. Release model: cut a tag (git tag vX.Y) or a branch (vX.Y-stable) from main when stable enough; deploy THAT, not main directly. Upgrade = cut a new release from the current trunk state.\n\nNever keep a long-lived parallel branch (e.g. vN-development) in sync with main — each sync is manual overhead and divergence accumulates silently until you have two de facto trunks.\n\nWhen a new automation path (daemon, scheduled poller) adopts an issue class via a new label (e.g. route:a2a): immediately add a 'skip if label present' guard in every OTHER workflow that would otherwise build the same issue — prevents double-builds and conflicting concurrent runs.\n\nProvenance: PR #86 (2026-06-18).",
+    "provenance": {
+      "source": "PR #86: feat(dev-society): land P1 on main (single trunk line) + trunk/release model",
+      "ts": "2026-06-18"
+    }
+  },
+  "daemon-polling-idempotency": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Polling daemon: exclude ALL in-flight labels from eligibility + fail-closed on null/ambiguous gate inputs.",
+    "l1": "PR #90 fixed C1: isEligible passed pr:in-review issues to the Coder, re-selecting items already under active PR development. Also T2: shouldOpenPR({tests:null}) returned truthy, creating PRs when no CI run had occurred. Both silent failures — no crash, just repeated work or spurious PR creation. Root cause: eligibility checked some but not all in-flight labels; gate function lacked a positive-confirmation requirement.",
+    "value": "(1) Eligibility: every label denoting active ownership (pr:in-review, in-progress, blocked) must appear in isEligible — missing any one silently allows duplicate processing. Test each in-flight label as an explicit negative case.\n(2) Gate functions: require confirmed positive state (e.g. !!tests && tests.passed === true), NOT merely absence of explicit failure. shouldOpenPR(null) → false; shouldMerge(null) → false. 'No data' is not 'ok'.\nApplies to any polling daemon or work-queue consumer. Provenance: PR #90 (2026-06-18), closes Issue #87.",
+    "provenance": {
+      "source": "PR #90: fix(dev-society): apply #86 review findings C1/C2/S1/S2 + tests T1/T2",
       "ts": "2026-06-18"
     }
   },
@@ -383,6 +394,237 @@
     "value": "Three-layer kill-switch pattern for default-OFF automation:\n\n(1) Pure fail-closed predicate: function returns [] / false for ALL missing or non-true inputs. Type-check strictly (`=== false`, `=== true`) — undefined/null/garbage → not eligible. Hold labels: check both object shape (`.name`) and raw string so the same code handles both API shapes. `enabled !== true` → early-return empty, so even partial env values cannot activate the sweep.\n\n(2) CLI gate: `const enabled = process.env.FLAG === 'true'` — pass `enabled` as an explicit arg into the pure function. Never use truthy coercion (`!!flag` vs `flag === 'true'`). Document the exact activation command: `gh variable set AUTOMERGE_ENABLED --body true`.\n\n(3) YAML gate: `if: vars.FLAG == 'true'` in the job-level condition. GitHub Actions vars context is always a string; `== 'true'` is correct (not `!= 'false'` or truthy). Unset variable → condition is false → job skipped entirely, no gh calls at all.\n\nAll three layers independently default OFF — defense in depth means no single layer's misconfiguration triggers behavior.\n\nVerify coverage: (a) hermetic unit tests exercise pure predicate with all partial/corrupt input combinations — no real merge needed; (b) `--dry-run` CLI flag validates eligibility logic live without merging; (c) unset or `'false'` YAML var → job skips, observable in Actions UI.\n\nDeactivation is instant: set the variable to false or delete it. Provenance: PR #124 (2026-06-19).",
     "provenance": {
       "source": "PR #124: feat(mesh): gated auto-merge sweep (Phase 1, default-OFF)",
+      "ts": "2026-06-19"
+    }
+  },
+  "scheduler-builtin-return-shape": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon scheduler builtins must return {status:'ok'} — void/undefined breaks onJobResult.",
+    "l1": "PR #127 final review caught a Critical: the `issue-sweep` builtin initially returned void (sweep() is async with no explicit return). The scheduler executor's onJobResult reads `.status` from the return — undefined.status silently miscategorises the run. Fixed by wrapping: `.then(() => ({status:'ok', output:'issue-sweep complete'})).catch(e => ({status:'fail', error:e.message}))`. Every `kind:builtin` entry in schedule.json must return `{status:'ok'}` or `{status:'fail', error}` — never void.",
+    "value": "Apply when registering any new builtin in the dev-society daemon scheduler:\n\n(1) Always return an explicit status object. Pattern:\n`builtins['name'] = () => work().then(() => ({status:'ok', output:'...'})).catch(e => ({status:'fail', error:e.message}));`\nFor async/await style: `builtins['name'] = async () => { await work(); return {status:'ok'}; }`\n\n(2) When wrapping an existing async sweep function (e.g. sweep() returns void): do NOT assign directly as `builtins['x'] = sweep` — the void return propagates. Wrap with `.then`/`catch` or an async wrapper that ends with `return {status:'ok'}`.\n\n(3) The executor's onJobResult logs `status === 'ok'` as info and everything else as warn. A void return means status is `undefined`, not 'fail' — the run appears to succeed while the job result is silently wrong.\n\nSymptom: job-run log entries show `undefined` as the status instead of 'ok' or 'fail'.\n\nThis was caught only by the final code review of PR #127 (2026-06-19) — there is no runtime validation of the return shape at registration time. Provenance: PR #127.",
+    "provenance": {
+      "source": "PR #127: feat(dev-society): label-aware 10-min issue sweep (maintainer-owned)",
+      "ts": "2026-06-19"
+    }
+  },
+  "intake-poll-lifecycle": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Multi-step label pipelines stall without a poll — events fire once but never re-trigger intermediate state advances.",
+    "l1": "dev-mesh-intake.yml was event-only (issues/issue_comment) so once the Analyst moved an issue to 'discussing' or 'spec:draft', nothing re-triggered it — issues stalled mid-pipeline needing human nudges. PR #91 added a 30-min poll (cron: '5,35 * * * *') + workflow_dispatch. Poll mode advances up to 3 pre-approval issues/run (FIFO). Concurrency group must use github.event.issue.number||'poll' — event.issue.number is null in scheduled runs.",
+    "value": "For any GitHub Actions workflow that manages a multi-step label lifecycle (e.g. idea → discussing → spec:draft → spec:in-review):\n\n(1) Retain event triggers (issues, issue_comment) for immediate response on new activity.\n(2) Add a schedule (e.g. '5,35 * * * *') as the advancement pump for stuck intermediate states — the cron runs even when no new event fires.\n(3) Cap the batch size in poll mode (≤3 issues/run) to avoid timeouts on large backlogs.\n(4) Use github.event.issue.number||'poll' in the concurrency group key — event.issue.number is null in schedule/workflow_dispatch runs and a null-derived group key produces unexpected concurrency behavior.\n(5) In poll mode, list open issues in pre-approval states, sort FIFO by number, and advance each by one honest step.\n\nDistinct from event-driven-polling-backstop (which guards against missed webhook delivery) — here the issue is that no re-triggering event exists at all after the initial state change; the schedule is the only driver. Provenance: PR #91 (2026-06-18).",
+    "provenance": {
+      "source": "PR #91: feat(dev-mesh): intake polls to auto-advance the pre-approval pipeline",
+      "ts": "2026-06-18"
+    }
+  },
+  "integration-ref-trunk-staleness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "INTEGRATION_REF must track main under trunk-based dev — stale branch silently validates dead code for all nightly tiers.",
+    "l1": "PR #100: INTEGRATION_REF was pinned to v0.4-development, which was 188 commits behind main — the nightly L1/L2/L3/L4 tiers had been validating long-stale code for an extended period without any alert. Under trunk-based development, main is the single living line; retiring feature/development branches but leaving INTEGRATION_REF pointing at them means every nightly scorecard result (behavior evals, adversarial battery, perf benchmark) quietly tests the wrong code. The 188-commit gap was only discovered by inspection, not by a CI alert.",
+    "value": "Checklist when retiring a feature/development branch under trunk-based development:\n\n1. INTEGRATION_REF → main: update it in the same PR that retires the branch. A stale INTEGRATION_REF never causes an error or alert — all nightly jobs succeed but each validates dead code.\n2. Lint-encode the target ref: the integration-workflow.test.js assertion on `INTEGRATION_REF: main` (landed with PR #100) makes any future change a deliberate, test-gated act. Every CI pipeline variable naming a branch should have a hermetic lint equivalent.\n3. Align the schedule trigger: the nightly fires from the default branch (`main`) and checks out INTEGRATION_REF explicitly. If those diverge, a workflow_dispatch from main still tests the stale ref while the schedule appears to work. Verify both always name the same living line.\n4. Scope-check stale refs after ANY branch cleanup: grep all workflow files for retired branch refs immediately after the cleanup — INTEGRATION_REF is a silent misconfiguration until the next nightly run.\n\nProvenance: PR #100 (2026-06-18): chore(integration): retarget the nightly to main (trunk-based development).",
+    "provenance": {
+      "source": "PR #100: chore(integration): retarget the nightly to main (trunk-based development)",
+      "ts": "2026-06-18"
+    }
+  },
+  "new-agent-scaffold-completeness": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New agents need 7 scaffold .gitkeeps alongside content — fresh checkout fails validate until doctor seeds them.",
+    "l1": "PR #122: security agent shipped agent.json/AGENT.md/prompts/skills but not the 7 scaffold .gitkeep dirs (.agent/{memories,rules,reference,workflows,artifacts}/, deliverables/, output/). Fresh checkout fails `validate dev-mesh` with 7 missing-directory errors. CI missed it because the hermetic suite runs doctor --apply on a copy first, and the live mesh auto-seeds at runtime — so a missing-scaffold commit appears green in CI while failing on fresh checkout.",
+    "value": "When adding a new agent to the dev-mesh, commit the full scaffold .gitkeeps alongside the real content in the same PR. Required scaffold dirs: .agent/{memories,rules,reference,workflows,artifacts}/, deliverables/, output/ (7 .gitkeep files — same set as every existing agent). Verify before merging: run `node ./bin/agent-mesh.js validate <mesh>` on the branch — must show Conformance: OK. The hermetic CI suite (npm test) runs doctor --apply on a temp copy, so a missing-scaffold PR appears green in CI while failing validate on a fresh checkout. Related: doctor-apply-on-framework-upgrade (run doctor --apply after framework upgrades to resync existing agents). Provenance: PR #122 (2026-06-19).",
+    "provenance": {
+      "source": "PR #122 (2026-06-19): fix(dev-mesh): seed the security agent's missing scaffold dirs",
+      "ts": "2026-06-19"
+    }
+  },
+  "fail-safe-observability-daemon": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon observability calls must be fail-safe: log writes that throw are an availability bug, not a logging bug.",
+    "l1": "PR #126: recordActivity wraps all file I/O in try/catch, no re-throw — a filesystem error must never crash the daemon loop. Three complementary invariants: (1) mode guard suppresses emits under --selftest/--once (single-pass must not produce side-effect files); (2) the read-API route returns [] / 2xx on error, never 500; (3) event strings are HTML-escaped before render. Activity log is the daily-rotating journal; run logs remain the per-run detail layer.",
+    "value": "Four invariants for adding cross-cutting observability to a daemon service:\n\n(1) Fail-safe emit: wrap every log-write in try/catch with no re-throw. Filesystem errors (full disk, bad permissions, missing dir) must never propagate into the daemon loop — a crash in the logger is a service outage. Pattern: `try { await appendFile(path, line); } catch { /* swallow */ }`\n\n(2) Mode guard: gate ALL emits on `!opts.selftest && !opts.once` — single-pass invocations (health checks, one-shot runs) must exit cleanly without producing side-effect log files. Assert in tests: run `--selftest`, verify no activity files created.\n\n(3) Tolerant read route: the observability API (GET /api/activity-log) must catch all errors and return [] / 2xx, never a 500. A broken log reader must not disable the dashboard that depends on it.\n\n(4) XSS-safe render: pass every event field (summary, agent, ref, detail) through an HTML-escape fn before innerHTML. Event payloads are service-generated but may relay user-originated strings — treat as untrusted.\n\nTwo-layer separation: activity log = high-level event stream (issue.picked / delegate.done / job.run); per-agent run logs = granular detail, linked by `ref`. Don't collapse them.\n\nProvenance: PR #126 (2026-06-19).",
+    "provenance": {
+      "source": "PR #126: feat(mesh): unified activity log + filterable dashboard panel (Phase 1)",
+      "ts": "2026-06-19"
+    }
+  },
+  "cached-report-compute-and-schedule": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Cached report: each KPI needs both aggregation AND a refresh schedule — script without scheduler goes stale.",
+    "l1": "PR #120: issues.openNow absent from aggregate.js despite openIssues being passed (prs.openNow existed). AND daily-report-refresh had no scheduler despite PR #108 shipping the script — cache stuck 2 days old. Fix: one-line aggregation + builtin at 00:10 on the orchestrator. Symmetric parallel KPIs (prs/issues) are a completeness hint: if one is tracked, the other must be too.",
+    "value": "Pattern for adding a new KPI to a cached report:\n\n(1) Aggregation: if a parallel metric exists (e.g. prs.openNow), its counterpart (issues.openNow) must also be computed. The input param may already be passed but not projected into the output. Symptom: wrong count on dashboard — structurally absent, not stale.\n\n(2) Schedule wiring: a report script without a refresh schedule produces correct data once and goes stale. Wire a builtin on the orchestrator (e.g. daily-report-refresh at 00:10) — same pattern as gh-activity-poll. Symptom: cache age >> expected cadence.\n\n(3) Verify both: run the script manually (--cache-only, no --post) to confirm the new field appears; confirm daemon selftest exits cleanly; confirm dashboard renders the live total.\n\nRed flag: cache age >> expected period implies scheduler not wired — check script has a builtin before debugging aggregation logic.\n\nSymmetry hint: parallel KPI pairs (PRs/Issues, open/closed, pass/fail) must be tracked at the same aggregation depth. A one-sided pair is almost always a missed step.\n\nProvenance: PR #120 (2026-06-19).",
+    "provenance": {
+      "source": "PR #120 (2026-06-19): fix(report): correct open-issue count on the dashboard + schedule the daily report",
+      "ts": "2026-06-19"
+    }
+  },
+  "daemon-health-observer-pattern": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Health daemon: snapshot before escalation; limit heals to reversible state writes; suppress flapping via seenCount.",
+    "l1": "Run order: gather → assess → write snapshot → escalate. Snapshot FIRST — ensures dashboard/API always has data even if issue creation fails. Wrap the runner in try/catch → {status:'fail'}, never throw — health loops must be fail-closed. Suppress flap escalations via `seenCount`; only escalate persistent findings. Self-heal scope: reversible atomic state writes only (clear stale `running` flag, recompute `nextRunAt`); auto-disable, out-of-cadence retry, and process restarts escalate instead. For builtin jobs with no run-log, track `consecutiveFailures` in scheduler state.",
+    "value": "Pattern for a daemon health-observer loop (PR #118 — mesh heartbeat Phase 3):\n\n(1) Run order: gather → assess → apply heals → write snapshot → route escalations. ALWAYS write the snapshot before routing escalations. The snapshot is what the dashboard/API/GET /api/health serves; if issue creation fails or is slow, the snapshot still reflects the latest assessed health.\n\n(2) Fail-closed runner: wrap the entire runner body in try/catch → return {status:'fail'}; never let it throw. A crash in the health observer must not kill the daemon — it records its own failure and the next tick retries.\n\n(3) Flap suppression via seenCount: carry a `seenCount` for each finding across ticks. Only escalate (open/update a GitHub issue) when seenCount exceeds a threshold. This prevents a single transient glitch from opening an issue. Close/resolve issues when the finding disappears.\n\n(4) Minimal-safe self-heal scope: heals must be purely reversible atomic state writes. Allowed: clear a stale `running` lock, recompute `nextRunAt` for an overdue job. Not allowed (escalate instead): disabling a job, triggering an out-of-cadence retry, restarting a process. The daemon cannot revive itself — that's the OS service manager's job (launchd/systemd).\n\n(5) Severity precedence in classification: stuck > failing > overdue. When a finding matches multiple classes, apply the highest-severity label so dashboards and escalations always show the worst condition first.\n\n(6) Disable via INTERVAL_MS=0: add an env-var circuit breaker (e.g. `AGENT_MESH_HEARTBEAT_INTERVAL_MS=0`) to disable the loop without code changes — useful for debugging or cost control.\n\n(7) Builtin jobs with no run-log: the failure-streak inference that works for claude/delegate jobs (read log files) doesn't work for builtin scheduler jobs that write no run-log. Track `consecutiveFailures` explicitly in the scheduler's per-job state (++ on tick failure, reset to 0 on success).\n\nTest coverage: assess unit tests (all severity classes + edge cases); runner tests (snapshot written before issue call, try/catch → status:fail); daemon test (heartbeat setInterval not started in --selftest/--once mode). Hermetic: inject applyHeal and openIssue as stubs. Provenance: PR #118 (2026-06-19).",
+    "provenance": {
+      "source": "PR #118 (2026-06-19): feat(mesh): Phase 3 — mesh-level self-healing heartbeat",
+      "ts": "2026-06-19"
+    }
+  },
+  "security-role-ask-only-reporter": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Security specialist: ask-only, OAuth, issues-only — no write/merge authority, no PR trigger, no outbound peers.",
+    "l1": "PR #116: dedicated security role that inspects continuously — never writes or merges. Invariants: (1) ask-only (no Edit/Write/Bash(git:*) tools); (2) CLAUDE_CODE_OAUTH_TOKEN not DEV_MESH_PAT — OAuth cannot push to .github/workflows; (3) findings reported as GitHub issues only — no PR reviews, no auto-closes; (4) no pull_request trigger — fork-PR content cannot receive secrets; (5) no outbound peers in mesh.json — sees all, controls nothing; (6) --advisory-blocked flag passed (read-probe denials are expected noise). Pattern: separate 'inspect and report' from all 'fix and merge' duties.",
+    "value": "Pattern for adding a security specialist role to an autonomous agent society:\n\n(1) Agent role: create dev-mesh/security with ask-only mode. No Edit, no Write, no Bash(git:*) in allowedTools. No outbound peers in agent.json — security sees all, controls nothing.\n\n(2) Three-lens coverage: (a) Injection — prompt/workflow injection, unsafe shell interpolation (${{ head.ref }} in run:), fork PR secret exposure; (b) Identity/auth — OAuth-only Claude auth, least-privilege GitHub permissions, same-repo guards, credential masking; (c) Token budget — bounded autonomous loops, per-branch retry caps, usage capture, human-visible budget exhaustion paths.\n\n(3) Workflow auth: use CLAUDE_CODE_OAUTH_TOKEN not DEV_MESH_PAT. OAuth cannot push to .github/workflows — a security agent that can self-edit CI is a conflict of interest. Trigger: schedule (cron, e.g. every 6h) + manual dispatch only. Never pull_request — fork PRs can exfiltrate secrets if the trigger runs in the wrong context.\n\n(4) Permissions: `contents: read, issues: write`. Security cannot push. Issues:write only for findings alerts. Never open/close/merge PRs.\n\n(5) Honesty gate: shared assert-run-healthy.mjs with --advisory-blocked (ask-role flag). Read-probe denials are expected noise, not failure (see honesty-gate-role-scoped).\n\n(6) Mesh wiring: route via Maintainer (add Security as peer in maintainer/agent.json). Topology test assertions: Security is ask-only; Maintainer peers include Security; Security has zero outbound peers.\n\n(7) Tests: dev-mesh-agents.test.js guards role set, ask-only flag, peer topology; dev-mesh-workflow.test.js guards schedule trigger, no PR trigger, OAuth sanitation, postrun gate, three security lenses in prompt. Write tests first — they are the living spec.\n\nProvenance: PR #116 (2026-06-19).",
+    "provenance": {
+      "source": "PR #116 (2026-06-19): [codex] add scheduled dev-mesh security agent",
+      "ts": "2026-06-19"
+    }
+  },
+  "scheduler-builtin-for-native-jobs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Scheduler builtin: register native polling fns in-process; no LLM spawn; unknown name → fail-state.",
+    "l1": "PR #114 added a builtin kind to the mesh scheduler: instead of spawning delegateTask (a claude -p subprocess), a builtin runs an in-process function (e.g. pollGhActivity calling gh run list). Name is a key in a fixed registry; unknown name → fail-state record, never throws — consistent with failure-is-data. Delegate jobs unaffected. Guard daemon-started builtins with !opts.once && !opts.selftest (see subsystem-promote-and-daemon-guard). External builtin data should merge tolerantly into API responses: missing/corrupt/non-array cache → degrade to local-only.",
+    "value": "Pattern: when a mesh scheduled job performs native operations (gh run list, git, external API poll) that do NOT require an LLM, implement it as a scheduler `builtin` instead of a `delegateTask`.\n\n(1) Register the function in an in-process builtin registry (not in schedule.json). schedule.json carries { \"kind\": \"builtin\", \"name\": \"my-job-name\" }. The name is a lookup key — the value is never arbitrary code. Unknown builtin name → fail-state job record, never throws and never spawns anything.\n\n(2) Additive: existing delegate jobs are unaffected. The scheduler dispatches to the correct path by kind.\n\n(3) Daemon guard: register builtins inside the `!opts.once && !opts.selftest` block so single-pass sweep/health invocations exit cleanly (see subsystem-promote-and-daemon-guard).\n\n(4) Workflow→agent name convention: when a builtin polls external CI systems (e.g. gh run list), map workflow names to mesh role agents by naming convention (e.g. 'dev-mesh-coder' → coder agent). This lets cloud CI work appear in the live activity graph without those agents writing local run-logs.\n\n(5) Tolerant snapshot merge: data written by a builtin (a cache file) should be merged tolerantly into API responses. Missing file, corrupt JSON, or non-array value → silently degrade to local-only data. Never let a missing cache crash the live API.\n\nTest coverage: (a) known builtin name → calls registered fn, returns result; (b) unknown builtin name → fail-state record, no throw; (c) delegate jobs still route correctly. Hermetic: use dependency injection so the builtin fn is a no-op stub. Provenance: PR #114 (2026-06-19).",
+    "provenance": {
+      "source": "PR #114 (2026-06-19): feat(mesh): Phase 2 — GitHub-Actions activity poller (orchestrator agent)",
+      "ts": "2026-06-19"
+    }
+  },
+  "reviewer-sticky-changes-requested": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GitHub CHANGES_REQUESTED is sticky — always have an APPROVE path or PR stays red after clean passes.",
+    "l1": "PR #101: dev-mesh-review.yml had no APPROVE path — every follow-up pass downgraded to COMMENT, never clearing the sticky state. CI went green, review stayed red forever. Fix: binary verdict per commit — BLOCKING finding → REQUEST_CHANGES, no blocking → APPROVE with nits as optional notes. 'CI green + APPROVED' is now the true merge-ready signal, preventing review loops.",
+    "value": "Classify each review finding as BLOCKING or non-blocking before submitting. Emit exactly one verdict per commit: (1) gh pr review --request-changes if any blocking finding; (2) gh pr review --approve with nits as optional notes if none. This clears sticky CHANGES_REQUESTED — COMMENT-only follow-ups never clear it. Merge-ready definition: CI green AND latest review = APPROVED AND no unresolved blocking threads. Non-blocking nits must not withhold approval and must not be re-raised (loop prevention). Apply to any autonomous reviewer using gh pr review. Provenance: PR #101 (2026-06-18).",
+    "provenance": {
+      "source": "PR #101: fix(dev-mesh): reviewer emits an explicit approve verdict (fix red-but-merge-ready)",
+      "ts": "2026-06-18"
+    }
+  },
+  "agent-prompt-dedupe-cap-on-frequency-increase": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Raise schedule frequency only with dedupe-first + per-run cap in the agent prompt — else daily runs spam the queue.",
+    "l1": "PR #85 changed the Analyst from weekly to daily. Without guardrails the agent re-proposes the same ideas each morning, flooding the issue backlog. Fix: embed in the prompt — (1) list open issues first ('dedupe-first'), (2) propose only genuinely-new directions, (3) cap at 1–2 per run, (4) file nothing if nothing new qualifies. Both safeguards are necessary: dedupe alone still lets a chatty model treat near-duplicates as new; a cap alone still lets covered ideas through.",
+    "value": "Pattern for increasing the schedule frequency of any recurring proposal/research agent:\n\n1. Dedupe-first instruction: 'List current open issues first (gh issue list --state open --limit 100) — do NOT propose anything already covered by an existing Issue.'\n2. Per-run cap: explicitly state the max items (e.g., 'at most 1–2 genuinely NEW, non-duplicate directions per run').\n3. Zero-item exit: 'if nothing new is worth filing today, file NOTHING and stop.' This must be explicit — agents default to producing output unless told zero is acceptable.\n4. Quality framing: 'Quality over volume — never spam the backlog.' Frames the constraint positively so the model understands intent.\n\nAll four lines are mandatory when moving a proposal-loop agent from weekly/monthly to daily. Mental check: if the agent ran 7 consecutive days with no new research, would it produce 0 issues or 7 duplicate issues? The prompt must produce 0.\n\nAlso applicable to: backlog triagers, spec-proposal agents, idea generators — any role that files durable artifacts into a human-consumed queue. Do NOT rely on the queue consumer to dedupe — deduplication must happen at the source (the agent) to keep signal-to-noise high for human reviewers.\n\nProvenance: PR #85 (2026-06-18) — feat(dev-mesh): research Analyst runs daily + dedupes.",
+    "provenance": {
+      "source": "PR #85: feat(dev-mesh): research Analyst runs daily + dedupes — keep the idea queue fed",
+      "ts": "2026-06-18"
+    }
+  },
+  "deterministic-union-backlog-drain": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Shared-file PRs accumulate faster than LLM mergefix can drain — add deterministic keyed-union in the automerge sweep.",
+    "l1": "PR #130: 12 memory:promote PRs piled up; each touches quick.json; all conflicted; mergefix resolves 1/run via LLM — Curator opens them faster than mergefix drains. Fix: deterministic keyed-union in the automerge sweep (newer provenance.ts wins same-key; ours on tie; LRU cap enforced post-union). exit 3 for any non-memory conflict defers to mergefix. Whole backlog drains in one sweep pass, no LLM needed.",
+    "value": "In the automerge sweep, resolve quick.json deterministically: (1) keyed union — same key → newer provenance.ts wins, tie → ours; (2) LRU evict oldest non-core until under cap; (3) line-union memory *.md; (4) exit 3 on ANY non-memory conflict — defer to mergefix, never auto-merge code. Whole backlog drains in one sweep pass without LLM. Provenance: PR #130 (2026-06-19).",
+    "provenance": {
+      "source": "PR #130: fix(memory-automerge): deterministic in-line union to drain the memory:promote backlog",
+      "ts": "2026-06-19"
+    }
+  },
+  "dashboard-cached-panel-refresh": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Cached dashboard panels: regenerate-on-demand endpoint + manual button + tab-visible auto-refresh.",
+    "l1": "PR #135: Token/Issues/PR panels read a once-daily cached report. Re-reading stale cache on page load = always stale. Fix: POST /api/daily/refresh regenerates (reruns daily-report.mjs live), coalesces concurrent calls onto one in-flight run, 120s timeout, 502 on failure. UI: ↻ button + 20-min auto-refresh; pauses on document.hidden to avoid background gh queries. Header shows data date so freshness is observable.",
+    "value": "Pattern for dashboard panels backed by a generated/cached report:\n\n(1) REGENERATE, don't re-read: POST /api/*/refresh must re-execute the generator script (e.g. daily-report.mjs), not just return the cached file. Re-reading stale bytes on every page load is always stale.\n\n(2) Concurrent coalescing: if a regeneration is already in-flight, coalesce new requests onto it — never spawn N parallel generator processes. Maintain an in-flight promise and return the same result to all callers.\n\n(3) Timeout + error: set a generous timeout (120s for gh-heavy scripts); return 502 with a structured error body on failure. The UI can surface the error and keep the stale data rather than crashing.\n\n(4) Manual ↻ button: placed in the panel header; calls the regenerate endpoint and reloads the affected panels on success. Spinner during regeneration (disable button to prevent double-click).\n\n(5) Periodic auto-refresh: fire every N minutes (e.g. 20 min) while the tab is active. Gate on !document.hidden — visibility-change listener pauses/resumes the timer. Avoids background gh API calls when the user has switched tabs.\n\n(6) Data-date label: display the report's generation timestamp ('data as of: YYYY-MM-DD HH:mm') in the header. Staleness is now observable — users know whether to click ↻ without guessing.\n\nComplements cached-report-compute-and-schedule (backend: aggregation correctness + scheduler wiring) — together they cover the full pipeline: KPI computation → scheduled refresh → on-demand refresh → live UI freshness. Red flag: panels show stale data even after manual refresh → regenerate endpoint is re-reading cache, not re-running the generator. Provenance: PR #135 (2026-06-19).",
+    "provenance": {
+      "source": "PR #135: feat(dashboard): manual ↻ refresh + auto-refresh for Token/Issues/PR panels",
+      "ts": "2026-06-19"
+    }
+  },
+  "run-now-state-rearm": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Run-now: re-arm nextRunAt=now in state.json; daemon tick executes ≤30s — no new execution surface in the UI.",
+    "l1": "PR #132: ▶ Run button calls POST /api/schedules/run → validates (manifest + isSafeArtifactId + enabled) → markJobDue sets nextRunAt=now (pure fn, clones state). Daemon's 30s tick finds job due and runs it. Same mechanism the heartbeat uses to re-arm overdue jobs. UI stays read-only — writes only a 'due' marker (data, not execution). Disabled → 409; unknown → 404. Path safety: writes only the validated agent's schedule-state.json (isPathInsideRoot). describeJob fallback: description → prompt first line → ''.",
+    "value": "Pattern: when a UI needs to trigger a scheduled job on demand, do NOT add execution capability to the UI layer. Instead:\n\n(1) API endpoint POST /api/schedules/run {agent, id}: validate (a) agent matches manifest; (b) id is a real job in agent's schedule.json; (c) job is enabled (else 409); (d) agentRoot passes isPathInsideRoot. Write only to <agentRoot>/.agent-mesh/schedule-state.json.\n\n(2) Pure helper markJobDue(state, id, now): returns shallow-cloned state with nextRunAt=now.toISOString(), running:false. Creates the entry if absent. No I/O — the route does the I/O.\n\n(3) Response 202 {queued:true, runsWithinMs:30000}. UI shows transient 'queued…'; status updates on next poll. Errors: 409 disabled, 404 unknown, 500 write failure.\n\n(4) Daemon's tick (≤30s) finds job due (enabled && !running && nextRunAt ≤ now) and executes. Dashboard never runs anything itself — preserves the daemon's serialization, path-guard, and auth model.\n\n(5) Idempotent: clicking twice is harmless — both set nextRunAt=now; daemon's one-job-at-a-time lock prevents double-run.\n\n(6) Optional: if dashboard-owned scheduler present (--allow-shell), also call scheduler.runNow for immediacy — but the re-arm is the universal mechanism in daemon-owned setup.\n\n(7) describeJob fallback: description field (trimmed) → first non-empty line of prompt (length-bounded) → ''. Include in list-all so /api/schedules carries the description.\n\nGeneralizes: any API that triggers daemon-owned work should write a data marker; the daemon reads and executes — no execution surfaces in the UI. Provenance: PR #132 (2026-06-19).",
+    "provenance": {
+      "source": "PR #132: feat(dashboard): Schedules panel — Run-now button + per-task descriptions",
+      "ts": "2026-06-19"
+    }
+  },
+  "port-scoped-pidfile-single-instance": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Single-instance CLI server: port-scoped pidfile, SIGTERM→grace→SIGKILL on relaunch, fail-open I/O, --no-replace opt-out.",
+    "l1": "PR #136: dashboard processes piled up on restart — pkill-by-name misses lingering instances sharing the same port. Fix: `<os.tmpdir()>/agent-mesh-dashboard-<port>.pid` records the owner PID. On relaunch: read pidfile → SIGTERM → poll ≤3 s → SIGKILL if still alive → write new pidfile → bind. All I/O is best-effort; a pidfile error never blocks launch. `--no-replace` lets scripts refuse an already-running instance. Remove pidfile on clean exit.",
+    "value": "Apply to any long-running CLI server that users repeatedly restart (dashboard, dev-server, proxy).\n\n(1) Pidfile location: `<os.tmpdir()>/<name>-<port>.pid`. Port-scoped so two processes on different ports coexist safely.\n\n(2) Reap sequence on launch: read pidfile → check `isAlive(pid)` → SIGTERM → poll every 100 ms for ≤3 s → SIGKILL if process still alive → write new pidfile → bind.\n\n(3) Never kill an untracked holder: only kill a PID recorded in this tool's own pidfile. An unrecorded port-holder surfaces as `EADDRINUSE` — actionable error, not a silent kill.\n\n(4) Fail-open I/O: wrap every pidfile read/write and signal send in try/catch. A missing, stale, or unwritable pidfile must never prevent launch — only `--no-replace` may refuse.\n\n(5) `--no-replace` flag: read pidfile, if a live PID exists → exit 1 with a message naming the PID and port. Use in scripted/CI contexts where a double-launch is always an error.\n\n(6) Remove pidfile on clean exit and uncaught fatal (process.on('exit', …)).\n\n(7) Inject I/O and signal deps for hermetic tests — mock the process table to exercise stale/graceful/SIGKILL/best-effort branches without spawning real processes. PR #136 ships 8 tests in test/dashboard-single-instance.test.js covering all branches. Implementation: src/dashboard/single-instance.js. Provenance: PR #136 (2026-06-19).",
+    "provenance": {
+      "source": "PR #136: feat(dashboard): single-instance — reap prior instance on launch",
+      "ts": "2026-06-19"
+    }
+  },
+  "git-remote-envvar-fallback": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Env var fallback: parse owner/repo from git remote when daemon-set var is absent in manual/interactive runs.",
+    "l1": "PR #138: POST /api/daily/refresh failed (exit 2) from a manually-launched dashboard — DEV_SOCIETY_REPO is set only by the launchd service, not interactive processes. Fix: repoSlugFromRemote() shells `git config --get remote.origin.url` and parses both https (https://github.com/o/r.git) and ssh (git@github.com:o/r) forms, stripping .git and whitespace, throwing on empty. No behavior change when the var is already set. Tests: https/ssh/.git-suffix/trailing-newline/empty — 4 new cases.",
+    "value": "Pattern for any env var typically set by a service launcher (launchd/systemd): (1) try process.env.VAR first; (2) if absent, run `git config --get remote.origin.url`; (3) parse both https (https://github.com/owner/repo.git) and ssh (git@github.com:owner/repo) URL forms; (4) strip trailing .git suffix and whitespace; (5) throw on empty/unparseable. Export the parser as a named helper (e.g. repoSlugFromRemote) for unit testing. Test cases: https URL / ssh URL / .git suffix / trailing newline / empty string. Ensures the feature works in both daemon-managed and manual sessions without requiring the operator to set extra env vars. Provenance: PR #138 (2026-06-19).",
+    "provenance": {
+      "source": "PR #138: fix(dashboard): daily/refresh derives DEV_SOCIETY_REPO from git remote",
+      "ts": "2026-06-19"
+    }
+  },
+  "terminal-close-escalate-sweep": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon closes terminal-labelled issues; escalation sweep converts stuck PRs to deduped self-closing needs-triage issues.",
+    "l1": "PR #158 plugged two silent-hang holes. (1) isTerminalState: daemon sweep top-of-tick closes any open issue with a terminal label (done/rejected/wontfix/duplicate/invalid) — previously required manual close. (2) dev-mesh-escalate sweep: PR stuck past staleMs (3h default) in DIRTY/UNKNOWN/UNSTABLE/CHANGES_REQUESTED, or CLEAN-without-APPROVED → open a deduped needs-triage issue that flows into the Triager pipeline; self-close on recovery. Excludes drafts, forks, memory:promote, BLOCKED/BEHIND, CLEAN+APPROVED. Cron 12,42; gated by AUTOMERGE_ENABLED; issues:write only.",
+    "value": "Two-part self-healing pattern for no-silent-hangs:\n\n**Part 1 — auto-close terminal issues**: Add isTerminalState(issue) as the FIRST check in the daemon's sweep tick. Terminal labels: done, rejected, wontfix, duplicate, invalid. Call `gh issue close N` without removing the label. Run before any routing logic so closed issues never consume processing budget.\n\n**Part 2 — PR escalation sweep**: For each non-excluded PR stuck past staleMs: (a) classify stuck state (mergeability ∈ {DIRTY,UNKNOWN,UNSTABLE}; reviewDecision=CHANGES_REQUESTED; CLEAN-without-APPROVED); (b) title-dedup before creating a needs-triage issue ('stuck (PR #N — class)'); (c) self-close when PR recovers (MERGEABLE+APPROVED or PR merged/closed).\n\nExclusions (each prevents a false-positive): draft PRs; fork PRs (isCrossRepository=true); memory:promote label; BLOCKED/blocked-by-* label; BEHIND mergeability (mergefix owns); CLEAN+APPROVED (auto-merge owns).\n\nConfig: DEV_MESH_PR_STALE_MS (default 3h); AUTOMERGE_ENABLED gate (see default-off-three-layer-kill-switch); cron 12,42 offset from other sweeps. Permissions: issues:write only.\n\nTests: truth table for isEscalatable() covering all mergeState × reviewDecision × exclusion-label combos; open/dedup/self-close/--dry-run with injected gh shim; YAML lint for exclusion-list completeness.\n\nRelated: pr-janitor-gap-classes (complements — janitor handles scope-drift, UNKNOWN nudge, unlabelled-bot PRs). Provenance: PR #158 (2026-06-19).",
+    "provenance": {
+      "source": "PR #158: feat(self-healing): close terminal issues + escalate stuck PRs (no silent hangs)",
+      "ts": "2026-06-19"
+    }
+  },
+  "agent-prompt-no-user-refs": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "User-controlled refs must not be in agent prompt text — only YAML env:/run:; agent pushes HEAD, YAML resolves the ref.",
+    "l1": "PR #160: (1) `${{ inputs.task }}` in run: — dispatch caller controls shell; (2) embedding literal `$PR_BRANCH` in prompt text — git allows `$(cmd)` in branch names, so model-echoed refs are injection. Fix: attacker-controlled data lives ONLY in YAML env:/run:. For repair-loop agents: YAML pre-step checks out branch; agent edits/commits; YAML post-step pushes `git push origin HEAD:$PR_BRANCH` — agent never sees the ref. Extends gh-actions-ref-injection and bash-tool-simple-expansion-hoist.",
+    "value": "Two injection surfaces closed by PR #160 — same root cause:\n\n(1) workflow_dispatch inputs in run: (`${{ inputs.task }}` inline → shell injection). Fix: `env: TASK: ${{ inputs.task }}` then `\"$TASK\"` in shell. Applies to inputs.* and vars.* used as positional args (`--model ${{ vars.X }}` is unsafe; `--model \"$VAR\"` after env: is safe). Extends gh-actions-ref-injection (which covers head.ref from PRs — same fix, different source).\n\n(2) Branch refs in agent prompt text. When simple_expansion blocks `$PR_BRANCH` in Bash tool calls, the naive fix is embedding the literal branch name in the agent prompt. This is CWE-78: git allows `$(cmd)` in branch names, so a crafted ref in prompt text → model echoes it to shell → command injection. Fix: the ref NEVER appears in prompt text.\n\nCanonical pattern for repair-loop agents:\n1. YAML run: pre-step — `git checkout \"$PR_BRANCH\"` (safe: shell var, not template interpolation); `git merge origin/main`.\n2. Drive Coder step — agent receives context (conflict files, PR description), edits/resolves, commits. Agent sees no ref string.\n3. YAML run: post-step — `git push origin HEAD:\"$PR_BRANCH\"` (shell var only).\n\nAgent never touches the ref — it pushes HEAD. The YAML step holds the only string copy of the branch name.\n\nRule: attacker-controlled data (user inputs, branch names, PR titles) must never transit: agent prompt → model output → shell. It must live exclusively in YAML env:/run:. Any workaround that embeds it in prompt text to bypass simple_expansion creates a prompt-injection-to-shell path.\n\nRelated: gh-actions-ref-injection (head.ref in run:), bash-tool-simple-expansion-hoist (hoist git ops to YAML env:). Provenance: PR #160 (2026-06-19).",
+    "provenance": {
+      "source": "PR #160: fix(ci): close mesh-detected workflow holes — shell injection + broken repair loops",
+      "ts": "2026-06-19"
+    }
+  },
+  "sandbox-host-cli-parity": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Add project CLI verbs for ops the sandbox agent can't run — shared vocabulary for agent and human, no round-trip paste.",
+    "l1": "When a sandboxed agent can't access `gh` (auth/PATH), a round-trip paste loop emerges: agent asks → human runs → pastes output → agent continues. Fix: add project CLI verbs wrapping those ops. Both sandbox agent and human share one command vocabulary — no divergent interfaces. Side benefit: lazy-import verb modules at dispatch so the hot entrypoint (serve-peer-bridge) stays cheap. PR #153 shipped dev-society status/ledger + issue label as Phase 1 (read-mostly); write/restart deferred to Phase 2 to limit blast radius.",
+    "value": "Pattern for closing the sandbox–host interface gap:\n\n(1) Identify the gap: list ops the sandboxed agent frequently needs but can't run directly (e.g. `gh issue list`, `cat .dev-society/ledger.jsonl`, `ls .dev-society/work/`). Any op requiring auth tokens not available in the sandbox, or tools not on the sandbox PATH, is a round-trip candidate.\n\n(2) Add project CLI verbs wrapping them: use the existing project binary (e.g. `agent-mesh`) to add a `<namespace> <verb>` surface. Both the sandbox agent (permitted to run `node ./bin/agent-mesh.js ...` in its Bash tool) and the host human use the same commands. Examples from PR #153:\n  - `agent-mesh dev-society status [--repo OWNER/REPO]` — daemon log + ledger + active worktrees + queue\n  - `agent-mesh dev-society ledger [--last N]` — pretty-printed ledger with edges and timing\n  - `agent-mesh issue label <num> [--add L]... [--remove L]...` — wrapper over `gh issue edit`\n\n(3) Lazy-import the verb module: inside the CLI dispatch (e.g. `src/cli.js`), import the subcommand module lazily inside the case handler. This keeps the hot-path entrypoint cheap on every other invocation (e.g. serve-peer-bridge cost stays at ~7ms).\n\n(4) Phase writes separately: Phase 1 = read-mostly verbs (status, ledger, label flip). Phase 2 = write/restart verbs (daemon restart, pr nudge, workflow run). Starting read-only limits blast radius and validates the architecture before adding write authority.\n\n(5) --repo flag for auth-gated ops: verbs calling `gh` need a `--repo OWNER/REPO` arg (or derive from git remote — see git-remote-envvar-fallback). Read-only paths (daemon log, ledger) work without auth.\n\nSymptom of the gap: human pastes raw `gh issue list` or `cat ledger.jsonl` into chat so the agent can process it. Fix: project CLI verb the agent invokes directly. Provenance: PR #153 (2026-06-19).",
+    "provenance": {
+      "source": "PR #153: feat(cli): phase-1 unified mesh ops (dev-society + issue verbs)",
+      "ts": "2026-06-19"
+    }
+  },
+  "issue-gate-pr-merge": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Auto-merge reads only PR fields — stamp blocked-by-issue via cron sweep when closing issue is blocked/rejected.",
+    "l1": "isAutoMergeable checks only PR-level fields — so a PR closing a blocked/rejected issue can satisfy CLEAN+APPROVED and auto-merge. Issue labels gated work-start, not merge. Fix (PR #156): a cron sweep ('2,17,32,47 * * * *', 5 min before automerge ticks) resolves closingIssuesReferences per open PR, idempotently stamps/removes blocked-by-issue. isAutoMergeable now includes blocked-by-issue as a hold label. Safety: sweep owns ONLY its label — never touches human-set do-not-merge/hold/wip. PRs with no linked issue are ungated.",
+    "value": "Three-component pattern for coupling PR auto-merge to linked-issue state:\n\n(1) Pure gate fn shouldHoldForIssues(closingIssues): check each closingIssuesReference's labels against a blocking set (blocked/rejected/wontfix/duplicate). Returns true if any match. No I/O — pure predicate, unit-testable and extensible without touching the merge path.\n\n(2) Cron sweep (dev-mesh-issue-gate.yml, cron: '2,17,32,47 * * * *' — offset 5 min before automerge's :00/:15/:30/:45 ticks): for each open same-repo PR, call gateDecision → add/remove/noop for blocked-by-issue. Idempotent. Gated by AUTOMERGE_ENABLED (same kill switch as the merge sweep). Least-privilege: pull-requests:write + issues:read + contents:read only.\n\n(3) Hold-label rule in isAutoMergeable extended to include blocked-by-issue — the one new entry in the hold list. No merge-decision logic change beyond this.\n\nSafety invariants:\n- Sweep owns ONLY blocked-by-issue — never touches human-set labels (do-not-merge, hold, wip). If a human removes blocked-by-issue, the next sweep re-stamps it (source of truth is the linked issue state, not the label).\n- PRs with no closingIssuesReferences are ungated — chore/docs/memory PRs merge normally.\n- Manual gh pr merge bypasses label checks (documented trade-off; hard enforcement needs a branch-protection required check — out of scope).\n\nTest surface: test/issue-gate.test.js (pure shouldHoldForIssues/gateDecision), test/issue-gate-sweep.test.js (sweep orchestration), test/issue-gate-workflow.test.js (YAML structure lint), + blocked-by-issue case in test/automerge-eligibility.test.js.\n\nProvenance: PR #156 (2026-06-19).",
+    "provenance": {
+      "source": "PR #156: feat(automerge): gate PR merge on linked-issue state",
+      "ts": "2026-06-19"
+    }
+  },
+  "a2a-http-dual-transport-dispatch": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "A2A HTTP: type peers in registry, unified client dispatch, recursion threaded as headers — one shared JSON-RPC core.",
+    "l1": "PR #151: adds HTTP/JSON-RPC to the stdio A2A mesh. Three-part pattern: (1) type the peer at registry-normalization time ('http'|'stdio'); (2) a single createA2AClient dispatches to HttpClientSession (fetch, per-request) or StdioClientSession (long-lived spawn) — the caller never selects a transport; (3) AGENT_MESH_PATH/DEPTH thread as X-AgentMesh-Path/X-AgentMesh-Depth headers so recursion-guard/depth-budget work identically on both transports. HTTP servers bind 127.0.0.1 only (auth/TLS deferred); mixed http+stdio registries work. AgentCard reports protocolBinding:'JSONRPC' for HTTP peers.",
+    "value": "Pattern for adding HTTP transport to a stdio-based JSON-RPC protocol (same core, two framing layers):\n\n(1) Type the peer at registry normalization: normalizeRegistry() inspects the peer record — if it has `url:` and no `command:`, it becomes type:'http'; otherwise type:'stdio'. Mixed registries (http + stdio peers in the same registry.json) work without any caller changes.\n\n(2) Unified client entry point: createA2AClient(registry) returns a single client whose .send(peer, msg) dispatches to HttpClientSession (per-request fetch, stateless) or StdioClientSession (long-lived process, stateful) based on peer.type. The caller never inspects the type — transport is purely a registry-level detail.\n\n(3) Thread recursion state across the HTTP boundary: AGENT_MESH_PATH and AGENT_MESH_DEPTH — normally passed as child process env — become X-AgentMesh-Path and X-AgentMesh-Depth HTTP headers. The receiving server extracts them from headers and injects into the worker env. Cycle-guard and depth-budget logic are transport-agnostic; a multi-hop mesh mixing stdio and HTTP enforces the same invariants end-to-end.\n\n(4) Server binding: HTTP servers bind 127.0.0.1 by default. Auth and TLS are explicitly deferred to v2 — document this limitation in the PR body so reviewers can assess the threat model consciously.\n\n(5) AgentCard: buildAgentCard accepts a transport param; HTTP cards report protocolBinding:'JSONRPC' for A2A interop.\n\n(6) Test split — 4 hermetic files isolating one layer each: http-server (request/response, error handling), http-client (session lifecycle), http-registry (normalizeRegistry typed peers), http-recursion (header propagation + depth enforcement). Clean split means failures point to the exact layer.\n\nInvariant: the JSON-RPC core (message validation, Task construction, agentmesh/* metadata) is NOT duplicated. The transport wraps the shared core — any core change applies to both transports automatically. Provenance: PR #151 (2026-06-19).",
+    "provenance": {
+      "source": "PR #151: feat(a2a): HTTP/JSON-RPC transport binding (issue #141)",
       "ts": "2026-06-19"
     }
   }

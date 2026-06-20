@@ -194,14 +194,15 @@ test('delegateToPeer defaults mode to ask', async () => {
 // delegateToPeer — gates (no spawn)
 // ---------------------------------------------------------------------------
 
-test('delegateToPeer(do) → mode_disabled, NO peer spawn', async () => {
+test('delegateToPeer(do) from ask-mode parent → readonly_parent, NO peer spawn', async () => {
   const root = await agentRootWith(MARKED);
   const { factory, calls } = fakeClientFactory();
+  // env.AGENT_MESH_MODE absent or 'ask' → parent is ask-mode → do is refused
   const bridge = createBridge({ root, env: {}, createClient: factory });
   const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'rm -rf' });
   assert.equal(res.ok, false);
-  assert.equal(res.error_code, 'mode_disabled');
-  assert.equal(calls.factory.length, 0, 'must not construct a client for do');
+  assert.equal(res.error_code, 'readonly_parent');
+  assert.equal(calls.factory.length, 0, 'must not construct a client for do from ask parent');
 });
 
 test('delegateToPeer unknown peer → bad_input, no spawn', async () => {
@@ -276,13 +277,14 @@ test('delegateToPeer(ask) writes a2a started+done records under the caller root'
   assert.ok(typeof done.finished_at === 'string');
 });
 
-test('delegateToPeer refusal (mode_disabled) writes a single a2a done:rejected record, no started', async () => {
+test('delegateToPeer refusal (readonly_parent) writes a single a2a done:rejected record, no started', async () => {
   const { root, meshRoot } = await meshAgentRootWith(MARKED);
   const { factory, calls } = fakeClientFactory();
+  // AGENT_MESH_MODE absent → parent is ask-mode → do refused as readonly_parent
   const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
 
   const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'rm -rf' });
-  assert.equal(res.error_code, 'mode_disabled');
+  assert.equal(res.error_code, 'readonly_parent');
   assert.equal(calls.factory.length, 0, 'no peer spawn');
 
   const recs = await readA2aRecords(root);
@@ -290,7 +292,7 @@ test('delegateToPeer refusal (mode_disabled) writes a single a2a done:rejected r
   const done = recs.find((r) => r.state === 'done');
   assert.ok(done, 'a refusal is still recorded');
   assert.equal(done.status, 'rejected');
-  assert.equal(done.error_code, 'mode_disabled');
+  assert.equal(done.error_code, 'readonly_parent');
   assert.equal(done.to, 'library');
 });
 
@@ -341,4 +343,117 @@ test('delegateToPeer logs started + done:error when the peer send throws (post-d
   assert.ok(started && done, 'both records written on a post-dispatch failure');
   assert.equal(started.id, done.id);
   assert.equal(done.status, 'error');
+});
+
+// ---------------------------------------------------------------------------
+// do→do peer delegation (v2 unlock)
+// ---------------------------------------------------------------------------
+
+test('delegateToPeer(do) from do-mode parent → succeeds, forwards mode=do, releases lock', async () => {
+  const { root, meshRoot, name } = await meshAgentRootWith(MARKED);
+  const { factory, calls } = fakeClientFactory();
+  let lockAcquired = false;
+  let lockReleased = false;
+  const fakeLock = async () => {
+    lockAcquired = true;
+    return { acquired: true, release: async () => { lockReleased = true; } };
+  };
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MODE: 'do', AGENT_MESH_MESH_CEILING: meshRoot },
+    createClient: factory,
+    acquireLock: fakeLock
+  });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'write a file' });
+  assert.equal(res.ok, true);
+  assert.equal(res.status, 'completed');
+  assert.ok(lockAcquired, 'lock must be acquired for do→do');
+  assert.ok(lockReleased, 'lock must be released after delegation');
+  // The forwarded message metadata must carry mode:'do'
+  assert.equal(calls.sent[0].message.metadata['agentmesh/mode'], 'do');
+  assert.equal(calls.sent[0].message.metadata['agentmesh/caller'], name);
+});
+
+test('delegateToPeer(do) from explicit ask-mode parent → readonly_parent, lock never acquired', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory();
+  let lockAcquired = false;
+  const fakeLock = async () => { lockAcquired = true; return { acquired: true, release: async () => {} }; };
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MODE: 'ask', AGENT_MESH_MESH_CEILING: meshRoot },
+    createClient: factory,
+    acquireLock: fakeLock
+  });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'readonly_parent');
+  assert.equal(lockAcquired, false, 'lock must not be acquired when parent is ask-mode');
+});
+
+test('delegateToPeer(do) lock timeout → lock_timeout refusal', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory();
+  const timedOutLock = async () => ({ acquired: false });
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MODE: 'do', AGENT_MESH_MESH_CEILING: meshRoot },
+    createClient: factory,
+    acquireLock: timedOutLock
+  });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'x' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'lock_timeout');
+});
+
+test('delegateToPeer(do) result includes peer_changes from downstream task metadata', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const taskWithChanges = {
+    id: 't3',
+    status: { state: 'TASK_STATE_COMPLETED', message: { role: 'ROLE_AGENT', parts: [{ text: 'done' }] }, timestamp: new Date().toISOString() },
+    artifacts: [{ artifactId: 't3-s', name: 'summary', parts: [{ text: 'wrote foo.txt' }] }],
+    metadata: { 'agentmesh/log_path': '/logs/t3.json', 'agentmesh/files_changed': ['foo.txt', 'bar.txt'] }
+  };
+  const { factory } = fakeClientFactory({ task: taskWithChanges });
+  const fakeLock = async () => ({ acquired: true, release: async () => {} });
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MODE: 'do', AGENT_MESH_MESH_CEILING: meshRoot },
+    createClient: factory,
+    acquireLock: fakeLock
+  });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'write stuff' });
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.peer_changes, ['foo.txt', 'bar.txt']);
+  assert.deepEqual(res.files_changed, ['foo.txt', 'bar.txt']); // back-compat alias
+});
+
+test('delegateToPeer(do) a2a log record carries peer_changes for downstream accumulation', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const taskWithChanges = {
+    id: 't4',
+    status: { state: 'TASK_STATE_COMPLETED', message: { role: 'ROLE_AGENT', parts: [] }, timestamp: new Date().toISOString() },
+    artifacts: [],
+    metadata: { 'agentmesh/files_changed': ['lib/x.js'], 'agentmesh/log_path': '/logs/t4.json' }
+  };
+  const { factory } = fakeClientFactory({ task: taskWithChanges });
+  const fakeLock = async () => ({ acquired: true, release: async () => {} });
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MODE: 'do', AGENT_MESH_MESH_CEILING: meshRoot, AGENT_MESH_RUN_ID: 'run-parent' },
+    createClient: factory,
+    acquireLock: fakeLock
+  });
+
+  await bridge.delegateToPeer({ peer: 'library', mode: 'do', task: 'x' });
+
+  const recs = await readA2aRecords(root);
+  const done = recs.find((r) => r.state === 'done');
+  assert.ok(done, 'done record written');
+  assert.deepEqual(done.peer_changes, ['lib/x.js'], 'peer_changes in a2a log for downstream accumulation');
+  assert.equal(done.parent_run_id, 'run-parent');
 });

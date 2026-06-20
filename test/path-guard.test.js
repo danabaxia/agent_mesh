@@ -138,6 +138,54 @@ test('path-guard: AGENT.md under root is NOT protected (data, not config)', asyn
   assert.equal(await isProtectedConfigPath(root, join(root, 'AGENT.md')), false);
 });
 
+test('isPathInsideRoot treats backslash path separators identically to forward slashes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-guard-'));
+  // Backslash separators must be normalized to / on all platforms so Windows
+  // paths (from Node 22 realpath/relative) compare correctly against the root.
+  assert.equal(await isPathInsideRoot(root, 'sub\\dir\\file.txt'), true);
+  assert.equal(
+    await isPathInsideRoot(root, 'sub\\dir\\file.txt'),
+    await isPathInsideRoot(root, 'sub/dir/file.txt')
+  );
+});
+
+test('isPathInsideRoot blocks backslash-encoded traversal after normalization', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-guard-'));
+  // After \\ → / normalization, ..\\outside.txt becomes ../outside.txt — a traversal.
+  assert.equal(await isPathInsideRoot(root, '..\\outside.txt'), false);
+});
+
+test('isProtectedConfigPath treats backslash path separators identically to forward slashes', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-guard-'));
+  // Backslash-separated config paths must be protected identically to forward-slash ones.
+  assert.equal(await isProtectedConfigPath(root, 'prompts\\system.md'), true);
+  assert.equal(
+    await isProtectedConfigPath(root, 'prompts\\system.md'),
+    await isProtectedConfigPath(root, 'prompts/system.md')
+  );
+  // Backslash traversal to a config path outside the root must NOT be flagged as protected.
+  assert.equal(await isProtectedConfigPath(root, '..\\prompts\\system.md'), false);
+});
+
+test('path-guard hook allows a backslash-separated path inside the root', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-hook-'));
+  const allowed = execHook(root, {
+    tool_name: 'Write',
+    tool_input: { file_path: 'sub\\dir\\file.txt' }
+  });
+  assert.equal(allowed.status, 0, 'backslash path inside root must be allowed through the hook');
+});
+
+test('path-guard hook blocks a backslash-encoded traversal', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agent-mesh-hook-'));
+  const blocked = execHook(root, {
+    tool_name: 'Write',
+    tool_input: { file_path: '..\\outside.txt' }
+  });
+  assert.equal(blocked.status, 2, 'backslash traversal must be denied through the hook');
+  assert.match(blocked.stderr, /Write denied outside agent-mesh root/);
+});
+
 function execHook(root, payload) {
   const result = spawnSync('node', ['hooks/path-guard.js'], {
     cwd: repoRoot,
