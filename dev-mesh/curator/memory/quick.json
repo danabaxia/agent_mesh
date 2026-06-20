@@ -617,6 +617,17 @@
       "ts": "2026-06-19"
     }
   },
+  "mir-deterministic-backlog-bridge": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Assessment→task bridge: pure pipeline converts test/eval artifacts to deduped issues; host files, LLM never does.",
+    "l1": "PR #165: the self-evolve loop had no 'assessment→task' bridge — L0–L4 tiers wrote JSON artifacts with no systematic consumer. Fix: pure pipeline (metrics→aggregate→baseline→policy→render→issues) produces a mir.json filing plan; the daemon builtin tester-suite-run or CI executes it as a host action — never an ask-mode MCP call. Hard signals (red tests, I1–I7 failures, error/timeout run-logs) always file; soft metric regressions only file past a direction-aware noise band. finding.id→issueNumber ledger deduplicates across nightly runs.",
+    "value": "Pattern: closing the evidence→backlog gap in an autonomous agent society.\n\n(1) Pure pipeline: separate evidence-reading from issue-filing via pure functions. collect.js gathers artifacts (L0 test JSON, L2–L3 scorecard JSON, run-log JSONL); metrics.js extracts scalars; aggregate.js computes summaries; baseline.js diffs against the last-run baseline (carried in mir.json's ledger); policy.js classifies findings (hard/soft, severity); render.js builds the report; issues.js produces a filing plan — never executes it.\n\n(2) Host-action execution: the daemon builtin (tester-suite-run in schedule.json) or a CI job reads the filing plan and calls gh issue create. Ask-only agents can read mir.json as data; they cannot trigger the filing. This preserves the ask-mode safety invariant: agents inspect findings, host/CI acts on them.\n\n(3) Two-tier gate: hard signals (any failing test, any failed security invariant, any error/timeout run-log) always file. Soft signals (metric regressions) file only when the signed delta exceeds the noise band (AGENT_MESH_MIR_NOISE_BAND_PCT). Prevents alert fatigue while capturing real regressions.\n\n(4) Ledger-based dedup: maintain a finding.id→issueNumber mapping. Before filing, check: if finding.id already maps to an open issue, skip. This ensures each finding appears as exactly one open issue regardless of how many nightly runs have passed.\n\n(5) Additive producer hook: if a tier doesn't persist results as JSON, add an opt-in --json <path> flag (additive, default unchanged). For L0: run-all-tests.mjs --json <path> writes {at, results[], summary}. Existing stdout output is untouched.\n\n(6) Finding-id safety: validate finding.id against MIR_ID_RE (safe characters only) before using it as a GitHub label or issue marker — prevents label injection from crafted scorecard outputs.\n\nProvenance: PR #165 (2026-06-20).",
+    "provenance": {
+      "source": "PR #165: feat(mir): Mesh Improvement Report — Tester-owned self-evolve signal",
+      "ts": "2026-06-20"
+    }
+  },
   "a2a-http-dual-transport-dispatch": {
     "status": "active",
     "valid_to": null,
