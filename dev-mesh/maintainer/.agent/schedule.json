@@ -40,6 +40,14 @@
       "builtin": "post-merge-reconcile",
       "cadence": { "kind": "every", "minutes": 10 },
       "enabled": true
+    },
+    {
+      "id": "autofix-pr-sweep",
+      "name": "Escalate bug-autofix PRs closed without merging (pr:in-review → blocked)",
+      "kind": "builtin",
+      "builtin": "autofix-pr-sweep",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
     }
   ]
 }
