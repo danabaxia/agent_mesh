@@ -7,6 +7,7 @@ import { applyBaseline } from './baseline.js';
 import { gate } from './policy.js';
 import { renderMarkdown } from './render.js';
 import { planIssues } from './issues.js';
+import { ensureLabels } from '../gh-labels.js';
 
 export function buildReport({ inputs, previousMir, at, ref, noiseBandPct, trendN }) {
   const raw = aggregate(inputs, { at, ref });
@@ -25,6 +26,10 @@ export async function syncReport({ mir, mirDir, dryRun, gh, writeFile, recoverRu
   let mutations = 0;
 
   if (!dryRun) {
+    // Self-heal: ensure labels on every create item exist before filing, so a new
+    // MIR label (`generated:mesh-scan`, `regression`, `security`, `behavior`, `perf`)
+    // never 422s the run (the #182 bug class, latent here until a regression fires).
+    await ensureLabels(gh, [...new Set(plan.filter((i) => i.action === 'create').flatMap((i) => i.labels))]);
     for (const item of plan) {
       if (item.action === 'create') {
         const out = await gh(['issue', 'create', '--title', item.title, '--body', item.body,

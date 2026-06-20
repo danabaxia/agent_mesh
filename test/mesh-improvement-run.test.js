@@ -46,3 +46,19 @@ test('dry-run never calls gh; live-run creates and records issueNumber', async (
   const persisted = JSON.parse(writes[Object.keys(writes).find((k) => k.endsWith('.json'))]);
   assert.equal(persisted.ledger['behavior:overall:pass-rate'].issueNumber, 777);
 });
+
+test('live-run self-heals labels: every create label is `gh label create`d before the first issue create', async () => {
+  const mir = buildReport({ inputs, previousMir, at: '2026-06-20T06:30:00Z',
+    ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
+  const order = [];
+  await syncReport({ mir, mirDir: '/tmp/mir', dryRun: false,
+    gh: async (args) => {
+      order.push(args.slice(0, 2).join(' '));
+      return args[0] === 'issue' && args[1] === 'create' ? 'https://github.com/o/r/issues/1' : '';
+    },
+    writeFile: () => {}, recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
+  const firstCreate = order.indexOf('issue create');
+  const firstLabel = order.indexOf('label create');
+  assert.ok(firstLabel !== -1, 'expected a `gh label create` (ensureLabels) call');
+  assert.ok(firstLabel < firstCreate, 'labels must be ensured before the first issue create');
+});

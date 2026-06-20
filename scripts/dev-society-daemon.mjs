@@ -44,6 +44,7 @@ import { recordActivity, pruneActivity } from '../src/activity-log/log.js';
 import { runMir } from './mir-run.mjs';
 import { runAnalystDailyReview } from './analyst-review-run.mjs';
 import { doctor } from '../src/builder/doctor.js';
+import { ensureLabels } from '../src/gh-labels.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -192,6 +193,10 @@ if (!once && !selftest) {
       return;
     }
     if (found) { await gh(['issue', 'comment', found, '--repo', cfg.repo, '--body', body]).catch((e) => log('  (hb comment failed)', e.message)); return; }
+    // Self-heal the label first: `gh issue create --label` 422s on an unknown
+    // label, and the .catch below would swallow it — heartbeats would silently
+    // never file. ensureLabels makes `mesh-heartbeat` exist (the #182 bug class).
+    await ensureLabels(gh, ['mesh-heartbeat'], { repo: cfg.repo });
     await gh(['issue', 'create', '--repo', cfg.repo, '--title', title, '--body', body, '--label', 'mesh-heartbeat']).catch((e) => log('  (hb create failed)', e.message));
   };
 

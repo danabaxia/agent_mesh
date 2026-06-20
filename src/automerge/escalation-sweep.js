@@ -2,6 +2,7 @@
 // as needs-triage issues (dedup'd) and close its OWN escalations once the PR recovers.
 // Failure is data — a per-item error is logged and skipped, never aborts the sweep.
 import { prNeedsEscalation, escalationTitle, escalationBody, parsePrNumber } from './escalation.js';
+import { ensureLabels } from '../gh-labels.js';
 
 // Only titles this sweep itself produces — so the close pass never touches a janitor's
 // "needs-triage: PR #N unlabelled and stuck" issue.
@@ -40,6 +41,10 @@ export async function runEscalation({ gh, repo, enabled, staleMs, now = Date.now
   }
 
   const opened = [], closed = [];
+  // Self-heal: ensure the `needs-triage` label exists before any create 422s the sweep.
+  if (!dryRun && stuck.some((pr) => !existingPrNums.has(pr.number))) {
+    await ensureLabels(gh, ['needs-triage'], { repo });
+  }
   for (const pr of stuck) {
     if (existingPrNums.has(pr.number)) continue;
     try {
