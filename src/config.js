@@ -8,6 +8,10 @@ export const MAX_TASK_CHARS = 16_384;
 // without limit. Generously above MAX_TASK_CHARS to allow JSON envelope/metadata.
 export const MAX_LINE_CHARS = 1_048_576;
 export const MAX_DESCRIPTION_CHARS = 1200;
+// Below this normalized length an AGENT.md is too thin to route on (issue #184):
+// readAgentDescription supplements/replaces it with an auto-harvested [auto]
+// fingerprint (package.json + top-level dir listing) so list_peers stays useful.
+export const MIN_AGENT_MD_CHARS = 80;
 export const MAX_PROMPT_CHARS = 8_000;
 // Per-memory-file cap inside the assembled runtime prompt. Memory sections come
 // before the mode prompt and skills, so an uncapped runaway memory file could
@@ -59,3 +63,7 @@ export const DEFAULT_MIR_TREND_N = 10;           // trend-history length + ledge
 export const DEFAULT_MESH_SCAN_LABEL = 'generated:mesh-scan';
 // finding.id controlled vocabulary — becomes a label/marker, so it must be injection-safe.
 export const MIR_ID_RE = /^[a-z0-9:_-]+$/;
+
+// Task-board stale detection (mesh-health list_stale_tasks verb).
+// A non-terminal task whose last history transition is older than this is surfaced as stale.
+export const DEFAULT_BOARD_STALE_MS = 86_400_000; // 24 h

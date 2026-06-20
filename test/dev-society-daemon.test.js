@@ -23,8 +23,10 @@ test('daemon awaits doctor(apply,managedOnly) before sched.start()', () => {
 test('daemon registers the automerge-sweep builtin (daemon-driven prompt drain, gated)', () => {
   assert.match(src, /'automerge-sweep'\s*:/);
   assert.match(src, /runAutomergeSweep/);
-  // gated on AUTOMERGE_ENABLED — same off-by-default safety as the GitHub-Actions sweep
-  assert.match(src, /enabled:\s*process\.env\.AUTOMERGE_ENABLED\s*===\s*'true'/);
+  // gated via resolveAutomergeEnabled — the REPO variable AUTOMERGE_ENABLED is the source of
+  // truth (the daemon's launchd env doesn't carry it), with env as fallback. Off-by-default.
+  assert.match(src, /resolveAutomergeEnabled/);
+  assert.match(src, /'variable',\s*'get',\s*'AUTOMERGE_ENABLED'/, 'reads the repo variable');
 });
 
 test('maintainer schedule runs automerge-sweep every ~10min (reliable cadence, not GitHub cron)', () => {
@@ -34,6 +36,36 @@ test('maintainer schedule runs automerge-sweep every ~10min (reliable cadence, n
   assert.equal(job.enabled, true);
   assert.equal(job.cadence.kind, 'every');
   assert.ok(job.cadence.minutes <= 10, 'cadence must be <=10min to beat GitHub cron throttling');
+});
+
+test('daemon registers the post-merge-reconcile builtin (closes merged-but-open issues)', () => {
+  assert.match(src, /'post-merge-reconcile'\s*:/);
+  assert.match(src, /planPostMergeReconcile/);
+  assert.match(src, /'issue',\s*'close'/, 'must close the reconciled issue');
+});
+
+test('maintainer schedule runs post-merge-reconcile every ~10min', () => {
+  const job = maintainerSchedule.jobs.find((j) => j.builtin === 'post-merge-reconcile');
+  assert.ok(job, 'post-merge-reconcile job must be scheduled');
+  assert.equal(job.enabled, true);
+  assert.equal(job.cadence.kind, 'every');
+  assert.ok(job.cadence.minutes <= 10);
+});
+
+test('daemon registers the autofix-pr-sweep builtin (escalates stale bug-autofix PRs)', () => {
+  assert.match(src, /'autofix-pr-sweep'\s*:/);
+  assert.match(src, /planAutofixPrSweep/);
+  // closes the feedback loop: strip pr:in-review, add blocked
+  assert.match(src, /'--state',\s*'closed'/, 'must list closed (unmerged) PRs');
+  assert.match(src, /ensureLabels\(gh,\s*\['blocked'\]/, 'must self-heal the blocked label before adding it');
+});
+
+test('maintainer schedule runs autofix-pr-sweep every ~10min', () => {
+  const job = maintainerSchedule.jobs.find((j) => j.builtin === 'autofix-pr-sweep');
+  assert.ok(job, 'autofix-pr-sweep job must be scheduled');
+  assert.equal(job.enabled, true);
+  assert.equal(job.cadence.kind, 'every');
+  assert.ok(job.cadence.minutes <= 10);
 });
 
 test('runOneTask holds the build-lock (acquire before build, release in finally)', () => {

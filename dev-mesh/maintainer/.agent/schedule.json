@@ -23,6 +23,31 @@
       "builtin": "automerge-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
       "enabled": true
+    },
+    {
+      "id": "merge-sweep",
+      "name": "Merge sweep (report-only)",
+      "kind": "builtin",
+      "builtin": "merge-sweep",
+      "cadence": { "kind": "every", "minutes": 15 },
+      "enabled": true,
+      "description": "Read-only inspect: issue-gate -> automerge -> memory; writes mesh/reports/merge-sweep.json. No merges/labels."
+    },
+    {
+      "id": "post-merge-reconcile",
+      "name": "Close issues whose closing PR merged (clear stale pr:in-review)",
+      "kind": "builtin",
+      "builtin": "post-merge-reconcile",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
+    },
+    {
+      "id": "autofix-pr-sweep",
+      "name": "Escalate bug-autofix PRs closed without merging (pr:in-review → blocked)",
+      "kind": "builtin",
+      "builtin": "autofix-pr-sweep",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
     }
   ]
 }
