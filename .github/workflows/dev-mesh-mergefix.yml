@@ -41,15 +41,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          pr=$(gh pr list --base main --state open \
-                 --json number,headRefName,isCrossRepository,isDraft,mergeStateStatus \
-                 --jq '[.[] | select(.isCrossRepository==false and .isDraft==false and .mergeStateStatus=="DIRTY")][0] // empty')
-          if [ -z "$pr" ]; then
+          # GitHub computes mergeability LAZILY: right after `main` moves, a freshly-
+          # conflicting PR reports mergeStateStatus=UNKNOWN (or blank) in a BULK `gh pr list`,
+          # so a `== "DIRTY"` filter silently drops it — the lazy-mergeability race that left
+          # #199 stuck (3 prior runs logged "no conflicting same-repo PR" while #199 was DIRTY).
+          # Gather every plausible candidate (DIRTY or UNKNOWN/blank), then `gh pr view` each —
+          # a per-PR read forces GitHub to COMPUTE mergeability — and pick the first real DIRTY.
+          cands=$(gh pr list --base main --state open \
+                    --json number,isCrossRepository,isDraft,mergeStateStatus \
+                    --jq '[.[] | select(.isCrossRepository==false and .isDraft==false and (.mergeStateStatus=="DIRTY" or .mergeStateStatus=="UNKNOWN" or .mergeStateStatus==""))] | .[].number')
+          num=""; head=""
+          for c in $cands; do
+            st=$(gh pr view "$c" --json mergeStateStatus --jq '.mergeStateStatus // ""')
+            # one re-poll: a just-moved PR can still read UNKNOWN on the first forced view
+            if [ "$st" = "UNKNOWN" ] || [ -z "$st" ]; then sleep 5; st=$(gh pr view "$c" --json mergeStateStatus --jq '.mergeStateStatus // ""'); fi
+            if [ "$st" = "DIRTY" ]; then
+              num="$c"; head=$(gh pr view "$c" --json headRefName --jq '.headRefName'); break
+            fi
+          done
+          if [ -z "$num" ]; then
             echo "no conflicting same-repo PR"; echo "none=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          echo "number=$(echo "$pr" | jq -r .number)" >> "$GITHUB_OUTPUT"
-          echo "head=$(echo "$pr" | jq -r .headRefName)" >> "$GITHUB_OUTPUT"
-          echo "picked PR #$(echo "$pr" | jq -r .number) ($(echo "$pr" | jq -r .headRefName))"
+          echo "number=$num" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "picked PR #$num ($head)"
       - name: Mergefix budget (deterministic — <=2 [mergefix] commits on the BRANCH)
         if: steps.pick.outputs.none != 'true'
         env:
@@ -90,6 +105,11 @@ jobs:
         run: |
           # $PR_BRANCH is already in $GITHUB_ENV (exported by the budget step).
           # Using it here in a plain bash run: step is safe — no agent Bash tool involved.
+          # `git merge` creates a merge commit, which needs an identity; the runner has none
+          # by default → `fatal: empty ident name` (exit 128) aborts the drain. Set a bot
+          # identity first (the resolution commit itself is made by the Drive Coder step).
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
           git checkout "$PR_BRANCH"
           git reset --hard "origin/$PR_BRANCH"
           if git merge origin/main; then
