@@ -9,12 +9,42 @@ import { runDeploySyncOnce, makeFileState } from '../scripts/dev-society-deploy-
 const AT = () => new Date('2026-06-20T07:00:00.000Z');
 
 test('planDeploySync: independent reset and restart', () => {
-  assert.deepEqual(planDeploySync({ head: 'a', target: 'b', lastRestartedTarget: 'a' }), { reset: true, restart: true });
-  assert.deepEqual(planDeploySync({ head: 'b', target: 'b', lastRestartedTarget: 'b' }), { reset: false, restart: false });
+  assert.deepEqual(planDeploySync({ head: 'a', target: 'b', lastRestartedTarget: 'a' }), { reset: true, restart: true, deferredRestart: false });
+  assert.deepEqual(planDeploySync({ head: 'b', target: 'b', lastRestartedTarget: 'b' }), { reset: false, restart: false, deferredRestart: false });
   // retry-after-failed-restart: tree already at target, but daemon not yet restarted onto it
-  assert.deepEqual(planDeploySync({ head: 'b', target: 'b', lastRestartedTarget: 'a' }), { reset: false, restart: true });
+  assert.deepEqual(planDeploySync({ head: 'b', target: 'b', lastRestartedTarget: 'a' }), { reset: false, restart: true, deferredRestart: false });
   // empty target → both false
-  assert.deepEqual(planDeploySync({ head: 'a', target: '', lastRestartedTarget: '' }), { reset: false, restart: false });
+  assert.deepEqual(planDeploySync({ head: 'a', target: '', lastRestartedTarget: '' }), { reset: false, restart: false, deferredRestart: false });
+});
+
+test('planDeploySync: buildBusy defers the restart but still resets', () => {
+  // build in flight: reset proceeds, restart is deferred (would otherwise kill the build)
+  assert.deepEqual(planDeploySync({ head: 'a', target: 'b', lastRestartedTarget: 'a', buildBusy: true }),
+    { reset: true, restart: false, deferredRestart: true });
+  // already-reset, restart pending, but busy → still deferred
+  assert.deepEqual(planDeploySync({ head: 'b', target: 'b', lastRestartedTarget: 'a', buildBusy: true }),
+    { reset: false, restart: false, deferredRestart: true });
+  // nothing to restart → not "deferred" even when busy
+  assert.deepEqual(planDeploySync({ head: 'b', target: 'b', lastRestartedTarget: 'b', buildBusy: true }),
+    { reset: false, restart: false, deferredRestart: false });
+});
+
+test('runDeploySyncOnce: defers restart while a build is in flight, then restarts next tick', async () => {
+  const { git } = fakeGit({ head: 'a', target: 'b' });
+  let restarts = 0; let persisted = '';
+  const common = { deployPath: '/d', git, restart: async () => { restarts++; },
+    readState: () => persisted, writeState: (t) => { persisted = t; } };
+  // tick 1: busy → reset happens, restart deferred, state NOT persisted
+  const r1 = await runDeploySyncOnce({ ...common, buildBusy: () => true });
+  assert.equal(restarts, 0);
+  assert.equal(r1.deferredRestart, true);
+  assert.equal(r1.restarted, false);
+  assert.equal(persisted, '');
+  // tick 2: build done → restart fires, state persisted
+  const r2 = await runDeploySyncOnce({ ...common, buildBusy: () => false });
+  assert.equal(restarts, 1);
+  assert.equal(r2.restarted, true);
+  assert.equal(persisted, 'b');
 });
 
 // Fake git keyed on the first args; records the commands issued.
