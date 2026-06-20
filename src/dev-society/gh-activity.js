@@ -4,7 +4,7 @@
 
 // Workflow → role-agent convention (the dev-mesh-<role> naming, prefix stripped).
 const ROLE = {
-  research: 'analyst', intake: 'analyst', 'analyst-review': 'analyst', backlog: 'maintainer', triage: 'triager',
+  research: 'analyst', intake: 'analyst', backlog: 'maintainer', triage: 'triager',
   review: 'reviewer', 'review-respond': 'reviewer', curate: 'curator',
   autofix: 'coder', 'ci-sweep': 'coder', mergefix: 'coder',
   dogfood: 'orchestrator', health: 'orchestrator', 'memory-automerge': 'orchestrator', 'pr-janitor': 'orchestrator',
