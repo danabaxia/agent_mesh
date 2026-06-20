@@ -66,8 +66,12 @@ test('doctor --apply creates .mcp.json with the peer-bridge entry for a peered a
   // bridge refuses every delegation with caller_identity_unresolved.
   assert.deepEqual(entry.env, {
     AGENT_MESH_MESH_ROOT: join(canonRoot, 'mesh'),
-    AGENT_MESH_MESH_CEILING: canonRoot
+    AGENT_MESH_MESH_CEILING: canonRoot,
+    // #150: forward the OAuth credential (placeholder, never the literal) so onward
+    // delegation authenticates under env-token auth; claude omits it when unset (keychain).
+    CLAUDE_CODE_OAUTH_TOKEN: '${CLAUDE_CODE_OAUTH_TOKEN}'
   });
+  assert.doesNotMatch(JSON.stringify(entry.env), /sk-ant-/, 'never persist a literal token to the .mcp.json');
 });
 
 test('doctor --apply MERGES into an authored .mcp.json, preserving existing servers', async () => {
