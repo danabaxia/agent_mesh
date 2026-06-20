@@ -90,10 +90,16 @@ detached HEAD.
   1. `head = git rev-parse HEAD`
   2. `git fetch origin --prune -q`   *(throws → error record, no restart)*
   3. `target = git rev-parse origin/main`
-  4. `lastRestartedTarget = readState()` (from `.dev-society/deploy-sync-state.json`)
+  4. `lastRestartedTarget = readState()` — returns the **scalar SHA string** (or `''`
+     if the state file is missing/unparseable)
   5. `{reset, restart} = planDeploySync({head, target, lastRestartedTarget})`
   6. if `reset`: `git reset --hard origin/main`
-  7. if `restart`: `await restart()`; **only on success** `writeState({ lastRestartedTarget: target })`.
+  7. if `restart`: `await restart()`; **only on success** `writeState(target)`.
+
+  **State contract (single definition):** the file
+  `.dev-society/deploy-sync-state.json` is `{ "lastRestartedTarget": "<sha>" }`;
+  `readState() → string` returns that field or `''`; `writeState(targetSha)` writes
+  the object atomically (tmp + rename). Tests and runner use this scalar API.
   Default `restart` = `launchctl kickstart -k gui/<uid>/<DEV_SOCIETY_DAEMON_LABEL>`.
   Because restart keys off `lastRestartedTarget` (persisted, written only after a
   successful kickstart), a reset that lands but whose restart fails/crashes is
@@ -169,8 +175,14 @@ git worktree add ~/.agent-mesh/deploy origin/main          # 1. create deploy wo
 bash ~/.agent-mesh/deploy/scripts/dev-society-deploy-install.sh --dry-run   # 2. preview
 bash ~/.agent-mesh/deploy/scripts/dev-society-deploy-install.sh             # 3. wire launchd, dedupe, restart
 ```
-Rollback: `git -C ~/.agent-mesh/deploy reset --hard <good-sha>` + kickstart, or
-re-point the plist back to the dev checkout and remove the new plists.
+Rollback (durable): because deploy-sync continuously converges the deploy worktree to
+`origin/main`, a manual `git reset --hard <good-sha>` would be **undone on the next
+tick**. So roll back by fixing `main` itself — `git revert <bad-sha>` (or
+roll-forward fix) + push; deploy-sync then converges to the corrected `main` within
+one interval. For an *emergency* hold while you fix `main`, first
+`launchctl bootout gui/$uid/com.danabaxia.agent-mesh.deploy-sync` (freeze syncing),
+then optionally `git -C ~/.agent-mesh/deploy reset --hard <good-sha>` + kickstart the
+daemon; re-`bootstrap` deploy-sync only after `main` is corrected.
 
 ## 8. Future (v2, out of scope)
 
@@ -252,3 +264,12 @@ is the CI-safe surface.
   off a persisted `lastRestartedTarget` (`.dev-society/deploy-sync-state.json`),
   written only after a successful `kickstart -k`. A reset whose restart fails is
   retried every tick until the daemon is actually on `target` (§5.2/§6/§9/§10).
+
+### Round 3 — Codex (gpt-5.5), VERDICT: CHANGES_REQUESTED → 2 MAJOR accepted (0 blockers)
+
+- **[MAJOR] state read/write contract inconsistent** — accepted; defined one scalar
+  contract: file `{ "lastRestartedTarget": "<sha>" }`, `readState() → string|''`,
+  `writeState(targetSha)` atomic (§5.2/§9).
+- **[MAJOR] §7 rollback is temporary (re-reset next tick)** — accepted; durable
+  rollback now means fixing `main` (`git revert` + push); emergency hold = `bootout`
+  deploy-sync first, then manual reset + kickstart, re-`bootstrap` after `main` is fixed.
