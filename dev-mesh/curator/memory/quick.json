@@ -737,5 +737,16 @@
       "source": "PR #192: fix(dev-society): drain the approved+spec:in-review deadlock (unblocks #175)",
       "ts": "2026-06-20"
     }
+  },
+  "build-lock-deploy-sync-deferral": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Deploy-sync: hold build lock for full task; restart deferred while fresh; reset runs always; stale lock = not-busy.",
+    "l1": "PR #197: deploy-sync restarts daemon every 5 min when origin/main advances; frequent memory PR merges caused restarts mid-build, orphaning issues (build finished but commit→push→gh pr create never ran). Fix: hold `.dev-society/build.lock` ({issue,pid,ts}) for the whole `runOneTask`; `planDeploySync` defers restart while lock age < 12 min (past 10-min A2A timeout = not-busy). Reset still runs harmlessly. Lock released in `finally`. Stale/absent/corrupt → not-busy; a crashed build cannot wedge deploy-sync permanently.",
+    "value": "Pattern: decouple \"reset\" (idempotent, safe) from \"restart\" (disruptive) in any deploy-sync cycle that may run concurrently with long-duration tasks.\n\n(1) Build-lock file: src/dev-society/build-lock.js exports acquireBuildLock(dir, issue), releaseBuildLock(dir), readBuildBusy(dir, staleMs). Lock payload: {issue, pid, ts}. Acquire writes atomically; release deletes; readBuildBusy reads and checks age: lock.ts + staleMs ≤ Date.now() → not-busy.\n\n(2) Stale TTL = max task timeout + margin. PR #197: 12 min (past the 10-min A2A per-task timeout). A crashed/hung build's lock becomes stale before sync can be permanently blocked.\n\n(3) runOneTask: acquire lock AFTER claiming the issue, BEFORE the build begins. Release in `finally` — a throw, reject, or timeout always frees it.\n\n(4) planDeploySync({..., buildBusy}): returns {restart:false, deferredRestart:true} when buildBusy is true. Reset runs unconditionally (the daemon is already in memory; reset is harmless). Next sync tick re-evaluates; once lock is released → restart proceeds.\n\n(5) Log the deferral: runDeploySyncOnce logs 'restart-deferred(build-busy)' so the operator can see deferral cycles in the daemon log.\n\n(6) Fail-open on lock I/O: absent/corrupt/non-JSON lock → not-busy. Never block restart on an unreadable lock — degraded safety beats a permanently-stuck daemon.\n\n(7) Tests: build-lock.test.js covers acquire/release/fresh-busy/stale-not-busy/absent/corrupt; deploy-sync.test.js covers planDeploySync with buildBusy true/false; daemon source-lint asserts acquire precedes the build and release is in finally.\n\nApplies to: any daemon with a periodic restart step (deploy-sync, rolling-update, config-reload) that may co-run with long-duration owned tasks.",
+    "provenance": {
+      "source": "PR #197: fix(deploy-sync): defer daemon restart during in-flight coder builds (build-lock)",
+      "ts": "2026-06-20"
+    }
   }
 }
