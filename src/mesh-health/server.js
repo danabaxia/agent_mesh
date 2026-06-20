@@ -62,6 +62,9 @@ async function handle(message, health) {
     if (name === 'triage_logs') {
       return { jsonrpc: '2.0', id, result: mcpTextResult(await health.triageLogs(args)) };
     }
+    if (name === 'list_stale_tasks') {
+      return { jsonrpc: '2.0', id, result: mcpTextResult(await health.listStaleTasks(args)) };
+    }
     return rpcError(id, -32602, `Unknown tool: ${name}`);
   }
 
@@ -71,6 +74,26 @@ async function handle(message, health) {
 
 function buildTools() {
   return [
+    {
+      name: 'list_stale_tasks',
+      description:
+        'Scan the mesh task board for tasks stuck in a non-terminal state ' +
+        '(assigned / acknowledged / in-progress) past a configurable age. ' +
+        'Returns { stale_ms, tasks: [{ id, from, to, state, last_at, age_ms }] }. ' +
+        'Stale age defaults to AGENT_MESH_BOARD_STALE_MS (86 400 000 ms / 24 h). ' +
+        'Never modifies tasks — read-only.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          stale_ms: {
+            type: 'number',
+            minimum: 1,
+            description: 'age threshold in ms; omit to use the server default (24 h)'
+          }
+        }
+      }
+    },
     {
       name: 'check_conformance',
       description:

@@ -22,6 +22,9 @@ import { killProcessTree, KILL_ESCALATION_MS } from '../process.js';
 import { readRunLogRecords, dedupeRunRecords } from '../log.js';
 import { loadSnapshot, checkConformance as runConformance } from '../builder/conformance.js';
 import { doctor } from '../builder/doctor.js';
+import { listTasks } from '../board/store.js';
+import { STATES } from '../board/task-state.js';
+import { DEFAULT_BOARD_STALE_MS } from '../config.js';
 
 const BIN_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../bin/agent-mesh.js');
 const MAX_RECENT_FAILURES = 10;
@@ -79,6 +82,7 @@ function rpcRequester(child, stderrTail) {
 export function createMeshHealth({ meshRoot, env = process.env, binPath = BIN_PATH } = {}) {
   // binPath and env are used by pingAgent (Task 3).
   const pingTimeoutMs = readPositiveInt(env.AGENT_MESH_HEALTH_PING_TIMEOUT_MS, DEFAULT_PING_TIMEOUT_MS);
+  const defaultBoardStaleMs = readPositiveInt(env.AGENT_MESH_BOARD_STALE_MS, DEFAULT_BOARD_STALE_MS);
 
   /**
    * triageLogs({ agent?, since_hours? })
@@ -268,5 +272,53 @@ export function createMeshHealth({ meshRoot, env = process.env, binPath = BIN_PA
     }
   }
 
-  return { triageLogs, checkConformance: checkConformanceVerb, pingAgent };
+  /**
+   * listStaleTasks({ stale_ms? })
+   *
+   * Scans <meshRoot>/mesh/board/tasks/ for tasks stuck in a non-terminal state
+   * (assigned / acknowledged / in-progress) whose last history transition is
+   * older than `stale_ms` (default: AGENT_MESH_BOARD_STALE_MS, 86 400 000 ms).
+   *
+   * Returns:
+   *   { stale_ms, tasks: [{ id, from, to, state, last_at, age_ms }] }
+   * or { error: string } on bad input.
+   *
+   * Read-only — failure is data, never a thrown exception.
+   */
+  async function listStaleTasks({ stale_ms } = {}) {
+    let thresholdMs;
+    if (stale_ms !== undefined) {
+      const n = Number(stale_ms);
+      if (!Number.isFinite(n) || n <= 0) return { error: 'bad_input: stale_ms' };
+      thresholdMs = n;
+    } else {
+      thresholdMs = defaultBoardStaleMs;
+    }
+
+    let tasks;
+    try {
+      tasks = await listTasks(meshRoot);
+    } catch (err) {
+      return { error: `board_unreadable: ${err?.message ?? String(err)}` };
+    }
+
+    const now = Date.now();
+    const stale = [];
+    for (const task of tasks) {
+      if (task.state === STATES.DONE) continue;
+      const history = Array.isArray(task.history) ? task.history : [];
+      const lastEntry = history.length > 0 ? history[history.length - 1] : null;
+      const lastAt = lastEntry?.at ?? task.created_at ?? null;
+      const lastMs = lastAt ? Date.parse(lastAt) : NaN;
+      if (!Number.isFinite(lastMs)) continue;
+      const ageMs = now - lastMs;
+      if (ageMs >= thresholdMs) {
+        stale.push({ id: task.id, from: task.from, to: task.to, state: task.state, last_at: lastAt, age_ms: ageMs });
+      }
+    }
+
+    return { stale_ms: thresholdMs, tasks: stale };
+  }
+
+  return { triageLogs, checkConformance: checkConformanceVerb, pingAgent, listStaleTasks };
 }
