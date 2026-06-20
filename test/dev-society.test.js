@@ -40,6 +40,21 @@ test('branchName: deterministic', () => {
   assert.equal(branchName(42), 'dev-society/issue-42');
 });
 
+test('issueOfBranch / mergedIssueBranches: parse merged dev-society PRs back to issue numbers', () => {
+  assert.equal(devCore.issueOfBranch('dev-society/issue-185'), 185);
+  assert.equal(devCore.issueOfBranch('dev-society/issue-185'), branchName(185) === 'dev-society/issue-185' ? 185 : null);
+  assert.equal(devCore.issueOfBranch('feature/whatever'), null, 'non-dev-society branch ignored');
+  assert.equal(devCore.issueOfBranch('dev-society/issue-'), null, 'no number');
+  assert.equal(devCore.issueOfBranch(undefined), null);
+  const merged = devCore.mergedIssueBranches([
+    { headRefName: 'dev-society/issue-185' },
+    { headRefName: 'dev-society/issue-213' },
+    { headRefName: 'someone/manual-fix' }, // ignored
+    {},                                     // ignored
+  ]);
+  assert.deepEqual([...merged].sort((a, b) => a - b), [185, 213]);
+});
+
 test('a2aMessage: carries the mesh mode in metadata', () => {
   const m = a2aMessage('do', 'hello', 'id-1');
   assert.equal(m.metadata['agentmesh/mode'], 'do');
@@ -234,6 +249,36 @@ test('routeFor: bug-autofix does NOT override hard gates (blocked / pr:in-review
   assert.equal(routeFor(issue(1, [BUG, BLOCKED])).target, null, 'blocked bug stays a hard stop (#98 loop guard)');
   assert.equal(routeFor(issue(2, [BUG, PR_IN_REVIEW])).target, null, 'bug with a PR already');
   assert.equal(routeFor(issue(3, [BUG, DONE])).target, null, 'terminal');
+});
+
+test('routeFor: an issue whose deterministic head branch already merged is NOT re-claimed (#226 dup-of-merged-#213)', () => {
+  // #185 shipped via PR #213 (head branch dev-society/issue-185 merged into main), but the
+  // issue stayed OPEN + approved + spec:in-review. Without the merged-branch guard, routeFor
+  // would route it back to the coder (approved-overrides-review) and recreate a conflicting
+  // duplicate PR (#226). mergedBranches ties the issue's resolution to its PR having merged.
+  const merged = new Set([185]);
+  // The exact label set that re-claimed #185:
+  assert.equal(
+    routeFor(issue(185, [APPROVED, ROUTE_LABEL, SPEC_IN_REVIEW]), { mergedBranches: merged }).target,
+    null,
+    'approved+spec:in-review with a merged branch must NOT be re-claimed',
+  );
+  assert.equal(
+    routeFor(issue(185, [APPROVED, ROUTE_LABEL, SPEC_IN_REVIEW]), { mergedBranches: merged }).reason,
+    'branch-already-merged',
+  );
+  // Covers every coder route: plain code-type, bug-autofix, and stale-reclaim of in-progress.
+  assert.equal(routeFor(issue(185, [BUG]), { mergedBranches: merged }).target, null, 'bug-autofix skipped when merged');
+  assert.equal(routeFor(issue(185, [BUG, SPEC_IN_REVIEW]), { mergedBranches: merged }).target, null, 'bug+review skipped when merged');
+  assert.equal(
+    routeFor(issue(185, [IN_PROGRESS]), { mergedBranches: merged, staleClaims: new Set([185]) }).target,
+    null,
+    'stale-reclaim skipped when the branch already merged',
+  );
+  // A DIFFERENT issue (no merged branch) still routes normally.
+  assert.equal(routeFor(issue(186, [APPROVED, ROUTE_LABEL, SPEC_IN_REVIEW]), { mergedBranches: merged }).target, 'coder');
+  // No mergedBranches passed → behavior unchanged (back-compat).
+  assert.equal(routeFor(issue(185, [APPROVED, ROUTE_LABEL, SPEC_IN_REVIEW])).target, 'coder');
 });
 
 test('routeFor: ONLY `bug` auto-fixes past review — enhancement/documentation/idea still need approval', () => {

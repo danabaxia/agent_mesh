@@ -253,6 +253,17 @@ async function listAllOpen() {
   return JSON.parse(stdout);
 }
 
+// Issue numbers whose deterministic head branch (dev-society/issue-N) already MERGED. Feeds
+// routeFor's mergedBranches so a resolved issue that stayed OPEN is never re-claimed onto its
+// stale branch, recreating a conflicting duplicate PR (#226 was a true dup of merged #213).
+async function listMergedIssueBranches() {
+  try {
+    const { stdout } = await gh(['pr', 'list', '--repo', cfg.repo, '--state', 'merged',
+      '--limit', '200', '--json', 'headRefName']);
+    return core.mergedIssueBranches(JSON.parse(stdout));
+  } catch (e) { log('  (merged-branch scan failed; proceeding without it)', e.message); return new Set(); }
+}
+
 async function labelRepairSweep() {
   if (!cfg.repo) { log('label-repair-sweep: set DEV_SOCIETY_REPO'); return { repaired: 0 }; }
   const issues = await listAllOpen();
@@ -469,8 +480,10 @@ async function sweep() {
       .filter((i) => { const p = state[i.number]; return !p || (now - (p.dispatchedAt || 0)) > STALE_MS; })
       .map((i) => i.number),
   );
+  // Issues whose implementation PR already merged → never re-claim them onto a stale branch.
+  const mergedBranches = await listMergedIssueBranches();
   const routed = issues
-    .map((i) => ({ issue: i, route: core.routeFor(i, { liveBuilds, staleClaims }) }))
+    .map((i) => ({ issue: i, route: core.routeFor(i, { liveBuilds, staleClaims, mergedBranches }) }))
     .filter((x) => x.route.target);
 
   // Advisory routes (analyst/triager): cheap A2A asks → comments. Dispatch all pending.
