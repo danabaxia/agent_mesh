@@ -836,5 +836,16 @@
       "source": "PR #235: feat(daemon): post-merge-reconcile — auto-close merged-but-open issues",
       "ts": "2026-06-20"
     }
+  },
+  "daemon-repovar-env-gap": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon env ≠ repo variable: fetch feature flags via `gh variable get`; launchd/systemd env doesn't carry repo vars.",
+    "l1": "PR #246: automerge-sweep logged 'disabled (AUTOMERGE_ENABLED != true)' even though the operator had set the GitHub repo variable to true. Daemon launchd env is fixed at install time — repo variable changes never reach it. The GitHub-Actions sweep reads `vars.AUTOMERGE_ENABLED` at runtime (correct). Fix: resolveAutomergeEnabled tries `gh variable get AUTOMERGE_ENABLED` first, falls back to process.env, safe-off on read error. 8 CLEAN+APPROVED PRs idled ≥5 cycles before the monitor caught it.",
+    "value": "Pattern for daemon feature flags controlled by GitHub repo variables:\n\n(1) Repo variable is the authoritative source — launchd/systemd env is fixed at install time. `gh variable set AUTOMERGE_ENABLED --body true` updates the repo store immediately but NEVER the daemon's process.env. The GitHub-Actions sweep reads `vars.AUTOMERGE_ENABLED` at call time (correct by design); the daemon must do the same work explicitly.\n\n(2) Two-source resolver: try `gh variable get FLAG` first; fall back to `process.env.FLAG` if gh read errors (local dev, no gh auth); safe-off (false) if both absent.\n\n(3) Dependency injection for hermetic tests: expose a `resolver` param (async fn → bool). Unit-test: gh returns 'true' → enabled; gh returns 'false' → disabled; gh errors + env 'true' → enabled; gh errors + env absent → disabled (safe-off).\n\n(4) Never inline `process.env.FLAG === 'true'` in daemon code paths. The stale-env gap is silent — no error, just permanently disabled, masking the operator's decision for ≥5 cycles.\n\nRelated: `default-off-three-layer-kill-switch` (YAML vars + predicate layers are correct; this closes the daemon CLI layer gap). Provenance: PR #246 (2026-06-20), monitor cycle 5.",
+    "provenance": {
+      "source": "PR #246: fix(daemon): automerge self-activates from the repo variable (no idle ready PRs)",
+      "ts": "2026-06-20"
+    }
   }
 }
