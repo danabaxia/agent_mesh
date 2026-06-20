@@ -41,6 +41,20 @@ npm install -g ./agent-mesh-*.tgz  # add --prefix ~/.local if you lack admin rig
 agent-mesh --help                  # verify
 ```
 
+Or install a prebuilt release straight from GitHub (no clone or pack needed):
+
+```sh
+# edge — rebuilt on every green push to main (moving target):
+npm i -g https://github.com/danabaxia/agent_mesh/releases/download/edge/agent-mesh.tgz
+# latest stable version (advances only on a package.json version bump):
+npm i -g https://github.com/danabaxia/agent_mesh/releases/latest/download/agent-mesh.tgz
+# a pinned version:
+npm i -g https://github.com/danabaxia/agent_mesh/releases/download/v0.1.0/agent-mesh.tgz
+```
+
+These are published by [`.github/workflows/release.yml`](.github/workflows/release.yml)
+after CI passes on `main`.
+
 To deploy to another machine, copy the `.tgz` over and run
 `npm i -g ./agent-mesh-<version>.tgz` there. Full options (per-platform notes,
 PATH setup, uninstall) are in [`INSTALL.md`](INSTALL.md).
