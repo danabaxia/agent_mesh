@@ -32,10 +32,18 @@ function readRunLogs(logDir) {
   return [...byId.values()].filter((r) => r.state === 'done' || r.status);
 }
 
-function latestMir(mirDir) {
+// Absolute path of the newest dated mir-*.json (ISO date names sort
+// chronologically), or null when the dir is missing/empty. Exported so the
+// analyst orchestrator can hand the Tester an exact path to Read.
+export function latestMirPath(mirDir) {
   if (!mirDir || !existsSync(mirDir)) return null;
   const files = readdirSync(mirDir).filter((f) => /^mir-.*\.json$/.test(f)).sort();
-  return files.length ? readJson(join(mirDir, files[files.length - 1])) : null;
+  return files.length ? join(mirDir, files[files.length - 1]) : null;
+}
+
+function latestMir(mirDir) {
+  const p = latestMirPath(mirDir);
+  return p ? readJson(p) : null;
 }
 
 export function collectInputs({ resultsRoots, logDir, mirDir }) {
