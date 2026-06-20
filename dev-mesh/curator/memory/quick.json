@@ -770,5 +770,16 @@
       "source": "PR #200: feat(cd): bring the dashboard under deploy-sync CD (auto-update on push to main)",
       "ts": "2026-06-20"
     }
+  },
+  "approved-overrides-review-gates": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Split HUMAN_GATED into HARD_GATED and REVIEW_GATED — 'approved' overrides review gates for all issue types.",
+    "l1": "PR #202: HUMAN_GATED mixed two semantics: pr:in-review/blocked (never auto-build — in progress or failed) vs spec:in-review/discussing (held until human approves). PR #192 rescued code-typed approved issues via planLabelRepair but non-code-typed (typeless, idea) had no code-type label so planLabelRepair skipped them → permanent deadlock. Fix: HARD_GATED=[pr:in-review, blocked]; REVIEW_GATED=[spec:in-review, discussing]. if (approved && REVIEW_GATED present) → coder, for every type. Hard gates + terminal still win.",
+    "value": "Pattern for a label-based routing gate with semantically distinct gate classes:\n\n(1) Classify gate labels by WHY they block, not just 'human-controlled':\n- HARD_GATED (pr:in-review, blocked): something in-flight or needing human diagnosis. 'approved' does NOT override — a failed build needs diagnosis before re-driving (auto-re-driving loops).\n- REVIEW_GATED (spec:in-review, discussing): paused for human sign-off. 'approved' IS the sign-off — overrides unconditionally for all issue types.\n\n(2) routeFor: check 'if (approved && any REVIEW_GATED label)' BEFORE type-dispatch, AFTER terminal + hard gates. Works for code-typed, typeless, AND idea issues equally. This is the right fix point — planLabelRepair is scoped to code-types only to prevent idea→spec→cleared→idea loops.\n\n(3) planLabelRepair still clears spec:in-review for code-typed issues (label cleanup, complements the routing fix). After PR #202, this is redundant for routing but keeps the board tidy for human reviewers.\n\n(4) Invariant to assert: every non-terminal, non-hard-gated, approved issue MUST route to some agent. Test across all type × review-gate combos: approved+spec:in-review+[] → coder; approved+spec:in-review+bug → coder; approved+spec:in-review+idea → coder; approved+discussing → coder. Hard gates still win: approved+blocked → null; approved+pr:in-review → null.\n\n(5) When adding a new 'human-controlled' label: decide first whether it is HARD (in-flight/broken; approved doesn't help) or REVIEW (waiting for a human decision; approved clears it). The split is architectural — conflating the two classes creates deadlocks like #194/#195.\n\nRelated: label-lifecycle-predecessor-clear (planLabelRepair complement). Provenance: PR #202 (2026-06-20).",
+    "provenance": {
+      "source": "PR #202: fix(dev-society): 'approved' always routes to an agent — overrides the review gates",
+      "ts": "2026-06-20"
+    }
   }
 }
