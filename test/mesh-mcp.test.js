@@ -87,3 +87,25 @@ test('generateBridgeServerEntry shape', () => {
   assert.deepEqual(e.args, ['/bin/x.js', 'serve-peer-bridge', '/r']);
   assert.equal(e.env.AGENT_MESH_MODE, 'ask');
 });
+
+// ── #150 fix: nested workers must get the OAuth credential under env-token auth ──
+import { buildBridgeEnv } from '../src/mesh-mcp.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+test('buildBridgeEnv forwards CLAUDE_CODE_OAUTH_TOKEN as a ${VAR} placeholder (never a literal)', () => {
+  // With a real token in the parent env, the bridge entry must still carry only the
+  // placeholder — the literal secret must never be written into a persisted .mcp.json.
+  const out = buildBridgeEnv({}, { AGENT_MESH_MODE: 'ask', CLAUDE_CODE_OAUTH_TOKEN: 'sk-ant-oat01-SECRET' });
+  assert.equal(out.CLAUDE_CODE_OAUTH_TOKEN, '${CLAUDE_CODE_OAUTH_TOKEN}', 'placeholder, not the literal');
+  assert.doesNotMatch(JSON.stringify(out), /SECRET/, 'the literal token must not leak into the bridge env');
+  // Unset (keychain dev) → still the placeholder (claude omits an unset ${VAR} at spawn,
+  // so keychain auth is unaffected).
+  assert.equal(buildBridgeEnv({}, { AGENT_MESH_MODE: 'ask' }).CLAUDE_CODE_OAUTH_TOKEN, '${CLAUDE_CODE_OAUTH_TOKEN}');
+});
+
+test('demo .mcp.json.template forwards the OAuth token to the nested library server', () => {
+  const tpl = readFileSync(fileURLToPath(new URL('../examples/agent-a/.mcp.json.template', import.meta.url)), 'utf8');
+  const j = JSON.parse(tpl.replaceAll('__AGENT_MESH_BIN__', '/bin').replaceAll('__AGENT_B_ROOT__', '/b'));
+  assert.equal(j.mcpServers.library.env.CLAUDE_CODE_OAUTH_TOKEN, '${CLAUDE_CODE_OAUTH_TOKEN}');
+});
