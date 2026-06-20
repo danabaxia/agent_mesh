@@ -319,22 +319,31 @@ async function loadDaily() {
 }
 
 async function loadSchedules() {
-  let d; try { d = await (await fetch('/api/schedules')).json(); } catch { return; }
-  setText('gv-sched-owner', `engine: ${d.schedulerOwner || '—'} · ${(d.jobs || []).length} jobs`);
-  const el = root.querySelector('#gv-sched');
-  if (!d.jobs || !d.jobs.length) { el.innerHTML = '<div class="gv-empty">No scheduled jobs. Add one to an agent’s .agent/schedule.json; the daemon runs them 24/7.</div>'; return; }
-  const pill = (s) => s === 'ok' ? '<span class="state done">ok</span>' : s === 'fail' ? '<span class="state block">fail</span>' : '<span class="state open">—</span>';
-  const rows = d.jobs.map((j) => {
-    const desc = j.description ? `<div class="sched-desc" title="${esc(j.description)}">${esc(j.description)}</div>` : '';
+  let d, ci;
+  try { d = await (await fetch(‘/api/schedules’)).json(); } catch { return; }
+  try { ci = await (await fetch(‘/api/ci-schedules’)).json(); } catch { ci = { workflows: [] }; }
+  const jobs = d.jobs || [];
+  const wfs = ci.workflows || [];
+  setText(‘gv-sched-owner’, `engine: ${d.schedulerOwner || ‘—‘} · ${jobs.length} mesh · ${wfs.length} CI`);
+  const el = root.querySelector(‘#gv-sched’);
+  if (!jobs.length && !wfs.length) {
+    el.innerHTML = ‘<div class="gv-empty">No scheduled jobs. Add one to an agent’s .agent/schedule.json (daemon) or a workflow cron.</div>’;
+    return;
+  }
+  const pill = (s) => s === ‘ok’ ? ‘<span class="state done">ok</span>’ : s === ‘fail’ ? ‘<span class="state block">fail</span>’ : ‘<span class="state open">—</span>’;
+  const jobRow = (j) => {
+    const desc = j.description ? `<div class="sched-desc" title="${esc(j.description)}">${esc(j.description)}</div>` : ‘’;
     const canRun = j.enabled && !j.running;
-    const runBtn = `<button class="sched-run" data-run-agent="${esc(j.agent)}" data-run-id="${esc(j.id)}"${canRun ? '' : ' disabled'} title="${j.enabled ? 'run now (≤30s)' : 'enable the job to run it'}">▶ run</button>`;
-    return `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span>${desc}</td><td><span class="kind issue">${esc(j.cadenceLabel || '')}</span></td><td>${j.enabled ? pill(j.lastStatus) : '<span class="state open">off</span>'}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : '—')}</td><td class="age">${j.running ? '▶ running' : runBtn}</td></tr>`;
-  }).join('');
-  el.innerHTML = `<table><thead><tr><th>agent · job</th><th>cadence</th><th>last</th><th>next run</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
-  el.querySelectorAll('.sched-run').forEach((btn) => btn.addEventListener('click', async () => {
-    btn.disabled = true; btn.textContent = 'queued…';
+    const runBtn = `<button class="sched-run" data-run-agent="${esc(j.agent)}" data-run-id="${esc(j.id)}"${canRun ? ‘’ : ‘ disabled’} title="${j.enabled ? ‘run now (≤30s)’ : ‘enable the job to run it’}">▶ run</button>`;
+    return `<tr><td class="title"><span class="tt"><b class="an" style="color:${agentColor(j.agent)}">${esc(j.agent)}</b> · ${esc(j.name)}</span>${desc}</td><td><span class="kind issue">${esc(j.cadenceLabel || ‘’)}</span></td><td>${j.enabled ? pill(j.lastStatus) : ‘<span class="state open">off</span>’}</td><td class="age">${esc(j.nextRunAt ? new Date(j.nextRunAt).toLocaleString() : ‘—‘)}</td><td class="age">${j.running ? ‘▶ running’ : runBtn}</td></tr>`;
+  };
+  const ciRow = (w) => `<tr><td class="title"><span class="tt"><b class="an" style="color:#8b949e">GitHub Actions</b> · ${esc(w.workflow)}</span></td><td><span class="kind issue">${esc(w.cadenceLabel || ‘’)}</span></td><td>${w.running ? ‘<span class="state open">▶ running</span>’ : pill(w.status)}</td><td class="age" title="latest cached run (not necessarily a scheduled run)">${esc(w.lastRunAt ? new Date(w.lastRunAt).toLocaleString() : ‘—‘)}</td><td class="age">—</td></tr>`;
+  const body = jobs.map(jobRow).join(‘’) + wfs.map(ciRow).join(‘’);
+  el.innerHTML = `<table><thead><tr><th>executor · job</th><th>cadence</th><th>last</th><th>latest run</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
+  el.querySelectorAll(‘.sched-run’).forEach((btn) => btn.addEventListener(‘click’, async () => {
+    btn.disabled = true; btn.textContent = ‘queued…’;
     try {
-      await fetch('/api/schedules/run', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agent: btn.dataset.runAgent, id: btn.dataset.runId }) });
+      await fetch(‘/api/schedules/run’, { method: ‘POST’, credentials: ‘same-origin’, headers: { ‘Content-Type’: ‘application/json’ }, body: JSON.stringify({ agent: btn.dataset.runAgent, id: btn.dataset.runId }) });
     } catch { /* transient — next poll reflects state */ }
     setTimeout(loadSchedules, 1500);
   }));
