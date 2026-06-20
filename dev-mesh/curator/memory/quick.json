@@ -617,6 +617,17 @@
       "ts": "2026-06-19"
     }
   },
+  "oauth-token-nested-worker-propagation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Nested MCP worker env-token auth: claude doesn't auto-pass CLAUDE_CODE_OAUTH_TOKEN — use ${VAR} in peer env.",
+    "l1": "PR #166 / Issue #150: claude does NOT forward CLAUDE_CODE_OAUTH_TOKEN to MCP-server subprocesses. Keychain auth propagates via HOME so local dev works; env-token auth (CI/headless) fails — nested worker gets 'Not logged in'. Fix: embed literal ${CLAUDE_CODE_OAUTH_TOKEN} placeholder in the peer env block (buildBridgeEnv + .mcp.json templates); claude expands from parent env at spawn — secret never written to disk. Unset var → omitted, keychain unaffected.",
+    "value": "Apply to any nested peer mesh agent running under env-token auth (CI, headless, server deployments):\n\n(1) Root cause: claude does NOT auto-forward CLAUDE_CODE_OAUTH_TOKEN to spawned MCP-server child processes. Under keychain auth this is masked (all children inherit HOME). Under env-token auth (CI runner, prod server), the nested worker's claude -p starts unauthenticated → all delegations fail with status:error.\n\n(2) Fix: In every peer MCP config entry that may run a claude -p worker, add the placeholder to the env block:\n  \"CLAUDE_CODE_OAUTH_TOKEN\": \"${CLAUDE_CODE_OAUTH_TOKEN}\"\nclaude expands the ${VAR} placeholder from the PARENT worker's process env at spawn time. The literal secret NEVER appears in any file on disk. Unset var → omitted — keychain auth completely unaffected.\n\n(3) Two auth paths, both must work:\n- Keychain (local dev): HOME propagates to all children. Fix is a no-op.\n- Env-token (CI/headless): propagation is explicit. The ${VAR} placeholder is the bridge.\n\n(4) Scope: applies to buildBridgeEnv in mesh-mcp.js (peer-bridge entry — covers all real mesh A2A delegation) AND .mcp.json.template for demo/eval meshes.\n\n(5) Test: verify buildBridgeEnv forwards the placeholder, never the resolved literal. Assertion: assert(!JSON.stringify(env).includes(process.env.CLAUDE_CODE_OAUTH_TOKEN)).\n\nProvenance: PR #166 (2026-06-20), Issue #150.",
+    "provenance": {
+      "source": "PR #166: fix(mesh): forward OAuth token to nested workers (env-token auth) — #150 root cause",
+      "ts": "2026-06-20"
+    }
+  },
   "a2a-http-dual-transport-dispatch": {
     "status": "active",
     "valid_to": null,
