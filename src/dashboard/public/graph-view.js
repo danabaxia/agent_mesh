@@ -4,6 +4,7 @@
 // issues/PRs progress table from /api/daily. Visual language = board2.css.
 import { agentColor } from '/board2-model.js';
 import { reconcileObserved } from '/graph-observed.js';
+import { renderMergeSweep } from '/merge-sweep-render.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const mk = (t, a = {}) => { const e = document.createElementNS(SVG, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -77,6 +78,10 @@ const TEMPLATE = `
       <div class="ev-col"><div class="col-h">⇄ LIVE EVENTS</div><div class="gv-events" id="gv-log"></div></div>
     </div></div>
   </div>
+  <div class="sec" id="sec-merge-sweep">
+    <div class="shead" data-fold><span class="caret">▾</span><span>◆ MERGE-SWEEP</span><span class="meta">report-only · automerge checkpoints</span><span class="maxbtn" data-max title="full size">⤢</span></div>
+    <div class="secbody"><div class="tscroll" id="gv-merge-sweep"></div></div>
+  </div>
   <div class="sec" id="sec-issues">
     <div class="shead" data-fold><span class="caret">▾</span><span>▤ ISSUES &amp; PRS · PROGRESS</span><span class="meta">idea→spec→approved→in-progress→review→done</span><span class="maxbtn" data-max title="full size">⤢</span></div>
     <div class="secbody"><div class="tscroll" id="gv-issues"></div></div>
@@ -144,6 +149,7 @@ function loadAll() {
   loadDaily();
   loadSchedules();
   loadHealth();
+  loadMergeSweep();
   loadActivityLog();
   // Periodic auto-refresh of the daily report (Token/Issues/PR panels otherwise only
   // update on the daily schedule). Skipped while the tab is hidden to avoid background
@@ -347,6 +353,13 @@ async function loadSchedules() {
     } catch { /* transient — next poll reflects state */ }
     setTimeout(loadSchedules, 1500);
   }));
+}
+
+async function loadMergeSweep() {
+  const el = root.querySelector('#gv-merge-sweep');
+  if (!el) return;
+  try { el.innerHTML = renderMergeSweep(await (await fetch('/api/merge-sweep')).json()); }
+  catch { el.innerHTML = '<div class="gv-empty">merge-sweep unavailable</div>'; }
 }
 
 async function loadHealth() {

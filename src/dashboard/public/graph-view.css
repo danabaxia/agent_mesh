@@ -161,3 +161,15 @@
 /* shared hover tooltip (appended to body) */
 .gv-tip{position:fixed;z-index:9999;display:none;pointer-events:none;background:var(--ink);color:#fff;font:600 11px var(--mono);padding:5px 9px;border-radius:7px;box-shadow:0 5px 16px rgba(31,61,56,.28);white-space:nowrap}
 .gv-tip .v{color:var(--teal2)} .gv-tip .am{color:#fbbf5a}
+
+/* ◆ MERGE-SWEEP panel */
+#view-graph .ms-head{font:11px var(--mono);color:var(--ink2);padding:6px 12px}
+#view-graph .ms-stale{color:var(--amber);font-weight:700}
+#view-graph .ms-cp{padding:6px 12px;border-top:1px dashed #efe9da}
+#view-graph .ms-cp-h{font-size:13px;margin-bottom:4px}
+#view-graph .ms-status{font:600 9px var(--mono);padding:1px 6px;border-radius:4px;background:#f4f1e7;color:var(--ink2)}
+#view-graph .ms-st-error{background:#fde8e8;color:#b91c1c} #view-graph .ms-st-flagged{background:var(--amber-bg);color:var(--amber)} #view-graph .ms-st-clean{background:#e7f3ee;color:var(--good)}
+#view-graph .ms-item{display:flex;gap:8px;align-items:baseline;font-size:12.5px;padding:2px 0}
+#view-graph .ms-state{font:600 9px var(--mono);padding:1px 6px;border-radius:4px;background:#eef;color:#334}
+#view-graph .ms-detail{color:var(--ink2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view-graph .ms-age{color:var(--ink2);font:10px var(--mono)}
