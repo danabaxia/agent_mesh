@@ -76,9 +76,15 @@
 #view-graph .split2 .ev-col{border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 #view-graph .col-h{padding:7px 14px;border-bottom:1px solid var(--line);font:600 10px var(--mono);color:var(--ink2);letter-spacing:1px}
 #view-graph #gv-field{width:100%;height:100%;min-height:0;display:block}
-#view-graph .peer{stroke:#d4ccba;stroke-width:1.4;fill:none}
-#view-graph .arc{fill:none;stroke:var(--amber);stroke-width:2.6;stroke-dasharray:7 5;animation:dashmove .9s linear infinite}
-#view-graph .gpulse{fill:var(--amber)}
+#view-graph .peer{stroke:#cabfa3;stroke-width:1.3;stroke-dasharray:5 5;fill:none;opacity:.5}
+#view-graph .arc{fill:none;stroke:var(--teal2);stroke-width:2.6;stroke-dasharray:7 5;animation:dashmove .9s linear infinite}
+#view-graph .gpulse{fill:var(--teal2)}
+#view-graph .oedge{stroke:#bdb091;stroke-width:1.6;fill:none;opacity:.34;transition:stroke .35s,stroke-width .35s,opacity .5s}
+#view-graph .oedge.active{stroke:var(--teal2);stroke-width:2.6;opacity:.95}
+#view-graph .gv-legend{display:inline-flex;gap:12px;align-items:center;font:10px var(--mono);color:var(--ink2);margin-left:8px}
+#view-graph .gv-legend i{display:inline-block;width:18px;height:0;vertical-align:middle;margin-right:4px}
+#view-graph .gv-legend .lg-cap{border-top:1.4px dashed #cabfa3}
+#view-graph .gv-legend .lg-obs{border-top:2.4px solid var(--teal2)}
 #view-graph .nbody{fill:#fff;stroke-width:1.5;transition:stroke-width .12s}
 #view-graph .node{cursor:pointer} #view-graph .node:hover .nbody{stroke-width:3}
 #view-graph .halo{fill:none;stroke:var(--busy);stroke-width:1.6;opacity:0}

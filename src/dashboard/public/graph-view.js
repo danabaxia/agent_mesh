@@ -3,6 +3,7 @@
 // /api/events SSE, token consumption per range from /api/tokens, and the
 // issues/PRs progress table from /api/daily. Visual language = board2.css.
 import { agentColor } from '/board2-model.js';
+import { reconcileObserved } from '/graph-observed.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const mk = (t, a = {}) => { const e = document.createElementNS(SVG, t); for (const k in a) e.setAttribute(k, a[k]); return e; };
@@ -12,7 +13,8 @@ const tagName = (n) => `<b class="an" style="color:${agentColor(n)}">${esc(n)}</
 const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? '' : d.toTimeString().slice(0, 8); };
 
 let started = false, es = null, root = null, range = 'today';
-let agents = [], byName = {}, nodeEls = {}, peerEls = [], field = null, gArc = null;
+let agents = [], byName = {}, nodeEls = {}, peerEls = [], field = null, gArc = null, gObs = null;
+let oedges = {};   // key `from|to` → { from, to, el }  (observed edges, persistent)
 let cx = 410, cy = 230, R = 158;
 const seen = new Set();
 let tip, clockTimer;
@@ -69,7 +71,7 @@ const TEMPLATE = `
     </div>
   </div>
   <div class="sec" id="sec-graph">
-    <div class="shead" data-fold><span class="caret">▾</span><span>◉ LIVE DELEGATION GRAPH</span><span class="live-ind">● live</span><span class="meta" id="gv-agc">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
+    <div class="shead" data-fold><span class="caret">▾</span><span>◉ LIVE DELEGATION GRAPH</span><span class="live-ind">● live</span><span class="gv-legend"><i class="lg-cap"></i>can delegate<i class="lg-obs"></i>communicating</span><span class="meta" id="gv-agc">—</span><span class="maxbtn" data-max title="full size">⤢</span></div>
     <div class="secbody"><div class="split2">
       <svg id="gv-field"></svg>
       <div class="ev-col"><div class="col-h">⇄ LIVE EVENTS</div><div class="gv-events" id="gv-log"></div></div>
@@ -165,7 +167,7 @@ async function ensureGraph() {
   if (!names.length) names = ['mesh'];
   agents = names.map((n) => ({ name: n, c: agentColor(n) }));
   byName = Object.fromEntries(agents.map((a) => [a.name, a]));
-  const gPeer = mk('g'), ga = mk('g'), gNode = mk('g'); field.append(gPeer, ga, gNode); gArc = ga;
+  const gPeer = mk('g'), gob = mk('g'), ga = mk('g'), gNode = mk('g'); field.append(gPeer, gob, ga, gNode); gArc = ga; gObs = gob;
   peerEls = pairs.map(([u, v]) => ({ u, v, el: gPeer.appendChild(mk('path', { class: 'peer' })) }));
   nodeEls = {};
   for (const a of agents) {
@@ -189,6 +191,7 @@ function layout() {
   field.setAttribute('viewBox', `0 0 ${w} ${h}`); cx = w / 2; cy = h / 2; R = Math.max(70, Math.min(w, h) / 2 - 66);
   agents.forEach((a, i) => { const ang = -Math.PI / 2 + i * 2 * Math.PI / agents.length; a.x = cx + R * Math.cos(ang); a.y = cy + R * Math.sin(ang); nodeEls[a.name].el.setAttribute('transform', `translate(${a.x},${a.y})`); });
   for (const p of peerEls) if (byName[p.u] && byName[p.v]) p.el.setAttribute('d', curve(byName[p.u], byName[p.v]));
+  for (const key of Object.keys(oedges)) { const o = oedges[key]; if (byName[o.from] && byName[o.to]) o.el.setAttribute('d', curve(byName[o.from], byName[o.to])); }
 }
 
 function travel(a, b) {
@@ -207,7 +210,20 @@ async function loadActivity() {
     const live = (act.agents || []).find((x) => x.name === a.name);
     nodeEls[a.name].rt.textContent = w && live ? (live.route || '') : '';
   }
-  for (const e of (act.edges || [])) if (e.active) travel(e.from, e.to);
+  // Observed-traffic layer: persistent edges reconciled against the activity window.
+  const known = (act.edges || []).filter((e) => byName[e.from] && byName[e.to]);
+  const { add, update, remove } = reconcileObserved(Object.keys(oedges), known);
+  for (const e of add) {
+    const key = `${e.from}|${e.to}`;
+    const el = gObs.appendChild(mk('path', { class: 'oedge' }));
+    el.setAttribute('d', curve(byName[e.from], byName[e.to]));
+    el.classList.toggle('active', !!e.active);
+    oedges[key] = { from: e.from, to: e.to, el };
+  }
+  for (const u of update) oedges[u.key].el.classList.toggle('active', !!u.active);
+  for (const key of remove) { oedges[key].el.remove(); delete oedges[key]; }
+  // traveling pulse stays on every active edge (newly added OR already present)
+  for (const e of known) if (e.active) travel(e.from, e.to);
   // events ticker: prepend only unseen
   const log = root.querySelector('#gv-log');
   const evs = (act.events || []).slice().sort((a, b) => Date.parse(a.at || 0) - Date.parse(b.at || 0)); // asc → prepend makes newest top
