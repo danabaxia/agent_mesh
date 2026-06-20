@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const dir = fileURLToPath(new URL('../.github/workflows/', import.meta.url));
-const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix', 'security'];
+const NAMES = ['research', 'intake', 'backlog', 'triage', 'review', 'curate', 'autofix', 'security', 'analyst-review'];
 const wf = Object.fromEntries(NAMES.map((n) => {
   const p = `${dir}dev-mesh-${n}.yml`;
   return [n, existsSync(p) ? readFileSync(p, 'utf8') : ''];
