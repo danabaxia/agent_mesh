@@ -36,6 +36,8 @@ export const DEFAULT_HEARTBEAT_ESCALATE_AFTER = 2;          // heartbeats a find
 export const DEFAULT_ACTIVITY_KEEP_DAYS = 30;   // prune activity-*.jsonl older than this
 export const MAX_ACTIVITY_SUMMARY = 240;        // activity event summary char cap
 
+export const MAX_FAN_OUT_PEERS = 10;
+
 export const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 // Read-only network egress tools, granted ONLY to manifest-opted ask agents
 // (see agentWantsWebTools). Never granted in `do` mode or on the digest route.
