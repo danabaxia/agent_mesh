@@ -32,6 +32,14 @@
       "cadence": { "kind": "every", "minutes": 15 },
       "enabled": true,
       "description": "Read-only inspect: issue-gate -> automerge -> memory; writes mesh/reports/merge-sweep.json. No merges/labels."
+    },
+    {
+      "id": "post-merge-reconcile",
+      "name": "Close issues whose closing PR merged (clear stale pr:in-review)",
+      "kind": "builtin",
+      "builtin": "post-merge-reconcile",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
     }
   ]
 }
