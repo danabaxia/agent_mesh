@@ -144,7 +144,13 @@ async function syncBridgeMcp(agent, meshRoot, participatesInBoard, apply, fixed,
   // Same values generateRegistry stamps per peer: CEILING = mesh root, ROOT = mesh/ dir.
   const bridgeEnv = {
     AGENT_MESH_MESH_ROOT: join(meshRoot, 'mesh'),
-    AGENT_MESH_MESH_CEILING: meshRoot
+    AGENT_MESH_MESH_CEILING: meshRoot,
+    // Forward the Claude OAuth credential to the bridge as a `${VAR}` placeholder so
+    // onward delegation works under env-token auth (CI / headless / server), not only
+    // keychain. claude expands it from the caller's env when it spawns the bridge, then
+    // it cascades to each peer's serve-a2a → worker; an unset var is omitted (keychain
+    // unaffected). The literal secret is never persisted to this on-disk .mcp.json. (#150)
+    CLAUDE_CODE_OAUTH_TOKEN: '${CLAUDE_CODE_OAUTH_TOKEN}'
   };
   const wanted = hasPeers ? generateBridgeServerEntry(agent.agentRoot, BIN_PATH, bridgeEnv) : undefined;
 
