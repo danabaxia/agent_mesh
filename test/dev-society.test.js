@@ -162,6 +162,29 @@ test('planLabelRepair: keeps human blocked issues blocked while cleaning contrad
   assert.equal(devCore.planLabelRepair(issue(8, [BLOCKED])), null);
 });
 
+test('planLabelRepair: approved + spec:in-review on a code-type clears the review gate (drains the deadlock)', () => {
+  const plan = devCore.planLabelRepair(issue(175, [ENHANCEMENT, APPROVED, ROUTE_LABEL, SPEC_IN_REVIEW]));
+  assert.equal(plan.reason, 'approved-clears-spec-review');
+  assert.deepEqual(plan.remove, [SPEC_IN_REVIEW]);
+  assert.deepEqual(plan.add, []);
+  assert.match(plan.comment, /Auto-cleared `spec:in-review`/);
+  // and after the repair, routeFor sends it to the coder (no longer human-gated)
+  assert.equal(routeFor(issue(175, [ENHANCEMENT, APPROVED, ROUTE_LABEL])).target, 'coder');
+});
+
+test('planLabelRepair: approved + spec:in-review only clears for code-types (idea must NOT, to avoid the spec-draft loop)', () => {
+  assert.equal(devCore.planLabelRepair(issue(9, [IDEA, APPROVED, SPEC_IN_REVIEW])), null);
+});
+
+test('planLabelRepair: does not touch approved issues already at pr:in-review or in-progress', () => {
+  assert.equal(devCore.planLabelRepair(issue(10, [ENHANCEMENT, APPROVED, SPEC_IN_REVIEW, PR_IN_REVIEW])), null);
+  assert.equal(devCore.planLabelRepair(issue(11, [ENHANCEMENT, APPROVED, SPEC_IN_REVIEW, IN_PROGRESS])), null);
+});
+
+test('planLabelRepair: spec:in-review WITHOUT approved stays human-gated (no repair)', () => {
+  assert.equal(devCore.planLabelRepair(issue(12, [ENHANCEMENT, SPEC_IN_REVIEW])), null);
+});
+
 test('routeFor: idea needs approval; approved idea → analyst draft (advance spec:draft)', () => {
   assert.equal(routeFor(issue(1, [IDEA])).target, null, 'idea without approval skipped');
   const r = routeFor(issue(2, [IDEA, APPROVED]));
