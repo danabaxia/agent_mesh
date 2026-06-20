@@ -45,6 +45,7 @@ import { runMir } from './mir-run.mjs';
 import { runAnalystDailyReview } from './analyst-review-run.mjs';
 import { doctor } from '../src/builder/doctor.js';
 import { ensureLabels } from '../src/gh-labels.js';
+import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-lock.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -332,6 +333,10 @@ async function runOneTask(issue) {
   log(`▶ claim #${issue.number} "${issue.title}" → ${branch}`);
   rec({ source: 'daemon', type: 'issue.picked', summary: `picked #${issue.number}: ${String(issue.title || '').slice(0, 80)}`, ref: `#${issue.number}` });
   await addLabel(issue.number, core.IN_PROGRESS);
+  // Hold the build-lock for the whole build so deploy-sync defers the daemon
+  // restart until we finish — a restart mid-build orphans this issue (in-progress,
+  // no PR). Released in the finally below; goes stale on a hung build (safety valve).
+  acquireBuildLock(repoRoot, { issue: issue.number });
 
   // fresh worktree off the base branch
   rmSync(wt, { recursive: true, force: true });
@@ -425,6 +430,7 @@ async function runOneTask(issue) {
     appendFileSync(cfg.ledger, JSON.stringify(core.ledgerRecord({ issue, coderTask, reviewerTask, tests, prNumber })) + '\n');
     rmSync(wt, { recursive: true, force: true });
     await git(['worktree', 'prune'], repoRoot).catch(() => {});
+    releaseBuildLock(repoRoot);   // build done → deploy-sync may restart on the next tick
   }
 }
 

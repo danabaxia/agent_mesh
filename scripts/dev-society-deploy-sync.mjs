@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { planDeploySync } from '../src/dev-society/deploy-sync.js';
+import { readBuildBusy } from '../src/dev-society/build-lock.js';
 
 const sh = promisify(execFile);
 
@@ -38,7 +39,7 @@ export function makeLaunchctlRestart(label) {
 
 export async function runDeploySyncOnce({
   deployPath, git = runGitCap, restart, readState, writeState,
-  now = () => new Date(), log = () => {},
+  buildBusy = () => readBuildBusy(deployPath), now = () => new Date(), log = () => {},
 }) {
   const ts = now().toISOString();
   try {
@@ -46,7 +47,10 @@ export async function runDeploySyncOnce({
     await git(deployPath, ['fetch', 'origin', '--prune', '-q']);   // throws → caught
     const target = await git(deployPath, ['rev-parse', 'origin/main']);
     const lastRestartedTarget = readState();
-    const { reset, restart: needRestart } = planDeploySync({ head, target, lastRestartedTarget });
+    // Defer the restart if a coder build is in flight (build.lock fresh) — a restart
+    // mid-build orphans the issue (in-progress, no PR). The reset still runs.
+    const busy = !!buildBusy();
+    const { reset, restart: needRestart, deferredRestart } = planDeploySync({ head, target, lastRestartedTarget, buildBusy: busy });
     if (reset) await git(deployPath, ['reset', '--hard', 'origin/main']);
     let restarted = false;
     if (needRestart) {
@@ -54,7 +58,7 @@ export async function runDeploySyncOnce({
       writeState(target);       // persist only after a successful restart
       restarted = true;
     }
-    const rec = { ts, action: reset ? 'advanced' : 'up_to_date', head, target, reset, restarted };
+    const rec = { ts, action: reset ? 'advanced' : 'up_to_date', head, target, reset, restarted, deferredRestart: !!deferredRestart };
     log(rec);
     return rec;
   } catch (error) {
@@ -76,7 +80,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     log: (r) => {
       try { mkdirSync(dirname(logPath), { recursive: true });
             writeFileSync(logPath, JSON.stringify(r) + '\n', { flag: 'a' }); } catch { /* best effort */ }
-      console.log(r.ts, r.action, r.target || '', r.restarted ? 'restarted' : '');
+      console.log(r.ts, r.action, r.target || '', r.restarted ? 'restarted' : (r.deferredRestart ? 'restart-deferred(build-busy)' : ''));
     },
   });
   process.exitCode = rec.action === 'error' ? 1 : 0;

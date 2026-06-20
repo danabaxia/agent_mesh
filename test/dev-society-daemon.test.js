@@ -18,3 +18,13 @@ test('daemon awaits doctor(apply,managedOnly) before sched.start()', () => {
   assert.ok(doctorIdx < startIdx, 'doctor must be called before sched.start()');
   assert.match(src, /await\s+doctor\(\s*SCHED_MESH_ROOT/);
 });
+
+test('runOneTask holds the build-lock (acquire before build, release in finally)', () => {
+  const acq = src.indexOf('acquireBuildLock(repoRoot');
+  const rel = src.indexOf('releaseBuildLock(repoRoot)');
+  assert.ok(acq !== -1, 'runOneTask must acquireBuildLock');
+  assert.ok(rel !== -1, 'runOneTask must releaseBuildLock');
+  // release comes after acquire, and sits in the finally (after the ledger append)
+  assert.ok(acq < rel, 'acquire precedes release');
+  assert.ok(src.indexOf('coder', acq) < rel, 'the build runs between acquire and release');
+});
