@@ -891,5 +891,16 @@
       "source": "PR #224: fix(analyst): freshness guard for daily digest inputs (#195)",
       "ts": "2026-06-20"
     }
+  },
+  "state-after-mutation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Commit automation state only AFTER the external action succeeds — state-before-mutation silently drops items.",
+    "l1": "PR #254 Codex BLOCKER: runRemediation wrote the escalation state record before calling `gh issue create`. On gh failure, the item was permanently marked 'escalated' with no issue ever filed — next sweeps skipped it silently. Zero diagnostic signal: no error in the run-log, no missing-item alert. The only correct ordering: call gh first, write state only in the success branch. Applies to any automation that pairs a state journal with external side-effect calls.",
+    "value": "Pattern: action first, state second — for any daemon sweep that pairs a persistent state file with an external mutation call (gh issue create/close/edit, label-add, API POST).\n\n(1) WRONG — state before action:\n  state.escalated[id] = { issueNumber: null, ts };\n  await writeState(state);   // ← written before gh call\n  const n = await gh.createIssue(...); // ← if this throws, state is already committed\n\n(2) CORRECT — action before state:\n  const n = await gh.createIssue(...);\n  state.escalated[id] = { issueNumber: n, ts };\n  await writeState(state);   // ← only written after gh succeeds\n\n(3) On gh failure: catch the error, return a fail-state result ({status:'fail'}), do NOT write the state record. The next sweep tick finds the item unhandled and retries normally.\n\n(4) Test matrix:\n  a. gh.create throws → state NOT written, item retried next tick.\n  b. gh.create succeeds → state written with issueNumber.\n  c. Second run with state written → item correctly skipped (dedup).\n\nSilent failure mode without this: journal says 'escalated', gh never fired, item dropped forever with no log or retry. Provenance: PR #254 (2026-06-20).",
+    "provenance": {
+      "source": "PR #254 (2026-06-20): feat(remediation): orchestrator backstop loop ② — Codex BLOCKER state-before-mutation",
+      "ts": "2026-06-20"
+    }
   }
 }
