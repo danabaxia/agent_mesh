@@ -177,3 +177,7 @@ for authoritative status, surfacing non-cron workflow triggers.
 - **[MINOR] orchestrator-catch-all list incomplete** — reworded §2 as non-exhaustive;
   noted `workflowToAgent` defaults ALL unmapped names to orchestrator (so most
   scheduled workflows show `—` conclusion), only the 6 mapped roles get an edge.
+
+### Round 3 — Codex (gpt-5.5), VERDICT: APPROVED
+
+No remaining actionable findings. Converged (6 → 2 → 0 across rounds 1–3).
