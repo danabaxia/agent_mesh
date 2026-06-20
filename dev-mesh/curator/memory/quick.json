@@ -825,5 +825,16 @@
       "source": "PR #205: fix(dev-mesh-mergefix): drain freshly-conflicting PRs (lazy-mergeability race + git identity)",
       "ts": "2026-06-20"
     }
+  },
+  "gha-cron-throttle-use-daemon-builtin": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GHA `*/15` cron fires every ~1-2h in practice — use a daemon builtin at 10-min cadence for time-sensitive sweeps.",
+    "l1": "GitHub Actions cron (even `*/15`) is throttled; observed fire rate ~1-2h. dev-mesh-automerge `*/15` left ready PRs (CLEAN+APPROVED) idle for hours. Fix (PR #231): register `runSweep` as a `kind:builtin` (`automerge-sweep`) on maintainer schedule.json at 10-min cadence — same reliable cadence as `issue-sweep`. GHA cron stays as cold-start backstop. Time-critical sweeps (latency target << 1h) belong in daemon builtins, not GHA cron alone.",
+    "value": "When a sweep must complete within minutes, not hours:\n\n(1) Register a daemon builtin in the target agent's schedule.json: {\"id\": \"automerge-sweep\", \"kind\": \"builtin\", \"name\": \"automerge-sweep\", \"enabled\": true, \"every\": 10}. The daemon scheduler dispatches by kind — no LLM spawn.\n\n(2) Register the function in the daemon's builtin registry (scripts/dev-society-daemon.mjs):\n  builtins['automerge-sweep'] = async () => {\n    if (!enabled) return {status:'ok', output:'disabled'};\n    await runAutomergeSweep({...});\n    return {status:'ok'};\n  };\nGate on the sweep's kill-switch env var (AUTOMERGE_ENABLED). Return {status:'ok'} explicitly — void breaks onJobResult (see scheduler-builtin-return-shape).\n\n(3) Keep the GHA cron workflow as a cold-start backstop. Share the same runSweep/isAutoMergeable logic — no duplication between daemon and GHA paths.\n\n(4) Test: assert (a) daemon registers the builtin name; (b) builtin gates on the env flag; (c) schedule.json has the job at every ≤10; (d) existing GHA cron schedule remains present.\n\nRed flag: PRs idle for hours while the automerge workflow claims `*/15` → GHA cron is throttled; migrate sweep to daemon builtin. Provenance: PR #231 (2026-06-20).",
+    "provenance": {
+      "source": "PR #231: feat(daemon): automerge-sweep builtin — prompt drain of ready PRs (no idle)",
+      "ts": "2026-06-20"
+    }
   }
 }
