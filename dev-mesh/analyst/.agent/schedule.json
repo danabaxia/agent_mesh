@@ -1,0 +1,13 @@
+{
+  "jobs": [
+    {
+      "id": "analyst-daily-review",
+      "name": "Daily performance review",
+      "kind": "builtin",
+      "builtin": "analyst-daily-review",
+      "cadence": { "kind": "daily", "at": "09:30" },
+      "enabled": true,
+      "saveArtifact": true
+    }
+  ]
+}

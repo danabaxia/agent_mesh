@@ -37,6 +37,9 @@ export const DEFAULT_ACTIVITY_KEEP_DAYS = 30;   // prune activity-*.jsonl older 
 export const MAX_ACTIVITY_SUMMARY = 240;        // activity event summary char cap
 
 export const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+// Read-only network egress tools, granted ONLY to manifest-opted ask agents
+// (see agentWantsWebTools). Never granted in `do` mode or on the digest route.
+export const WEB_TOOLS = ['WebSearch', 'WebFetch'];
 export const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
 
 export function readPositiveInt(value, fallback) {

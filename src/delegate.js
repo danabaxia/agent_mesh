@@ -198,7 +198,7 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
       });
     } else {
       // ClaudeRunner (default): spawns `claude -p` with the standard invocation.
-      invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, session: taggedSession });
+      invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, session: taggedSession, route });
       spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
         cwd: root,
         env: claudeEnv,
@@ -229,7 +229,7 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
       // next turn resumes the freshly-created transcript.
       const RESUME_FAIL = /no conversation|session not found|could not resume|--resume/i;
       if (taggedSession && taggedSession.resume && spawnResult.code !== 0 && RESUME_FAIL.test(spawnResult.stderr || '')) {
-        invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv,
+        invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, route,
           session: { id: taggedSession.id, resume: false } });
         spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
           cwd: root,
