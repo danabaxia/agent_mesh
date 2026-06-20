@@ -119,3 +119,28 @@ test('live mode rejects empty DEV_SOCIETY_REPO before any mkdir/write', { skip: 
   assert.ok(!existsSync(la) || readdirSync(la).length === 0,
     'LaunchAgents dir must be empty — preflight should exit before any write');
 });
+
+test('--dry-run emits the dashboard plist + sync env + reload', { skip: POSIX_ONLY }, () => {
+  const stubDir = mkdtempSync(join(tmpdir(), 'stub-'));
+  for (const name of ['launchctl', 'claude', 'gh', 'node']) {
+    const p = join(stubDir, name);
+    writeFileSync(p, name === 'launchctl'
+      ? '#!/bin/sh\necho "launchctl must not be called" >&2\nexit 99\n'
+      : '#!/bin/sh\ntrue\n');
+    chmodSync(p, 0o755);
+  }
+  const r = spawnSync('bash', [script, '--dry-run'], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${stubDir}:${process.env.PATH}`, DEV_SOCIETY_DEPLOY_ROOT: '/tmp/x', DEV_SOCIETY_REPO: 'o/r' },
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = r.stdout;
+  assert.match(out, /com\.danabaxia\.agent-mesh\.dashboard\.plist/);
+  assert.match(out, /<string>dashboard<\/string>/);
+  assert.match(out, /\/tmp\/x\/dev-mesh/);
+  assert.match(out, /<string>--no-open<\/string>/);
+  assert.match(out, /<string>--port<\/string><string>7077<\/string>/);
+  assert.match(out, /<key>KeepAlive<\/key><true\/>/);
+  assert.match(out, /<key>DEV_SOCIETY_DASHBOARD_LABEL<\/key><string>com\.danabaxia\.agent-mesh\.dashboard<\/string>/);
+  assert.match(out, /reload dashboard/);
+});
