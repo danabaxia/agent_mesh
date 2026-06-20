@@ -803,5 +803,16 @@
       "source": "PR #220 (2026-06-20): fix(dev-mesh-review-respond): fair PR selection (no head-of-line starvation)",
       "ts": "2026-06-20"
     }
+  },
+  "bug-bypasses-spec-gate": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Bug issues bypass spec:in-review — defect → coder directly; only features/ideas/docs need human-reviewed specs.",
+    "l1": "routeFor already sent bare 'bug' to the coder. But 'bug+spec:in-review' fell into the human-gate path, requiring 'approved' to advance. PR #215 added a bug-specific override symmetric with approved-overrides-review: bug routes to coder even at spec:in-review/discussing. Scoped to bug only — enhancement/documentation/idea at review still return null (human-gated). Hard stops unchanged: blocked (failed build + loop guard), pr:in-review, terminal, in-progress all still win.",
+    "value": "Pattern for multi-tier issue routing in an autonomous dev-mesh society:\n\n(1) Label-tier override ordering: check issue-type-specific bypasses BEFORE the generic lifecycle gate. spec:in-review/discussing gating is a quality check for FEATURES — it protects humans from shipping underspecified work. A bug is a defect; it has no spec lifecycle. Bypassing the review gate for bugs only keeps the safety net intact for ideas/enhancements/docs.\n\n(2) Override table (symmetric with approved-overrides-review):\n  bug (bare)               → coder (unchanged)\n  bug + spec:in-review     → coder, reason:'bug-autofix' (NEW)\n  bug + discussing         → coder, reason:'bug-autofix' (NEW)\n  bug + blocked            → null  (hard stop — failed build + loop guard #98)\n  bug + pr:in-review       → null  (already has a PR)\n  enhancement/idea/docs + spec:in-review → null (still human-gated, unchanged)\n\n(3) Implementation in routeFor: insert a bug-type check as an early-exit BEFORE the spec:in-review/discussing null-return. Clear the spec review label at routing time so the Coder inherits a clean issue state.\n\n(4) Hard gate invariants never move: blocked, pr:in-review, in-progress, and terminal states short-circuit BEFORE the bug bypass. The bypass targets only the review gate — never safety gates.\n\n(5) Required test matrix: (a) bug bare → coder; (b) bug+spec:in-review → coder, reason:bug-autofix; (c) bug+discussing → coder; (d) bug+blocked → null; (e) bug+pr:in-review → null; (f) enhancement+spec:in-review → null; (g) idea+spec:in-review → null. Document each as an explicit negative case to prevent regression.\n\nProvenance: PR #215 (2026-06-20).",
+    "provenance": {
+      "source": "PR #215: feat(dev-society): bug issues auto-fix without human approval (override the review gate)",
+      "ts": "2026-06-20"
+    }
   }
 }
