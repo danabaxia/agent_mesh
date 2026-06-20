@@ -99,9 +99,13 @@ test('CLAIM LOCK: backlog & triage serialize via concurrency (no double-claim)',
 test('APPROVAL GATE: backlog only builds approved work; intake never builds code', () => {
   // §5.3 — no do-mode/code work happens before a human approves.
   assert.match(wf.backlog, /approved/, 'backlog must gate on the approved state');
-  // intake (Analyst) handles discuss/spec/labels only — it must not push code to a
-  // branch. It may open a spec PR (pull-requests: write) but not write repo contents.
-  assert.doesNotMatch(wf.intake, /contents:\s*write/, 'intake must not push code (approval gate)');
+  // intake (Analyst) may commit spec documents (docs/superpowers/specs/) and open spec
+  // PRs using DEV_MESH_PAT credentials. It must NOT use GITHUB_TOKEN write access —
+  // contents stays read so the GITHUB_TOKEN cannot push code, and the Analyst cannot
+  // merge its own PRs.
+  assert.doesNotMatch(wf.intake, /contents:\s*write/, 'intake must keep contents: read (GITHUB_TOKEN write blocked; use DEV_MESH_PAT for spec branches)');
+  // Scope discipline: the Analyst prompt must explicitly limit writes to docs/superpowers/specs/.
+  assert.match(wf.intake, /docs\/superpowers\/specs/, 'intake prompt must scope spec commits to docs/superpowers/specs/');
 });
 
 test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
@@ -184,6 +188,10 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
   // run tests; ask/analyst roles read + comment only (lower surface on agents that
   // ingest untrusted PR/issue content).
   const DO_WORKERS = new Set(['backlog', 'curate', 'autofix']);
+  // intake is a SPEC_WRITER: it may commit spec documents (docs/superpowers/specs/)
+  // to a branch and open spec PRs, but it does NOT run builds or modify code.
+  // Git access uses DEV_MESH_PAT credentials; GITHUB_TOKEN keeps contents: read.
+  const SPEC_WRITERS = new Set(['intake']);
   for (const n of NAMES) {
     assert.match(wf[n], /--allowedTools/, `${n}: must declare an explicit tool allowlist`);
     // ":*" = any-args; Bash(gh) (exact) would deny `gh pr create …` (the 2026-06-15 bug).
@@ -198,9 +206,13 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
     if (DO_WORKERS.has(n)) {
       assert.match(wf[n], /Bash\(git:\*\)/, `${n}: do-worker needs git (any args) to push`);
       assert.match(wf[n], /Bash\(npm:\*\)|Bash\(node:\*\)/, `${n}: do-worker runs the suite`);
+    } else if (SPEC_WRITERS.has(n)) {
+      // spec-writers can push spec documents to branches (git) but do not run builds.
+      assert.match(wf[n], /Bash\(git:\*\)/, `${n}: spec-writer needs git to push spec branches`);
+      assert.doesNotMatch(wf[n], /Bash\(npm:|Bash\(node:/, `${n}: spec-writer does not run builds`);
     } else {
-      assert.doesNotMatch(wf[n], /Bash\(git:/, `${n}: ask/analyst role must not push code`);
-      assert.doesNotMatch(wf[n], /Bash\(npm:|Bash\(node:/, `${n}: ask/analyst role doesn't run builds`);
+      assert.doesNotMatch(wf[n], /Bash\(git:/, `${n}: ask-only role must not push`);
+      assert.doesNotMatch(wf[n], /Bash\(npm:|Bash\(node:/, `${n}: ask-only role doesn't run builds`);
     }
   }
 });
