@@ -40,6 +40,17 @@ export async function runEscalation({ gh, repo, enabled, staleMs, now = Date.now
     if (n != null) existingPrNums.add(n);
   }
 
+  // Bidirectional dedup with ② (merge-sweep-remediate): a PR already escalated as a
+  // needs-human (carrying `<!-- needs-human:automerge:PR#N -->`) must not also get a
+  // needs-triage here. Best-effort: a failed list just means no extra dedup.
+  try {
+    const human = JSON.parse(await gh(['issue', 'list', '--repo', repo, '--state', 'open', '--label', 'needs-human', '--json', 'number,body', '--limit', '200']));
+    for (const iss of (Array.isArray(human) ? human : [])) {
+      const m = /<!--\s*needs-human:automerge:PR#(\d+)\s*-->/i.exec(String(iss.body || ''));
+      if (m) existingPrNums.add(Number.parseInt(m[1], 10));
+    }
+  } catch (e) { log('escalation: needs-human dedup list failed: ' + (e?.message || e)); }
+
   const opened = [], closed = [];
   // Self-heal: ensure the `needs-triage` label exists before any create 422s the sweep.
   if (!dryRun && stuck.some((pr) => !existingPrNums.has(pr.number))) {

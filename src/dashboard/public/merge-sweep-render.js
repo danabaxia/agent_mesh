@@ -10,7 +10,10 @@ export function renderMergeSweep(rep) {
       const n = Number.isInteger(it.number) ? it.number : null;
       const link = n ? `<a href="https://github.com/${REPO}/pull/${n}" target="_blank" rel="noopener">${esc(it.ref)}</a>` : esc(it.ref);
       const age = (it.ageRuns || 1) > 1 ? ` · ${it.ageRuns} runs` : '';
-      return `<div class="ms-item"><span class="ms-state ms-${esc(it.state)}">${esc(it.state)}</span> ${link} <span class="ms-detail">${esc(it.detail)}</span><span class="ms-age">${age}</span></div>`;
+      const rem = it.remediation
+        ? ` <span class="ms-rem ms-rem-${esc(it.remediation.state)}">${esc(it.remediation.state)}${it.remediation.issueNumber ? ` <a href="https://github.com/${REPO}/issues/${Number(it.remediation.issueNumber)}" target="_blank" rel="noopener">#${Number(it.remediation.issueNumber)}</a>` : ''}</span>`
+        : '';
+      return `<div class="ms-item"><span class="ms-state ms-${esc(it.state)}">${esc(it.state)}</span> ${link} <span class="ms-detail">${esc(it.detail)}</span><span class="ms-age">${age}</span>${rem}</div>`;
     }).join('');
     return `<div class="ms-cp"><div class="ms-cp-h"><b>${esc(c.name)}</b> <span class="ms-status ms-st-${esc(c.status)}">${esc(c.status)}</span></div>${items}</div>`;
   }).join('');

@@ -80,3 +80,18 @@ test('dryRun → decides but performs no create/close', async () => {
   assert.equal(calls.create.length, 0);
   assert.equal(calls.close.length, 0);
 });
+
+test('escalation dedups against ②\'s open needs-human marker for the same PR', async () => {
+  const calls = [];
+  const gh = async (a) => {
+    const s = a.join(' '); calls.push(s);
+    if (s.includes('pr list')) return JSON.stringify([{ number: 5, title: 'x', isDraft: false, isCrossRepository: false, mergeStateStatus: 'DIRTY', reviewDecision: 'APPROVED', updatedAt: '2000-01-01T00:00:00Z', labels: [] }]);
+    if (s.includes('issue list') && s.includes('needs-triage')) return '[]';
+    if (s.includes('issue list') && s.includes('needs-human')) return JSON.stringify([{ number: 90, body: '<!-- needs-human:automerge:PR#5 -->' }]);
+    return '[]';
+  };
+  const { runEscalation } = await import('../src/automerge/escalation-sweep.js');
+  const r = await runEscalation({ gh, repo: 'o/r', enabled: true, staleMs: 0, now: Date.now(), dryRun: false, log: () => {} });
+  assert.ok(!calls.some((c) => /issue create/.test(c)), 'must not open a needs-triage when ② already escalated PR #5');
+  assert.deepEqual(r.opened, []);
+});
