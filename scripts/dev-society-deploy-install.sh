@@ -23,14 +23,37 @@ fi
 LABEL="com.danabaxia.agent-mesh.dev-society"
 SYNC_LABEL="com.danabaxia.agent-mesh.deploy-sync"
 LEGACY_LABEL="com.danabaxia.dev-society"
-NODE_BIN="$(command -v node)"
+NODE_BIN="$(command -v node || true)"
 if [ -z "$NODE_BIN" ]; then
   echo "error: node not found on PATH — cannot write a valid daemon plist" >&2
   exit 1
 fi
+CLAUDE_BIN="$(command -v claude || true)"
+GH_BIN="$(command -v gh || true)"
 UID_NUM="$(id -u)"
 LA_DIR="$HOME/Library/LaunchAgents"
-PATH_ENV="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(dirname "$NODE_BIN")"
+
+# Build PATH_ENV: include dirs for node/claude/gh when found, plus standard dirs, de-duplicated.
+_path_parts=""
+_add_dir() {
+  local d="$1"
+  [ -z "$d" ] && return
+  case ":$_path_parts:" in
+    *":$d:"*) ;;  # already present
+    *) _path_parts="${_path_parts:+$_path_parts:}$d" ;;
+  esac
+}
+_add_dir "$(dirname "$NODE_BIN")"
+[ -n "$CLAUDE_BIN" ] && _add_dir "$(dirname "$CLAUDE_BIN")"
+[ -n "$GH_BIN" ]     && _add_dir "$(dirname "$GH_BIN")"
+_add_dir "/usr/local/bin"
+_add_dir "/opt/homebrew/bin"
+_add_dir "/usr/bin"
+_add_dir "/bin"
+_add_dir "/usr/sbin"
+_add_dir "/sbin"
+PATH_ENV="$_path_parts"
+
 REPO="${DEV_SOCIETY_REPO:-}"
 
 daemon_plist() {
@@ -46,7 +69,8 @@ daemon_plist() {
     <key>HOME</key><string>$HOME</string>
     <key>USER</key><string>${USER:-$(id -un)}</string>
     <key>DEV_SOCIETY_REPO</key><string>$REPO</string>
-  </dict>
+$([ -n "$CLAUDE_BIN" ] && printf '    <key>AGENT_MESH_CLAUDE</key><string>%s</string>\n' "$CLAUDE_BIN")  </dict>
+  <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>30</integer>
   <key>StandardOutPath</key><string>$DEPLOY_ROOT/.dev-society/daemon.out.log</string>
@@ -70,6 +94,7 @@ sync_plist() {
     <key>DEV_SOCIETY_REPO</key><string>$REPO</string>
     <key>DEV_SOCIETY_DAEMON_LABEL</key><string>$LABEL</string>
   </dict>
+  <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>300</integer>
   <key>StandardOutPath</key><string>$DEPLOY_ROOT/.dev-society/deploy-sync.out.log</string>
   <key>StandardErrorPath</key><string>$DEPLOY_ROOT/.dev-society/deploy-sync.err.log</string>
@@ -92,6 +117,16 @@ if [ "$DRY_RUN" = "1" ]; then
   echo "[dry-run] reload sync:   launchctl bootout gui/$UID_NUM/$SYNC_LABEL || true; bootstrap; enable; kickstart -k"
   echo "[dry-run] dedupe legacy: launchctl bootout gui/$UID_NUM/$LEGACY_LABEL || true; rm -f $LA_DIR/$LEGACY_LABEL.plist"
   exit 0
+fi
+
+# Live-mode preflight: require DEV_SOCIETY_REPO and claude BEFORE any side effect.
+if [ -z "$REPO" ]; then
+  echo "error: DEV_SOCIETY_REPO=owner/repo is required for live install" >&2
+  exit 1
+fi
+if [ -z "$CLAUDE_BIN" ]; then
+  echo "error: claude not found on PATH — the daemon needs it" >&2
+  exit 1
 fi
 
 mkdir -p "$LA_DIR" "$DEPLOY_ROOT/.dev-society"

@@ -12,18 +12,36 @@ const script = fileURLToPath(new URL('../scripts/dev-society-deploy-install.sh',
 
 // PATH-shadow launchctl with a stub that fails loudly if invoked, so any real
 // launchctl call during --dry-run / the mismatch guard fails the test.
+// Also plant fake claude/gh/node so command -v resolves them in the stub dir.
 function stubPath() {
   const dir = mkdtempSync(join(tmpdir(), 'stub-'));
-  const lc = join(dir, 'launchctl');
-  writeFileSync(lc, '#!/bin/sh\necho "launchctl must not be called" >&2\nexit 99\n');
-  chmodSync(lc, 0o755);
+  for (const name of ['launchctl', 'claude', 'gh', 'node']) {
+    const p = join(dir, name);
+    if (name === 'launchctl') {
+      writeFileSync(p, '#!/bin/sh\necho "launchctl must not be called" >&2\nexit 99\n');
+    } else {
+      // minimal no-op stubs so command -v finds them
+      writeFileSync(p, `#!/bin/sh\nexec /usr/bin/env ${name === 'node' ? 'node' : 'true'} "$@"\n`);
+    }
+    chmodSync(p, 0o755);
+  }
   return `${dir}:${process.env.PATH}`;
 }
 
 test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchctl', () => {
+  const stubDir = mkdtempSync(join(tmpdir(), 'stub-'));
+  for (const name of ['launchctl', 'claude', 'gh', 'node']) {
+    const p = join(stubDir, name);
+    writeFileSync(p, name === 'launchctl'
+      ? '#!/bin/sh\necho "launchctl must not be called" >&2\nexit 99\n'
+      : '#!/bin/sh\ntrue\n');
+    chmodSync(p, 0o755);
+  }
+  const stubPathVal = `${stubDir}:${process.env.PATH}`;
+
   const r = spawnSync('bash', [script, '--dry-run'], {
     encoding: 'utf8',
-    env: { ...process.env, PATH: stubPath(), DEV_SOCIETY_DEPLOY_ROOT: '/tmp/x', DEV_SOCIETY_REPO: 'o/r' },
+    env: { ...process.env, PATH: stubPathVal, DEV_SOCIETY_DEPLOY_ROOT: '/tmp/x', DEV_SOCIETY_REPO: 'o/r' },
   });
   assert.equal(r.status, 0, r.stderr);
   const out = r.stdout;
@@ -43,6 +61,13 @@ test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchc
   assert.match(out, /bootstrap/);
   assert.match(out, /enable/);
   assert.match(out, /kickstart/);
+  // Fix 2: RunAtLoad present in both daemon and sync plists
+  assert.match(out, /<key>RunAtLoad<\/key>/);
+  assert.match(out, /<true\/>/);
+  // Fix 1: AGENT_MESH_CLAUDE wired in daemon plist (claude stub found on PATH)
+  assert.match(out, /<key>AGENT_MESH_CLAUDE<\/key>/);
+  // stub dir appears in the PATH value (claude/gh dirs are resolvable)
+  assert.ok(out.includes(stubDir), `expected stub dir ${stubDir} in PATH output`);
 });
 
 test('live mode rejects a mismatching DEV_SOCIETY_DEPLOY_ROOT before any side effect', () => {
@@ -56,4 +81,34 @@ test('live mode rejects a mismatching DEV_SOCIETY_DEPLOY_ROOT before any side ef
   // nothing written under the fake LaunchAgents dir
   const la = join(fakeLaDir, 'Library', 'LaunchAgents');
   assert.ok(!existsSync(la) || readdirSync(la).length === 0);
+});
+
+test('live mode rejects empty DEV_SOCIETY_REPO before any mkdir/write', () => {
+  // Builds a stub PATH that includes fake claude/gh/node + fail-loud launchctl.
+  // DEV_SOCIETY_REPO is explicitly unset (empty string) — preflight must exit 1
+  // before any mkdir or plist write.
+  const stubDir = mkdtempSync(join(tmpdir(), 'stub-'));
+  for (const name of ['launchctl', 'claude', 'gh', 'node']) {
+    const p = join(stubDir, name);
+    writeFileSync(p, name === 'launchctl'
+      ? '#!/bin/sh\necho "launchctl must not be called" >&2\nexit 99\n'
+      : '#!/bin/sh\ntrue\n');
+    chmodSync(p, 0o755);
+  }
+  const fakeHome = mkdtempSync(join(tmpdir(), 'home-'));
+  const r = spawnSync('bash', [script], {   // no --dry-run; no DEV_SOCIETY_DEPLOY_ROOT → pins to script root
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PATH: `${stubDir}:${process.env.PATH}`,
+      HOME: fakeHome,
+      DEV_SOCIETY_REPO: '',   // explicitly empty — triggers preflight guard
+    },
+  });
+  assert.notEqual(r.status, 0, 'expected non-zero exit when DEV_SOCIETY_REPO is empty');
+  assert.match(r.stderr + r.stdout, /DEV_SOCIETY_REPO/i);
+  // Nothing written under fake HOME's LaunchAgents — preflight exited before any mkdir
+  const la = join(fakeHome, 'Library', 'LaunchAgents');
+  assert.ok(!existsSync(la) || readdirSync(la).length === 0,
+    'LaunchAgents dir must be empty — preflight should exit before any write');
 });

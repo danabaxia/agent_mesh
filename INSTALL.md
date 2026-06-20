@@ -76,6 +76,7 @@ from dev checkouts other agents branch-switch):
 git fetch origin
 git worktree add ~/.agent-mesh/deploy origin/main
 bash ~/.agent-mesh/deploy/scripts/dev-society-deploy-install.sh --dry-run   # preview
+export DEV_SOCIETY_REPO=danabaxia/agent_mesh   # replace with your actual owner/repo
 bash ~/.agent-mesh/deploy/scripts/dev-society-deploy-install.sh             # wire launchd + dedupe + restart
 ```
 
