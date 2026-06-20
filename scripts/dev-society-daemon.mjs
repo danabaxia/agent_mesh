@@ -47,6 +47,7 @@ import { doctor } from '../src/builder/doctor.js';
 import { ensureLabels } from '../src/gh-labels.js';
 import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-lock.js';
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
+import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
@@ -159,14 +160,23 @@ if (!once && !selftest) {
     // cadence instead of waiting on GitHub Actions' throttled cron (which leaves ready PRs
     // idle ~1-2h). Reuses the gated, tested runSweep (AUTOMERGE_ENABLED + isAutoMergeable);
     // the GitHub-Actions automerge stays as a backstop.
-    'automerge-sweep': () => runAutomergeSweep({
-      gh: async (a) => (await sh('gh', a, { maxBuffer: 1 << 24 })).stdout,
-      repo: cfg.repo,
-      enabled: process.env.AUTOMERGE_ENABLED === 'true',
-      log: (...a) => log('automerge:', ...a),
-    })
-      .then((r) => ({ status: 'ok', output: r.disabled ? 'automerge disabled (AUTOMERGE_ENABLED!=true)' : `merged ${r.merged.length}, skipped ${r.skipped}, ineligible ${r.ineligible}` }))
-      .catch((e) => { log('automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    'automerge-sweep': async () => {
+      // Enabled from the REPO variable (the operator's single source of truth, mirroring the
+      // GitHub-Actions vars.AUTOMERGE_ENABLED), with the env as a fallback — the daemon's
+      // launchd env doesn't carry AUTOMERGE_ENABLED, which silently left the sweep 'disabled'
+      // while 8 CLEAN+APPROVED PRs idled (repo var was already true).
+      const enabled = await resolveAutomergeEnabled({
+        readVar: async () => (await sh('gh', ['variable', 'get', 'AUTOMERGE_ENABLED', '--repo', cfg.repo], { maxBuffer: 1 << 20 })).stdout,
+      });
+      return runAutomergeSweep({
+        gh: async (a) => (await sh('gh', a, { maxBuffer: 1 << 24 })).stdout,
+        repo: cfg.repo,
+        enabled,
+        log: (...a) => log('automerge:', ...a),
+      })
+        .then((r) => ({ status: 'ok', output: r.disabled ? 'automerge disabled (AUTOMERGE_ENABLED!=true via env or repo var)' : `merged ${r.merged.length}, skipped ${r.skipped}, ineligible ${r.ineligible}` }))
+        .catch((e) => { log('automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; });
+    },
     // Post-merge reconciler: close OPEN issues whose closing PR ("Closes #N") has merged
     // but GitHub's keyword auto-close missed, clearing the orphaned pr:in-review/in-progress
     // label. Backstops the "done issue hangs open" drift (#183/#175) so the board never
