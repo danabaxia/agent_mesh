@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { planDeploySync } from '../src/dev-society/deploy-sync.js';
-import { runDeploySyncOnce, makeFileState } from '../scripts/dev-society-deploy-sync.mjs';
+import { runDeploySyncOnce, makeFileState, makeMultiRestart } from '../scripts/dev-society-deploy-sync.mjs';
 
 const AT = () => new Date('2026-06-20T07:00:00.000Z');
 
@@ -113,4 +113,50 @@ test('makeFileState round-trips the scalar contract atomically', () => {
   s.writeState('abc123');
   assert.equal(s.readState(), 'abc123');
   assert.equal(JSON.parse(readFileSync(sp, 'utf8')).lastRestartedTarget, 'abc123');
+});
+
+test('makeMultiRestart: kicks required then optional, in order', async () => {
+  const calls = [];
+  const r = makeMultiRestart({ required: ['daemon'], optional: ['dash'], kick: async (l) => { calls.push(l); } });
+  await r();
+  assert.deepEqual(calls, ['daemon', 'dash']);
+});
+
+test('makeMultiRestart: optional failure is swallowed + logged, promise resolves', async () => {
+  const logs = [];
+  const r = makeMultiRestart({
+    required: ['daemon'], optional: ['dash'],
+    kick: async (l) => { if (l === 'dash') throw new Error('not loaded'); },
+    log: (x) => logs.push(x),
+  });
+  await r(); // must not throw
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0].action, 'dashboard_restart_failed');
+  assert.equal(logs[0].label, 'dash');
+});
+
+test('makeMultiRestart: required failure rejects (so state does not advance)', async () => {
+  const r = makeMultiRestart({ required: ['daemon'], optional: ['dash'], kick: async (l) => { if (l === 'daemon') throw new Error('boom'); } });
+  await assert.rejects(r, /boom/);
+});
+
+test('runDeploySyncOnce: advances state even when the optional (dashboard) kick fails', async () => {
+  const git = async (_d, args) => {
+    const k = args.join(' ');
+    if (k === 'rev-parse HEAD') return 'a';
+    if (k === 'rev-parse origin/main') return 'b';
+    return '';
+  };
+  let persisted = '';
+  const restart = makeMultiRestart({
+    required: ['daemon'], optional: ['dash'],
+    kick: async (l) => { if (l === 'dash') throw new Error('not loaded'); },
+  });
+  const r = await runDeploySyncOnce({
+    deployPath: '/d', git, restart,
+    readState: () => '', writeState: (t) => { persisted = t; },
+    buildBusy: () => false,
+  });
+  assert.equal(r.restarted, true);
+  assert.equal(persisted, 'b');   // daemon kick succeeded → state advanced despite dashboard failure
 });

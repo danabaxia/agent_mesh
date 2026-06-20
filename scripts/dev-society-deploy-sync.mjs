@@ -31,9 +31,28 @@ export function makeFileState(statePath) {
   };
 }
 
+function launchctlKick(label) {
+  return sh('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/${label}`], { maxBuffer: 1 << 20 });
+}
+
 export function makeLaunchctlRestart(label) {
+  return () => launchctlKick(label);
+}
+
+// Restart several launchd labels per advance: `required` labels are kicked first
+// and any failure propagates (so deploy-sync does NOT persist state → retried next
+// tick); `optional` labels (e.g. the dashboard) are best-effort — a failure is
+// logged and swallowed so it can never wedge the daemon's retry state.
+export function makeMultiRestart({ required = [], optional = [], kick = launchctlKick, log = () => {} }) {
   return async () => {
-    await sh('launchctl', ['kickstart', '-k', `gui/${process.getuid()}/${label}`], { maxBuffer: 1 << 20 });
+    for (const label of required) await kick(label);
+    for (const label of optional) {
+      try {
+        await kick(label);
+      } catch (e) {
+        log({ ts: new Date().toISOString(), action: 'dashboard_restart_failed', label, error: e?.message || String(e) });
+      }
+    }
   };
 }
 
