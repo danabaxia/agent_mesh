@@ -24,6 +24,10 @@ LABEL="com.danabaxia.agent-mesh.dev-society"
 SYNC_LABEL="com.danabaxia.agent-mesh.deploy-sync"
 LEGACY_LABEL="com.danabaxia.dev-society"
 NODE_BIN="$(command -v node)"
+if [ -z "$NODE_BIN" ]; then
+  echo "error: node not found on PATH — cannot write a valid daemon plist" >&2
+  exit 1
+fi
 UID_NUM="$(id -u)"
 LA_DIR="$HOME/Library/LaunchAgents"
 PATH_ENV="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$(dirname "$NODE_BIN")"

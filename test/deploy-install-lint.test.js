@@ -41,6 +41,8 @@ test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchc
   assert.match(out, /com\.danabaxia\.dev-society(?!\.)/);   // legacy label mentioned
   assert.match(out, /bootout/);
   assert.match(out, /bootstrap/);
+  assert.match(out, /enable/);
+  assert.match(out, /kickstart/);
 });
 
 test('live mode rejects a mismatching DEV_SOCIETY_DEPLOY_ROOT before any side effect', () => {
