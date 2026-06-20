@@ -154,7 +154,16 @@ export function routeFor(issue, { liveBuilds = new Set(), staleClaims = new Set(
   if (has(APPROVED) && REVIEW_GATED.some(has)) {
     return { target: 'coder', mode: 'do', reason: 'approved-overrides-review', clear: REVIEW_GATED.filter(has) };
   }
-  // Not approved: the review gates hold (awaiting a human's `approved`).
+  // A `bug` is a defect — auto-fix it WITHOUT human approval, even past the review gate.
+  // A broken thing should just be fixed; unlike an idea/enhancement it doesn't need a
+  // human-reviewed spec. Symmetric with approved-overrides-review, scoped to `bug` only
+  // (enhancement/documentation at review still wait for `approved`). Hard gates
+  // (pr:in-review/blocked) + terminal + in-progress still win above — a `blocked` bug is a
+  // FAILED build and must not auto-retry (loops, #98).
+  if (has(BUG) && REVIEW_GATED.some(has)) {
+    return { target: 'coder', mode: 'do', reason: 'bug-autofix', clear: REVIEW_GATED.filter(has) };
+  }
+  // Not approved and not a bug: the review gates hold (awaiting a human's `approved`).
   if (REVIEW_GATED.some(has)) return { target: null, reason: 'human-gated' };
   if (has(IDEA) && !has(APPROVED)) return { target: null, reason: 'idea-needs-approval' };
   if (CI_PREFIX.test(String(issue?.title || ''))) return { target: 'triager', mode: 'ask', reason: 'ci-failure' };
