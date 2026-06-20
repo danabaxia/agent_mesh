@@ -40,6 +40,12 @@ const HARD_GATED = [PR_IN_REVIEW, BLOCKED];
 // `approved` is the authoritative "build it" signal and overrides these (see routeFor).
 const REVIEW_GATED = [SPEC_IN_REVIEW, DISCUSSING];
 const CODE_TYPES = [BUG, ENHANCEMENT, DOCUMENTATION];
+// The Analyst's daily-review lineage marker (matches analyst-ideas.js `scanLabel`). Together with
+// a literal `idea` label it identifies an idea-lineage issue — one whose ONLY route to the coder is
+// `approved-overrides-review`, since the analyst never adds a code-type. If its review gate is
+// stripped post-approval it falls through to the advisory-only triager and deadlocks (#248).
+const ANALYST_LINEAGE = 'generated:analyst';
+const IDEA_LINEAGE = [ANALYST_LINEAGE, IDEA];
 const CI_PREFIX = /^(flake|real_bug|infra_auth|out_of_scope):/;
 
 const names = (issue) => (issue?.labels || []).map((l) => (typeof l === 'string' ? l : l?.name)).filter(Boolean);
@@ -85,6 +91,30 @@ export function planLabelRepair(issue) {
         'Auto-cleared `spec:in-review` because this code-typed issue is `approved`.',
         '',
         'Approval satisfies the spec review gate; the human only adds `approved` and the daemon routes it to the coder (routeFor builds any approved review-gated issue regardless).',
+      ].join('\n'),
+    };
+  }
+
+  // Recovery for the #248 deadlock: an APPROVED idea-lineage issue (generated:analyst or `idea`)
+  // whose ROUTE was stripped post-approval — no code-type, no review gate, no route:a2a, not
+  // hard/active-gated. routeFor can't reach approved-overrides-review (no gate) nor any code/idea
+  // route, so it falls through to the advisory-only triager and stalls. Re-add `spec:in-review` to
+  // re-arm approved-overrides-review — the working pattern (#194/#195/#218 = approved,
+  // generated:analyst,spec:in-review → coder). Scoped to idea-lineage so it can't hijack arbitrary
+  // typeless work; gates checked first so a blocked/pr:in-review/in-progress issue is never re-armed.
+  if (!have.has(BLOCKED) && !have.has(PR_IN_REVIEW) && !have.has(IN_PROGRESS)
+      && have.has(APPROVED) && IDEA_LINEAGE.some((l) => have.has(l))
+      && !CODE_TYPES.some((l) => have.has(l))
+      && !REVIEW_GATED.some((l) => have.has(l))
+      && !TERMINAL.some((l) => have.has(l))) {
+    return {
+      reason: 're-arm-approved-route',
+      add: [SPEC_IN_REVIEW],
+      remove: [],
+      comment: [
+        'Re-added `spec:in-review` to re-arm routing for this `approved` idea-lineage issue.',
+        '',
+        'Its review gate was stripped after approval, leaving no route to the coder (no code-type, no review gate), so the daemon could only fall through to the advisory triager and stalled. Restoring `spec:in-review` lets `approved`-overrides-review route it to the coder.',
       ].join('\n'),
     };
   }

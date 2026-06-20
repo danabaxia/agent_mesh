@@ -108,6 +108,19 @@ test('APPROVAL GATE: backlog only builds approved work; intake never builds code
   assert.match(wf.intake, /docs\/superpowers\/specs/, 'intake prompt must scope spec commits to docs/superpowers/specs/');
 });
 
+test('intake (#248): the Analyst never mutates labels on already-approved issues', () => {
+  // #248 deadlock: the approve-label event re-ran the Analyst, which stripped `spec:in-review`
+  // off an APPROVED issue ("leave labels matching reality"), severing its only route to the
+  // coder (approved-overrides-review). The prompt must fence the Analyst out of post-approval
+  // label edits — its role ends at the spec:in-review human gate.
+  assert.match(wf.intake, /approved/, 'intake prompt must reference the approved gate');
+  assert.match(
+    wf.intake,
+    /already carries the `approved`|already.{0,40}`approved`|ALREADY.{0,40}approved/i,
+    'intake prompt must forbid touching labels once an issue is approved (#248 deadlock)',
+  );
+});
+
 test('NO AUTO-MERGE: the loop drives to review, a human merges', () => {
   // NB: for ask-roles (review/triage) this is also STRUCTURAL — contents:read makes
   // `gh pr merge` fail at the API. For do-workers (backlog/curate/autofix) it's
