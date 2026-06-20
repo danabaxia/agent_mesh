@@ -671,5 +671,16 @@
       "source": "PR #165: feat(mir): Mesh Improvement Report — Tester-owned self-evolve signal",
       "ts": "2026-06-20"
     }
+  },
+  "capability-bound-schedule-placement": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon ask-mode jobs have only READ_TOOLS: agents needing WebSearch/gh-write/issue-filing must be GitHub Actions jobs.",
+    "l1": "The daemon scheduler's ask-mode jobs allow only READ_TOOLS — no WebSearch, WebFetch, Bash/gh, or GitHub state mutation. PR #178: the daily Analyst review needed WebSearch + issue filing, so it runs as a GitHub Actions cron (claude-code-action), not a daemon schedule.json entry. The dashboard SCHEDULES panel shows both daemon builtins and Actions jobs in the same view, so the user experience is unified even when the execution context differs.",
+    "value": "Placement decision rule: if the agent needs WebSearch, WebFetch, gh mutations (issue create/close/edit), or non-mesh file writes → GitHub Actions cron with claude-code-action. If read-only (READ_TOOLS: list files, read git log, inspect artifacts) → daemon schedule.json builtin or inline builtin fn.\n\nFor Actions jobs: list WebSearch+WebFetch explicitly in allowedTools; use contents:read + issues:write (never contents:write for ask-mode research roles); pass advisory_blocked:true; degrade gracefully when upstream artifacts (e.g. mir.json) are absent.\n\nSymptom of wrong placement: job runs but silently does nothing — ask-mode blocks the gh/web call it needs. Provenance: PR #178 (2026-06-20).",
+    "provenance": {
+      "source": "PR #178: feat(analyst): daily performance-review → improvement-ideas CI workflow",
+      "ts": "2026-06-20"
+    }
   }
 }
