@@ -160,6 +160,28 @@ pattern:
   `reload "$DASH_LABEL" "$LA_DIR/$DASH_LABEL.plist"`.
 - Update the final summary line to mention the dashboard.
 
+### 4. Documentation — `README.md` + `CLAUDE.md`
+
+Operators and future agent sessions must learn that the dashboard now runs as a
+managed, auto-updating service (not a hand-launched dev process). Two edits:
+
+- **`README.md`** — add a short "Always-on / auto-updating operation (optional)"
+  note under **Usage**, after the manual `dashboard` example. State that
+  `scripts/dev-society-deploy-install.sh` installs launchd services (daemon +
+  deploy-sync + **dashboard**) from a deploy checkout pinned to `main`; that
+  `deploy-sync` polls `origin/main` (~5 min) and restarts both on advance; and
+  that the managed dashboard service owns `:7077` (serving the deploy checkout's
+  `dev-mesh`). Keep the manual `dashboard` command as the ad-hoc path. Link the
+  spec. Proportionate — a short paragraph + the install command, not a full
+  runbook.
+- **`CLAUDE.md`** — in the **Config (env)** section, extend the existing
+  deploy-worktree paragraph (`DEV_SOCIETY_DEPLOY_ROOT` / `DEV_SOCIETY_DAEMON_LABEL`):
+  add `DEV_SOCIETY_DASHBOARD_LABEL` (`com.danabaxia.agent-mesh.dashboard`) and
+  update the sentence so it reads that deploy-sync restarts the daemon **and the
+  dashboard launchd service** on advance (dashboard served from the deploy
+  checkout's `dev-mesh` on `:7077`; **best-effort** restart so it can't wedge the
+  daemon's retry state). Reference this spec.
+
 ## Data Flow
 
 `push → main` → CI (existing gate) → `deploy-sync` tick → `fetch` + `reset --hard
@@ -215,6 +237,9 @@ output — no launchd):
   required-fail cases.
 - **Modify** `test/deploy-install-lint.test.js` — dashboard plist + sync env +
   reload assertions.
+- **Modify** `README.md` — "Always-on / auto-updating operation" note (§4).
+- **Modify** `CLAUDE.md` — Config section: `DEV_SOCIETY_DASHBOARD_LABEL` + the
+  dashboard-restart sentence (§4).
 - **Unchanged** `src/dev-society/deploy-sync.js` (pure planner).
 
 ## Verification (manual, on the host — after install)
