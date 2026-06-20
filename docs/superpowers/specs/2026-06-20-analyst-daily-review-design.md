@@ -117,6 +117,17 @@ pattern, cf. `test/integration-workflow.test.js` / the dev-mesh workflow lints):
 | `test/dev-mesh-analyst-review-workflow.test.js` | triggers = `schedule` (cron) + `workflow_dispatch`, NOT `push`/`pull_request`; `permissions` block contains `contents: read`, `issues: write`, `pull-requests: read`, `actions: read`, and **no `contents: write`**; the **`--allowedTools` string specifically** (extract that line, not the whole YAML) includes `WebSearch`, `WebFetch`, `Bash(gh:*)` and **excludes `Edit`/`Write`**; OAuth sanitize + `add-mask` present; uses `claude-code-action` + `agent-postrun`; prompt forbids code/PR (§5.3 "propose only / STOP" + "do NOT write code"/"do NOT open a code PR"), is issues-only (no draft-spec/memory), and has the dedupe instruction; model via `vars.DEV_MESH_MODEL` with `sonnet` fallback. |
 | `test/gh-activity.test.js` (extend) | `workflowToAgent('dev-mesh-analyst-review') === 'analyst'` (the new `ROLE` entry, §5.2). |
 
+**Existing tests that MUST be updated (the new workflow changes counts they assert):**
+- `test/dev-mesh-assert-run-healthy.test.js` asserts **exactly 11** gated `dev-mesh-*`
+  workflows (each must wire `agent-postrun`). The new workflow makes it **12** → update the
+  expected count `11`→`12`, and ensure `dev-mesh-analyst-review.yml` carries the
+  `agent-postrun` step with `advisory_blocked: "true"` (matching `dev-mesh-research.yml`) so
+  it passes that gate-shape lint.
+- `test/dev-mesh-workflow.test.js` enumerates a `NAMES` list of dev-mesh workflows
+  (`research`, `intake`, …); if its assertions are keyed on that list, add `analyst-review`
+  (or confirm it doesn't require exhaustiveness). The implementer must reconcile both before
+  the full suite is green.
+
 (The Analyst's actual behavior is exercised live by the cron / `workflow_dispatch`, like
 `dev-mesh-research.yml`; there is no real-`claude` unit gate.)
 
@@ -150,3 +161,10 @@ pattern, cf. `test/integration-workflow.test.js` / the dev-mesh workflow lints):
 - **[MINOR] MIR `.md` not uploaded** — prompt reads `mir-*.json` only (integration uploads JSON) (§5).
 - **[MINOR] lint scoping** — test extracts the `--allowedTools` line for the Edit/Write exclusion and asserts `actions: read`/`pull-requests: read` in permissions (§6).
 - **[MINOR] dashboard attribution** — reworded the visibility claim (CI executor is literally "GitHub Actions"); added §5.2 `ROLE['analyst-review']='analyst'` (one line + test) so activity attributes runs to the analyst.
+
+### Round 2 — Codex (gpt-5.5, review account), VERDICT: CHANGES_REQUESTED → 1 MAJOR accepted (0 blockers)
+
+- **[MAJOR] breaks existing gated-workflow count** — `test/dev-mesh-assert-run-healthy.test.js`
+  asserts exactly 11 gated dev-mesh workflows; the new one makes 12. §6 now mandates updating
+  that count 11→12 (+ `agent-postrun` with `advisory_blocked:"true"` on the new workflow) and
+  reconciling `test/dev-mesh-workflow.test.js`'s NAMES list.
