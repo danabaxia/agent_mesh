@@ -1,7 +1,7 @@
 # Research-Escalation Diagnosis Design (Sub-project ③a)
 
 **Date:** 2026-06-20
-**Status:** Draft — Codex review round 1 addressed (see Review log)
+**Status:** Draft — Codex review rounds 1–2 addressed (see Review log)
 **Topic:** A read-only daemon job that picks ②'s `needs-human` escalations, has the Analyst research each (web + GitHub + repo memory), and posts a deduped **diagnosis + recommended fix strategy** comment on the escalation issue. No code changes. Foundation that ③b (gated draft-PR fix) consumes.
 
 ## Problem
@@ -65,15 +65,25 @@ A daemon cron builtin **`research-escalation`** (ask-only, ~every 2h) that:
   extends its 3rd arg to an options object `{ messageId, caller }` that, when `caller`
   is set, adds `agentmesh/caller: caller` to the message metadata. Backward-compatible:
   a string 3rd arg is still treated as `messageId`.
-- **Web-tools gate (sound on this path):** `agentWantsWebTools`
-  (`src/delegate-invocation.js:156-174`) grants `WebSearch`/`WebFetch` when the agent
-  is `served`, `enabledModes` includes `ask`, `webTools === true`, the route is
-  **not** `digest`, and the agent root matches — and **nothing else**. It does **not**
-  read `AGENT_MESH_MESH_ROOT`/`MESH_CEILING`; `advisoryRegistry` only stamps
-  `AGENT_MESH_ENABLED_MODES:'ask'` on the peer (`src/dev-society/core.js:282`), which
-  is irrelevant to the web-tools grant. The Analyst has `"webTools": true`, so an
-  ask call on this advisory path gets web tools — the same path ②'s `research-landscape`
-  advisory already uses in production. (Verification step 3 still confirms it live.)
+- **Web-tools gate (requires a manifestRoot — advisory path must stamp mesh env).**
+  `agentWantsWebTools` (`src/delegate-invocation.js:156-174`) grants `WebSearch`/`WebFetch`
+  for a `served`, ask-enabled, `webTools:true` agent on a non-`digest` route — **but only
+  if `manifestRoot` resolved**; line 157 short-circuits `if (!manifestRoot …) return false`.
+  And `manifestRoot` (`delegate-invocation.js:40-43`) is `dirname(meshRoot)` where
+  `meshRoot = resolveMeshRoot(root, env)` walks up for a **`mesh/` directory**, falling
+  back to `env.AGENT_MESH_MESH_CEILING || dirname(env.AGENT_MESH_MESH_ROOT)`. On the
+  advisory path the Analyst peer root is `dev-mesh/analyst`, the manifest is the **file**
+  `dev-mesh/mesh.json`, and `dev-mesh/mesh/` is a **runtime-generated, gitignored**
+  directory — so the walk-up is fragile (null on a fresh checkout / before any board
+  write) and `advisoryRegistry` stamps no mesh env (`src/dev-society/core.js:282` sets only
+  `AGENT_MESH_ENABLED_MODES:'ask'`). Result: `manifestRoot` can be null → web tools
+  silently denied. **Fix (Component 0b):** `advisoryRegistry` stamps
+  `AGENT_MESH_MESH_ROOT = join(meshRoot,'mesh')` and `AGENT_MESH_MESH_CEILING = meshRoot`
+  on each peer, so `manifestRoot` deterministically resolves to `meshRoot` (= `dev-mesh`,
+  where `mesh.json` lives) regardless of the `mesh/` dir. This also makes web tools
+  reliable for ②'s existing `research-landscape` advisory. *(Round-1 note: an earlier draft
+  claimed this path was already sound because `agentWantsWebTools` doesn't read the mesh
+  env — that was a misread; the env feeds `manifestRoot`, which the predicate hard-requires.)*
 - **Ask-mode tool surface is read-only — the Analyst cannot fetch GitHub itself.**
   ask-mode grants only `READ_TOOLS` (`Read`/`Glob`/`Grep`/`LS`) + web tools — **no
   `Bash`, no `gh`** (`src/config.js:46-50`, `src/delegate-invocation.js:188`) — and the
@@ -134,6 +144,17 @@ existing skip shape and `runRoute` handling). This stops the Triager from
 double-commenting on issues ③a owns. It is the one routing change ③a makes; the
 research-escalation builtin, not the router, drives these issues.
 
+### 0b. `core.advisoryRegistry` — stamp mesh-root env (`src/dev-society/core.js`)
+
+Add to each peer's `env` (currently `{ AGENT_MESH_ENABLED_MODES: 'ask' }`,
+`core.js:282`): `AGENT_MESH_MESH_ROOT: join(meshRoot, 'mesh')` and
+`AGENT_MESH_MESH_CEILING: meshRoot`. This makes the web-tools `manifestRoot`
+resolve deterministically (Background) so the Analyst ask actually receives
+`WebSearch`/`WebFetch`. `meshRoot` is the value already passed to `advisoryRegistry`
+(the dev-mesh dir where `mesh.json` lives). Shared, additive change — improves the
+existing `research-landscape` advisory too; no caller passes these today so there's
+nothing to override.
+
 ### 1. `dev-mesh/analyst/skills/research-escalation/SKILL.md` (new)
 
 The research protocol for a stuck PR (mirrors the existing `research-landscape`
@@ -169,14 +190,25 @@ inside `planResearch` (not relying on the `gh` list order) is what guarantees th
 oldest backlog item is researched first even when the open `needs-human` set exceeds
 one run's cap.
 
+**Marker-spoof guard:** `researchedNums` (built in the runner, passed into
+`planResearch` as a `Set`) counts an issue as researched **only if its MARKER comment
+was authored by the daemon's own GitHub identity** — a human (or any non-bot) comment
+containing the literal `<!-- research-escalation -->` must NOT suppress research.
+`cfg.botLogin` is the daemon's `gh` login, resolved once per run (`gh api user --jq .login`,
+cached on `cfg`); the per-issue `gh issue view <n> --json comments` payload includes
+`author.login`, matched against it.
+
 ### 3. `research-escalation` builtin — `scripts/dev-society-daemon.mjs`
 
 Extracted into a testable `runResearchEscalation({ gh, dispatchAnalyst, repo, meshRoot, now, cfg, log })`
 (in a new `src/dev-society/research-escalation-run.js`) so the A2A dispatch is
 **injected** (fake-able), exactly as ② split its runner:
 ```
-issues = gh issue list --label needs-human --state open --limit 100 --json number,body
-researchedNums = for each issue: gh issue view <n> --json comments → has the MARKER?  (read-only)
+issues = gh issue list --label needs-human --state open --limit 200 \
+           --search "sort:created-asc" --json number,body          // oldest-first window
+if (issues.length === 200) log('WARN: needs-human backlog hit the 200 fetch cap — oldest still covered (created-asc)')
+researchedNums = for each issue: gh issue view <n> --json comments
+                 → has a MARKER comment AUTHORED BY cfg.botLogin?  (read-only; ignore non-bot markers)
 plan = planResearch(issues, researchedNums, cfg)              // dedup · ascending sort · cap
 for f in plan.toResearch:                                     // ≤ capPerRun, oldest-first
   ctx = collectContext(gh, f)                                 // host-side, read-only — see below
@@ -189,10 +221,23 @@ return { status:'ok', output:`researched ${done}/${plan.toResearch.length}` }
 ```
 `collectContext(gh, f)` is the host-side, read-only collector (Analyst can't run
 `gh`): `gh pr view <prNum> --json title,url,mergeStateStatus,statusCheckRollup` for
-the PR state + failing checks, **and** `gh pr view <prNum> --json comments` for the
-autofix/mergefix failed-fix history — plus the `needs-human` issue body (already in
-`f.body`) carrying the checkpoint/failure detail. Each best-effort: a missing field
-degrades the context, never throws.
+the PR state + failing checks, `gh pr view <prNum> --json comments` for the
+autofix/mergefix failed-fix history, **and `gh pr diff <prNum>`** for what the PR
+actually changed (the diff the SKILL.md protocol reasons over) — plus the
+`needs-human` issue body (already in `f.body`) carrying the checkpoint/failure detail.
+Each fetch is best-effort: a missing/failed field degrades the context, never throws.
+
+**Prompt budget (`researchPrompt` must fit `MAX_TASK_CHARS = 16_384`, `src/config.js:5`).**
+A2A rejects any `message.parts` text over that limit (`src/a2a/protocol.js:47`), so the
+assembled prompt is built under a deterministic budget, not concatenated raw:
+- fixed per-field caps (chars), truncated with a `… [truncated]` marker, in priority
+  order: skill/instruction header (~1.5k, never truncated) · issue body (1.5k) · PR
+  meta+failing checks (1.5k) · autofix/mergefix comments (3k) · `pr diff` (6k, the
+  most truncatable — head of the diff). Total ceiling ~13.5k leaves headroom under 16k.
+- a pure `buildResearchPrompt(parts, { maxChars })` helper does the capping +
+  assembly and is unit-tested (including an oversize-everything case that must return
+  `≤ maxChars`). The diff is truncated first because it's the largest and least
+  essential to the *diagnosis* (the failing-fix history + checks matter more).
 
 The daemon wires `dispatchAnalyst` to the real path: `createA2AClient(core.advisoryRegistry(...))`
 → `client.send('analyst', core.a2aMessage('ask', prompt, { caller: 'research-escalation:issue-'+issueNumber }))`
@@ -248,14 +293,28 @@ human's).
   **not** routed to the Triager (returns the no-route/skip shape); an issue with a
   more-specific actionable label still routes as before (the skip is scoped to the
   triage fallback, not a blanket drop).
+- **`advisoryRegistry` mesh env (Component 0b):** each peer entry's `env` includes
+  `AGENT_MESH_MESH_ROOT === join(meshRoot,'mesh')` and `AGENT_MESH_MESH_CEILING === meshRoot`
+  (alongside `AGENT_MESH_ENABLED_MODES:'ask'`). Plus an integration-level assertion
+  that `buildClaudeInvocation` for the analyst root on this path yields a non-null
+  `manifestRoot` and includes `WebSearch`/`WebFetch` in the tool list (web-tools grant
+  is real, closing round-2 MAJOR).
+- **`buildResearchPrompt` (pure):** with every field oversized, the assembled prompt
+  is `≤ MAX_TASK_CHARS`; truncation hits the `pr diff` first and the instruction header
+  is never truncated; fields appear in the documented priority order.
 - **`runResearchEscalation`** (fake `gh` + fake `dispatchAnalyst`):
   - read-only allowlist: only `issue list`, `issue view`, `pr view`, `issue comment`
     — **no** `issue create`, `pr merge/edit`, `api`, `git`.
-  - `issue list` is called with `--limit 100` (matches the daemon convention; not the
-    gh default of 30).
-  - **context collector:** `collectContext` issues `pr view … statusCheckRollup` and
-    `pr view … comments`; a `pr view` throw degrades the prompt but the issue is still
-    researched (no abort).
+  - `issue list` requests an explicit high limit (200) with oldest-first ordering, not
+    the gh default (30, newest-first).
+  - **context collector:** `collectContext` issues `pr view … statusCheckRollup`,
+    `pr view … comments`, and `pr diff`; a throw on any one degrades the prompt but the
+    issue is still researched (no abort).
+  - **marker-spoof guard:** an issue whose `<!-- research-escalation -->` comment was
+    authored by a **non-bot** login is NOT counted as researched (it still gets
+    researched); only a marker authored by `cfg.botLogin` dedups it.
+  - **starvation fetch:** `issue list` is called with `--limit 200 --search "sort:created-asc"`;
+    a returned count of exactly 200 emits the truncation WARN log.
   - **per-issue caller:** each `dispatchAnalyst` call is invoked with a distinct
     `issueNumber`, and the real wiring stamps `agentmesh/caller: research-escalation:issue-<n>`
     (assert the caller passed to the message builder differs per issue).
@@ -308,3 +367,17 @@ Findings: 2 BLOCKER, 4 MAJOR. Each validated against the code before acting.
 | MAJOR-6 | `oldest-first` underspecified; `gh issue list` default order/limit could starve old escalations. | **Fixed.** Explicit `--limit 100` (daemon convention) and an explicit **ascending sort by issue number inside `planResearch` before the cap** — order is now independent of gh's newest-first default. Test added. |
 
 Outcome: all 5 valid findings fixed; MAJOR-3 mutually rebutted (carried into round 2 for Codex to accept). Re-review pending.
+
+### Round 2 — Codex (independent), 2026-06-20
+
+Codex **rejected** the MAJOR-3 rebuttal with a specific citation, plus 2 new MAJOR and 2 MINOR. Re-verified against code; Codex was right on all.
+
+| # | Finding | Resolution |
+|---|---------|------------|
+| MAJOR-3 (reopened) | Rebuttal rejected (cited `delegate-invocation.js:40-44,156-157`): web tools need `manifestRoot`, which is env-derived; `resolveMeshRoot` walks up for a **`mesh/` directory**, but dev-mesh ships `mesh.json` (a file) and `dev-mesh/mesh/` is runtime-generated/gitignored — so `manifestRoot` can be null and web tools silently denied. | **Conceded.** My round-1 check looked only at the predicate body and missed that `manifestRoot` itself depends on the mesh env. Added **Component 0b**: `advisoryRegistry` stamps `AGENT_MESH_MESH_ROOT`/`AGENT_MESH_MESH_CEILING` so `manifestRoot` resolves deterministically; integration test asserts the analyst ask gets `WebSearch`/`WebFetch`. Background rewritten; verified `dev-mesh/mesh/` is untracked and `MAX_TASK_CHARS=16384`. |
+| MAJOR (diff) | SKILL.md says the Analyst gets the PR diff, but `collectContext` fetched only metadata/checks/comments. | **Fixed.** `collectContext` now also runs `gh pr diff <prNum>` (capped); claim and collector reconciled. |
+| MAJOR (budget) | Host-fetched context had no size budget; A2A rejects messages over `MAX_TASK_CHARS=16384`. | **Fixed.** Added a pure `buildResearchPrompt(parts,{maxChars})` with per-field caps + priority truncation (diff truncated first), total ≤16k; oversize unit test. |
+| MINOR (starvation) | `--limit 100` newest-first could starve the oldest if >100 open `needs-human`. | **Fixed.** `--limit 200 --search "sort:created-asc"` (oldest-first window) + a WARN log when the cap is hit (no silent truncation) + the existing ascending sort in `planResearch`. |
+| MINOR (spoof) | Any comment containing the marker suppressed research → a non-bot comment could spoof dedup. | **Fixed.** `researchedNums` counts a marker only when `author.login === cfg.botLogin` (resolved once via `gh api user`). |
+
+Outcome: rebuttal conceded; all round-2 findings fixed. Re-review pending (round 3).
