@@ -12,11 +12,8 @@ const names = (labels) => (Array.isArray(labels) ? labels : []).map((l) => (type
  *   dryRun?  boolean; log? (msg)=>void
  * @returns {{disabled?:boolean, held:number[], cleared:number[], errors?:number}}
  */
-export async function runIssueGate({ gh, repo, enabled, dryRun = false, log = () => {} }) {
-  if (enabled !== true) {
-    log('issue-gate: disabled (AUTOMERGE_ENABLED != true)');
-    return { disabled: true, held: [], cleared: [] };
-  }
+// Read-only: list PRs, resolve linked issues, decide held/cleared. NO label edits.
+export async function classifyIssueGate({ gh, repo, log = () => {} }) {
   let prs;
   try {
     prs = JSON.parse(await gh(['pr', 'list', '--repo', repo, '--state', 'open', '--json', 'number,labels', '--limit', '100']));
@@ -24,8 +21,7 @@ export async function runIssueGate({ gh, repo, enabled, dryRun = false, log = ()
     log('issue-gate: pr list failed: ' + (e?.message || e));
     return { held: [], cleared: [], error: e?.message || String(e) };
   }
-  const held = [], cleared = [];
-  let errors = 0;
+  const held = [], cleared = []; let errors = 0;
   for (const pr of (Array.isArray(prs) ? prs : [])) {
     try {
       const view = JSON.parse(await gh(['pr', 'view', String(pr.number), '--repo', repo, '--json', 'closingIssuesReferences']));
@@ -36,18 +32,21 @@ export async function runIssueGate({ gh, repo, enabled, dryRun = false, log = ()
         labelSets.push(names(iss.labels));
       }
       const action = gateDecision(names(pr.labels), shouldHoldForIssues(labelSets));
-      if (action === 'add') {
-        if (!dryRun) await gh(['pr', 'edit', String(pr.number), '--repo', repo, '--add-label', ISSUE_HOLD_LABEL]);
-        held.push(pr.number);
-      } else if (action === 'remove') {
-        if (!dryRun) await gh(['pr', 'edit', String(pr.number), '--repo', repo, '--remove-label', ISSUE_HOLD_LABEL]);
-        cleared.push(pr.number);
-      }
-    } catch (e) {
-      errors++;
-      log(`issue-gate: #${pr.number} skipped: ${e?.message || e}`);
-    }
+      if (action === 'add') held.push(pr.number);
+      else if (action === 'remove') cleared.push(pr.number);
+    } catch (e) { errors++; log(`issue-gate: #${pr.number} skipped: ${e?.message || e}`); }
   }
-  log(`issue-gate: held [${held.join(',')}] · cleared [${cleared.join(',')}]${dryRun ? ' (dry-run)' : ''} · errors ${errors}`);
   return { held, cleared, errors };
+}
+
+export async function runIssueGate({ gh, repo, enabled, dryRun = false, log = () => {} }) {
+  if (enabled !== true) { log('issue-gate: disabled (AUTOMERGE_ENABLED != true)'); return { disabled: true, held: [], cleared: [] }; }
+  const r = await classifyIssueGate({ gh, repo, log });
+  if (r.error) return r;
+  if (!dryRun) {
+    for (const n of r.held)    await gh(['pr', 'edit', String(n), '--repo', repo, '--add-label', ISSUE_HOLD_LABEL]);
+    for (const n of r.cleared) await gh(['pr', 'edit', String(n), '--repo', repo, '--remove-label', ISSUE_HOLD_LABEL]);
+  }
+  log(`issue-gate: held [${r.held.join(',')}] · cleared [${r.cleared.join(',')}]${dryRun ? ' (dry-run)' : ''} · errors ${r.errors}`);
+  return { held: r.held, cleared: r.cleared, errors: r.errors };
 }
