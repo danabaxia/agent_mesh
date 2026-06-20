@@ -179,3 +179,6 @@
 #view-graph .ms-state{font:600 9px var(--mono);padding:1px 6px;border-radius:4px;background:#eef;color:#334}
 #view-graph .ms-detail{color:var(--ink2);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #view-graph .ms-age{color:var(--ink2);font:10px var(--mono)}
+#view-graph .ms-rem{font:600 9px var(--mono);padding:1px 6px;border-radius:4px;background:#eef0f4;color:#475}
+#view-graph .ms-rem-escalated{background:var(--amber-bg);color:var(--amber)} #view-graph .ms-rem-done{background:#e7f3ee;color:var(--good)} #view-graph .ms-rem-acked{background:#f1e9f8;color:#6d3f9c}
+#view-graph .ms-rem a{color:inherit}

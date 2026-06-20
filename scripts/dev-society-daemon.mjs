@@ -49,6 +49,8 @@ import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-loc
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
 import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
+import { mergeSweepReportPath } from '../src/merge-sweep/report.js';
+import { runRemediation, remediationPath } from '../src/merge-sweep/remediation-run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
 
@@ -155,6 +157,15 @@ if (!once && !selftest) {
       readReport: (p) => { try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return {}; } },
       writeReport: (p, rep) => { mkdirSync(dirname(p), { recursive: true }); const t = `${p}.tmp`; writeFileSync(t, JSON.stringify(rep)); renameSync(t, p); },
       now: new Date(),
+    }),
+    'merge-sweep-remediate': async () => runRemediation({
+      gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo, meshRoot: SCHED_MESH_ROOT,
+      readReport: () => { try { return { ...JSON.parse(readFileSync(mergeSweepReportPath(SCHED_MESH_ROOT), 'utf8')), available: true }; } catch { return { available: false }; } },
+      readState: () => { try { return JSON.parse(readFileSync(remediationPath(SCHED_MESH_ROOT), 'utf8')); } catch { return {}; } },
+      writeState: (p, st) => { mkdirSync(dirname(p), { recursive: true }); const t = `${p}.tmp`; writeFileSync(t, JSON.stringify(st)); renameSync(t, p); },
+      now: new Date(), cfg: { escalateAfter: 4, hysteresisK: 3, capPerRun: 5, backoffBaseMs: 1_800_000 },
+      log: (...a) => log('remediate:', ...a),
     }),
     // Daemon-driven prompt drain: merge CLEAN+APPROVED PRs on the daemon's reliable ~10min
     // cadence instead of waiting on GitHub Actions' throttled cron (which leaves ready PRs
