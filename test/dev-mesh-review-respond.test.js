@@ -22,6 +22,19 @@ test('review-respond: targets CHANGES_REQUESTED same-repo PRs', () => {
   assert.match(wf, /isCrossRepository==false/, 'same-repo only (no fork)');
 });
 
+test('review-respond: fair selection — least-recently-updated, no head-of-line starvation', () => {
+  // gh lists PRs descending by number; a bare [select(...)][0] always picks the newest and
+  // starves older CHANGES_REQUESTED PRs. Must sort by updatedAt so the longest-waiting PR
+  // is serviced and rotation is fair.
+  assert.match(wf, /sort_by\(\.updatedAt\)/, 'must sort CHANGES_REQUESTED PRs by updatedAt (fair rotation)');
+  assert.match(wf, /--json [^\n]*updatedAt/, 'must request updatedAt to sort on it');
+  assert.doesNotMatch(
+    wf,
+    /select\([^)]*reviewDecision=="CHANGES_REQUESTED"\)\]\[0\]/,
+    'must not use the bare [0] picker (head-of-line starvation)',
+  );
+});
+
 test('review-respond: subscription auth (sanitized + fail-fast), model via repo var', () => {
   assert.match(wf, /tr -d '\[:space:\]'/);
   assert.match(wf, /::add-mask::/);
