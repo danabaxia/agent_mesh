@@ -9,7 +9,7 @@ import { createA2AStdioServer } from '../src/a2a/stdio-server.js';
 
 test('A2A stdio server initializes with an AgentCard and responds to ping', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agent-mesh-a2a-'));
-  await writeFile(join(root, 'AGENT.md'), 'Capabilities: tests.\nOwns deterministic tests.');
+  await writeFile(join(root, 'AGENT.md'), 'Capabilities: tests.\nOwns deterministic tests, CI integration, and coverage reporting for the project.');
   const harness = await startServer(root, {});
 
   harness.write({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} });

@@ -1,4 +1,5 @@
 export const DEFAULT_DEPTH = 3;
+export const DEFAULT_FAN_OUT_MAX_PEERS = 8;
 export const DEFAULT_TIMEOUT_MS = 600_000;
 export const DEFAULT_LOG_DIR = '.agent-mesh/logs';
 export const MAX_TASK_CHARS = 16_384;

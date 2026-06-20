@@ -771,6 +771,17 @@
       "ts": "2026-06-20"
     }
   },
+  "github-lazy-mergeability-force-view": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "gh pr list mergeState is lazy — freshly-DIRTY shows UNKNOWN/blank; force via per-PR gh pr view before filtering.",
+    "l1": "PR #205: mergefix filtered bulk gh pr list by mergeStateStatus=='DIRTY'. GitHub computes mergeability lazily — right after main advances, a freshly-conflicting PR reports UNKNOWN or blank, so the selector silently skipped it (3 runs logged 'no conflicting PR' while #199 was DIRTY). Fix: (1) gather DIRTY|UNKNOWN|blank candidates; (2) gh pr view <n> per candidate forces computation; (3) re-poll once for stragglers. Also: git merge origin/main fails with fatal: empty ident name on stock CI runners — set user.name/user.email before any merge commit.",
+    "value": "Apply when selecting PRs by merge state in GitHub Actions workflows:\n\n(1) Lazy mergeability: `gh pr list` does NOT compute mergeStateStatus immediately after main advances. A PR that just became conflicting shows UNKNOWN or blank in bulk list results — it is NOT yet DIRTY. GitHub evaluates mergeability lazily (per-PR read triggers computation).\n\nTwo-phase selection:\n- Bulk: gather candidates where mergeStateStatus ∈ {DIRTY, UNKNOWN, ''} — never filter DIRTY-only.\n- Per-PR force: call `gh pr view <N> --json mergeStateStatus` for each candidate; pick confirmed DIRTY ones. A single re-poll after a short wait catches stragglers.\n\nSymptom: mergefix logs 'no conflicting same-repo PR' across consecutive runs while a known-conflicting PR sits untouched. Root cause is always the bulk selector missing the UNKNOWN/blank window.\n\n(2) Git identity on stock CI runners: `git merge origin/main` produces a merge commit. A fresh GitHub Actions runner has no git identity. Absent → `fatal: empty ident name` (exit 128).\n\nFix: set before any merge commit:\n  git config user.name 'github-actions[bot]'\n  git config user.email 'github-actions[bot]@users.noreply.github.com'\n\nBoth bugs must be fixed together to drain the first conflicting PR: bug 1 blocks selection; bug 2 blocks resolution. PR #199 was DIRTY across multiple mergefix poll cycles without being caught by either.\n\nTest coverage: selector unit tests must include UNKNOWN and blank as positive cases; assert gh pr view is called per candidate; assert git config runs before git merge. Provenance: PR #205 (2026-06-20).",
+    "provenance": {
+      "source": "PR #205: fix(dev-mesh-mergefix): drain freshly-conflicting PRs (lazy-mergeability race + git identity)",
+      "ts": "2026-06-20"
+    }
+  },
   "workflow-run-release-triple-gate": {
     "status": "active",
     "valid_to": null,
@@ -779,6 +790,28 @@
     "value": "Apply to any workflow_run-triggered CD/release workflow:\n\n(1) Triple gate — ALL three conditions required:\n```yaml\nif: >-\n  github.event.workflow_run.conclusion == 'success' &&\n  github.event.workflow_run.head_branch == 'main' &&\n  github.event.workflow_run.event == 'push'\n```\n- conclusion==success: prevents release from failed CI.\n- head_branch==main: prevents fork-PR CI runs from triggering (fork head_branch is the feature branch, not main).\n- event==push: prevents backward edge rolls from workflow_dispatch re-runs, manually re-triggered CI, and PR-event CI that happened to pass.\n\n(2) concurrency: cancel-in-progress: false — the CORRECT setting for release jobs (opposite of standard CI). Standard CI cancels stale runs to save minutes. A release job canceled mid-flight leaves a partial versioned release (asset never uploaded) or an edge tag with no downloadable file. Never cancel in progress.\n\n(3) Checkout the exact green SHA — not HEAD:\n  ref: ${{ github.event.workflow_run.head_sha }}\nHEAD may have advanced between CI completion and the release job's checkout. The sha is pinned to the commit that actually went green.\n\n(4) Stable tarball name: `npm pack --ignore-scripts | tail -1` returns the real filename (version/scope-proof). Rename to a fixed name (agent-mesh.tgz) for predictable download URLs. --ignore-scripts prevents pack hooks from running.\n\n(5) Dual-channel: edge (rolling) + v<version> (immutable):\n- Edge: delete+recreate each push — gh release delete edge --yes --cleanup-tag 2>/dev/null || true then recreate. Always points to the latest green main.\n- Versioned: idempotent skip if gh release view v$VERSION succeeds. Race safety: || echo 'was created concurrently' handles the rare two-runs-same-version race.\n\n(6) Structural dependency lint: the workflows:[\"CI\"] name must match ci.yml's name: CI field exactly. A silent mismatch means the release workflow never fires and no one notices. Add a test asserting the string appears in ci.yml. (PR #204 ships test/release-workflow.test.js with this assertion.)\n\n(7) Permissions: contents: write only. No external secrets — GITHUB_TOKEN suffices for gh release create, tag management, and asset upload.\n\nProvenance: PR #204 (2026-06-20).",
     "provenance": {
       "source": "PR #204: feat(release): publish tarball as GitHub Release on green main (edge + versioned)",
+      "ts": "2026-06-20"
+    }
+  },
+  "gh-pr-list-sort-before-select": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "gh pr list returns newest-first; [0] without sort starves older PRs — always sort_by(.updatedAt) first.",
+    "l1": "PR #220 (fix/review-respond-fair-select): review-respond picked CHANGES_REQUESTED PRs with [select(...)][0] — gh pr list is descending (newest first), so newest PR was always chosen, starving older ones. Fix: sort_by(.updatedAt) | .[0] picks longest-waiting; once a fix commit lands, updatedAt bumps newest and it rotates to back naturally. Same bug class as PR #205 mergefix selector.",
+    "value": "Any gh pr list | jq '[select(...)][0]' is a starvation trap — add sort_by(.updatedAt) before indexing:\n  gh pr list --json number,updatedAt,reviewDecision \\\n    | jq '[.[] | select(.reviewDecision==\"CHANGES_REQUESTED\")] | sort_by(.updatedAt) | .[0]'\nWorks for any single-item picker (CHANGES_REQUESTED, failing checks, needs-review). On each fix commit, updatedAt bumps to newest so the PR rotates to back — stateless, no extra state file. If you explicitly want newest-first (sprint triage), be explicit: sort_by(.updatedAt) | reverse | .[0]. Never rely on gh default order as meaningful selection. Add sort_by to any [0] selector that must be fair. Provenance: PR #220 (2026-06-20); same class as PR #205.",
+    "provenance": {
+      "source": "PR #220 (2026-06-20): fix(dev-mesh-review-respond): fair PR selection (no head-of-line starvation)",
+      "ts": "2026-06-20"
+    }
+  },
+  "bug-bypasses-spec-gate": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Bug issues bypass spec:in-review — defect → coder directly; only features/ideas/docs need human-reviewed specs.",
+    "l1": "routeFor already sent bare 'bug' to the coder. But 'bug+spec:in-review' fell into the human-gate path, requiring 'approved' to advance. PR #215 added a bug-specific override symmetric with approved-overrides-review: bug routes to coder even at spec:in-review/discussing. Scoped to bug only — enhancement/documentation/idea at review still return null (human-gated). Hard stops unchanged: blocked (failed build + loop guard), pr:in-review, terminal, in-progress all still win.",
+    "value": "Pattern for multi-tier issue routing in an autonomous dev-mesh society:\n\n(1) Label-tier override ordering: check issue-type-specific bypasses BEFORE the generic lifecycle gate. spec:in-review/discussing gating is a quality check for FEATURES — it protects humans from shipping underspecified work. A bug is a defect; it has no spec lifecycle. Bypassing the review gate for bugs only keeps the safety net intact for ideas/enhancements/docs.\n\n(2) Override table (symmetric with approved-overrides-review):\n  bug (bare)               → coder (unchanged)\n  bug + spec:in-review     → coder, reason:'bug-autofix' (NEW)\n  bug + discussing         → coder, reason:'bug-autofix' (NEW)\n  bug + blocked            → null  (hard stop — failed build + loop guard #98)\n  bug + pr:in-review       → null  (already has a PR)\n  enhancement/idea/docs + spec:in-review → null (still human-gated, unchanged)\n\n(3) Implementation in routeFor: insert a bug-type check as an early-exit BEFORE the spec:in-review/discussing null-return. Clear the spec review label at routing time so the Coder inherits a clean issue state.\n\n(4) Hard gate invariants never move: blocked, pr:in-review, in-progress, and terminal states short-circuit BEFORE the bug bypass. The bypass targets only the review gate — never safety gates.\n\n(5) Required test matrix: (a) bug bare → coder; (b) bug+spec:in-review → coder, reason:bug-autofix; (c) bug+discussing → coder; (d) bug+blocked → null; (e) bug+pr:in-review → null; (f) enhancement+spec:in-review → null; (g) idea+spec:in-review → null. Document each as an explicit negative case to prevent regression.\n\nProvenance: PR #215 (2026-06-20).",
+    "provenance": {
+      "source": "PR #215: feat(dev-society): bug issues auto-fix without human approval (override the review gate)",
       "ts": "2026-06-20"
     }
   }

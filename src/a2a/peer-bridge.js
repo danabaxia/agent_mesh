@@ -28,7 +28,8 @@ import { readManifest } from '../builder/manifest.js';
 import { readAgentDescription, extractCapabilities } from '../description.js';
 import { StdioTransport, rpcError } from '../mcp.js';
 import { mcpTextResult } from '../contract.js';
-import { MAX_TASK_CHARS, MAX_FAN_OUT_PEERS } from '../config.js';
+import { MAX_TASK_CHARS, DEFAULT_FAN_OUT_MAX_PEERS, readPositiveInt } from '../config.js';
+import { readCallContext } from '../context.js';
 import { createRunLog, appendRunLog } from '../log.js';
 import { resolveMeshRoot, resolveSelfName } from '../board/identity.js';
 import { createTask, listTasks, readTask, writeTask } from '../board/store.js';
@@ -204,52 +205,94 @@ export function createBridge({ root, env = process.env, createClient = createA2A
     }
   }
 
-  // --- Multi-peer fan-out (v2 ask-only) -------------------------------------
-
   /**
-   * Concurrently delegate the same task to multiple named peers and return all
-   * results as an array. Each per-peer result is a `delegateToPeer` result object
-   * (ok/false with status/summary/error_code) — failures are DATA, not thrown.
-   * ask-only in v2; do-mode fan-out (N concurrent write locks) is v3.
+   * Scatter a single `ask` to N peers concurrently; return one FanOutResult per peer.
+   * Fail-fast (zero peers contacted) if any pre-flight check fails; runtime per-peer
+   * failures become result entries rather than aborting the others.
    */
   async function fanOutToPeers({ peers, mode = 'ask', task } = {}) {
-    const fanOutError = (errorCode, summary) => ({ ok: false, error_code: errorCode, results: null, summary });
+    const fanRefusal = (errorCode, message) => ({ ok: false, error_code: errorCode, summary: message });
 
-    if (!Array.isArray(peers) || peers.length === 0) {
-      return fanOutError('bad_input', 'peers must be a non-empty array of peer names.');
-    }
-    if (peers.length > MAX_FAN_OUT_PEERS) {
-      return fanOutError('bad_input', `peers array exceeds the ${MAX_FAN_OUT_PEERS}-item limit.`);
-    }
-    for (const p of peers) {
-      if (typeof p !== 'string' || p.length === 0) {
-        return fanOutError('bad_input', 'each peer name must be a non-empty string.');
-      }
-    }
+    // v2 ask-only gate
     if (mode !== 'ask') {
-      return fanOutError('mode_disabled', 'fan_out_to_peers only supports mode "ask"; do-mode fan-out is not supported in v2.');
+      return fanRefusal('mode_disabled', `fan_out_to_peers is ask-only in v2; mode "${mode}" is not supported.`);
+    }
+
+    const maxPeers = readPositiveInt(env?.AGENT_MESH_FAN_OUT_MAX_PEERS, DEFAULT_FAN_OUT_MAX_PEERS);
+
+    if (!Array.isArray(peers) || peers.length < 1) {
+      return fanRefusal('bad_input', 'peers must be a non-empty array of peer names.');
+    }
+    if (peers.length > maxPeers) {
+      return fanRefusal('bad_input', `peers array (${peers.length}) exceeds maxPeers cap (${maxPeers}).`);
     }
     if (typeof task !== 'string' || task.trim().length < 1) {
-      return fanOutError('bad_input', 'task text is required.');
+      return fanRefusal('bad_input', 'task text is required.');
     }
     if (task.length > MAX_TASK_CHARS) {
-      return fanOutError('bad_input', `task exceeds the ${MAX_TASK_CHARS}-character limit.`);
+      return fanRefusal('bad_input', `task exceeds the ${MAX_TASK_CHARS}-character limit.`);
     }
 
-    // Registry gate (upfront): all peers must be in the managed registry before
-    // any peer is spawned — prevents partial-spawn on misconfigured peer lists.
+    // Depth preflight: reject entire call before contacting any peer
+    const { depth } = readCallContext(env);
+    if (depth <= 0) {
+      return fanRefusal('depth_budget', 'Depth budget exhausted; no fan-out peers dispatched.');
+    }
+
+    // Registry gate: all peers must be in the managed registry (atomic — zero dispatch on any miss)
     const managed = await readManagedRegistry(root);
     if (!managed.ok) {
-      return fanOutError('bad_input', `no managed registry (${managed.reason}); the bridge offers no peers.`);
+      return fanRefusal('bad_input', `no managed registry (${managed.reason}); the bridge offers no peers.`);
     }
-    const unknown = peers.filter((p) => !managed.registry.peers[p]);
-    if (unknown.length > 0) {
-      return fanOutError('bad_input', `unknown peers: ${unknown.join(', ')}`);
+    for (const p of peers) {
+      if (typeof p !== 'string' || p.length === 0 || !managed.registry.peers[p]) {
+        return fanRefusal('bad_input', `peer "${p}" is not in this agent's registry.`);
+      }
     }
 
-    // Fan out concurrently; each per-peer failure is returned as a result item.
-    const results = await Promise.all(peers.map((peer) => delegateToPeer({ peer, mode, task })));
-    return { ok: true, results };
+    const from = await resolveCallerName(root, env).catch(() => null);
+    const parentRunId = env?.AGENT_MESH_RUN_ID || null;
+
+    let client;
+    try {
+      client = await createClient(managed.registry, { env, protectedEnv: RESERVED_BRIDGE_ENV, requestTimeoutMs });
+    } catch (err) {
+      return fanRefusal('spawn_failed', `failed to create peer client: ${err.message}`);
+    }
+
+    try {
+      // Scatter: dispatch all peers concurrently via Promise.allSettled
+      const settled = await Promise.allSettled(
+        peers.map((peer) => {
+          const message = {
+            messageId: randomUUID(),
+            role: 'ROLE_USER',
+            parts: [{ text: task }],
+            metadata: { 'agentmesh/mode': 'ask', ...(from ? { 'agentmesh/caller': from } : {}) }
+          };
+          if (parentRunId) message.metadata['agentmesh/parent_run_id'] = parentRunId;
+          return client.send(peer, message).then((taskResult) => ({ peer, taskResult }));
+        })
+      );
+
+      // Gather: normalize each settled slot into a FanOutResult; input order is preserved
+      return settled.map((slot, i) => {
+        const peerName = peers[i];
+        if (slot.status === 'fulfilled') {
+          const { peer, taskResult } = slot.value;
+          const mapped = mapTask(peer, taskResult);
+          const entry = { peer, status: mapped.ok ? 'ok' : (mapped.status === 'timeout' ? 'timeout' : 'error') };
+          if (mapped.summary) entry.answer = mapped.summary;
+          if (mapped.error_code) entry.error_code = mapped.error_code;
+          if (mapped.log_path) entry.log_path = mapped.log_path;
+          return entry;
+        }
+        // promise rejected (e.g. send threw before a result arrived)
+        return { peer: peerName, status: 'error', error_code: 'spawn_failed' };
+      });
+    } finally {
+      await client.close().catch(() => {});
+    }
   }
 
   // --- Task board verbs (durable handoff; NO claude -p spawn) ----------------
@@ -511,14 +554,12 @@ export function buildTools() {
     {
       name: 'fan_out_to_peers',
       description:
-        'Concurrently delegate the same ask-mode task to multiple named peer agents and return ' +
-        'all results as an array. Use for research or synthesis tasks where polling several peers ' +
-        'simultaneously reduces latency and improves answer quality (adversarial consensus or best-of-N). ' +
-        'The orchestrating model synthesizes the results — no framework-level synthesis. ' +
-        'All peers must be in the managed registry. mode "ask" only (do-mode fan-out is v3). ' +
-        'On success: { ok: true, results: [{ peer, status, summary, ... }] }. ' +
-        'On configuration error: { ok: false, error_code, summary, results: null }. ' +
-        'Per-peer failures are included in results as data (partial success is possible).',
+        'Dispatch a single ask to N peers concurrently and return all answers as an array. ' +
+        'Use for redundant queries, adversarial reconciliation, or parallel enrichment — ' +
+        'all peers receive the same task text simultaneously (scatter-gather). ' +
+        'mode is always "ask" in v2. Returns [{ peer, status, answer?, error_code?, log_path? }]. ' +
+        'One peer failing does not abort the others; check each entry\'s status field. ' +
+        'On pre-flight failure (bad mode, unknown peer, depth exhausted): { ok: false, error_code, summary }.',
       inputSchema: {
         type: 'object',
         additionalProperties: false,
@@ -528,11 +569,10 @@ export function buildTools() {
             type: 'array',
             items: { type: 'string', minLength: 1 },
             minItems: 1,
-            maxItems: MAX_FAN_OUT_PEERS,
-            description: 'Names of peer agents to fan out to (all must be in the managed registry).'
+            description: 'Names of the peers to fan out to (all must be in the managed registry).'
           },
-          mode: { type: 'string', minLength: 1, description: 'Must be "ask"; do-mode fan-out is not supported in v2.' },
-          task: { type: 'string', minLength: 1, maxLength: MAX_TASK_CHARS, description: 'Task text broadcast to all peers.' }
+          mode: { type: 'string', description: 'Must be "ask" in v2 (do-mode fan-out is not yet supported).' },
+          task: { type: 'string', minLength: 1, maxLength: MAX_TASK_CHARS, description: 'Task text broadcast unchanged to every peer.' }
         }
       }
     },

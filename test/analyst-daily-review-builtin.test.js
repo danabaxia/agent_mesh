@@ -78,6 +78,18 @@ test('no MIR present → prompt omits the pointer, still succeeds', async () => 
   assert.ok(/no MIR available/i.test(seenTask));
 });
 
+test('digest paths in the prompt are absolute, resolved from repoRoot', async () => {
+  const { repoRoot } = await repoWithMir('mir-2026-06-20.json');
+  let seenTask = '';
+  const delegate = async ({ input }) => { seenTask = input.task; return { status: 'done', summary: '[]' }; };
+  const gh = async (args) => (args[1] === 'list' ? '[]' : '');
+  await runAnalystDailyReview({ repoRoot, dryRun: true, delegate, gh });
+  const expectedReport = join(repoRoot, '.dev-society', 'daily-report.json');
+  const expectedActivity = join(repoRoot, '.dev-society', 'gh-activity.json');
+  assert.ok(seenTask.includes(expectedReport), `prompt must name daily-report at absolute path`);
+  assert.ok(seenTask.includes(expectedActivity), `prompt must name gh-activity at absolute path`);
+});
+
 test('a non-done delegate result fails cleanly without gh create', async () => {
   const { repoRoot } = await repoWithMir('mir-2026-06-20.json');
   const ghCalls = [];
