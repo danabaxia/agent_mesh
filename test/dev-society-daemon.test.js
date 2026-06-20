@@ -36,6 +36,20 @@ test('maintainer schedule runs automerge-sweep every ~10min (reliable cadence, n
   assert.ok(job.cadence.minutes <= 10, 'cadence must be <=10min to beat GitHub cron throttling');
 });
 
+test('daemon registers the post-merge-reconcile builtin (closes merged-but-open issues)', () => {
+  assert.match(src, /'post-merge-reconcile'\s*:/);
+  assert.match(src, /planPostMergeReconcile/);
+  assert.match(src, /'issue',\s*'close'/, 'must close the reconciled issue');
+});
+
+test('maintainer schedule runs post-merge-reconcile every ~10min', () => {
+  const job = maintainerSchedule.jobs.find((j) => j.builtin === 'post-merge-reconcile');
+  assert.ok(job, 'post-merge-reconcile job must be scheduled');
+  assert.equal(job.enabled, true);
+  assert.equal(job.cadence.kind, 'every');
+  assert.ok(job.cadence.minutes <= 10);
+});
+
 test('runOneTask holds the build-lock (acquire before build, release in finally)', () => {
   const acq = src.indexOf('acquireBuildLock(repoRoot');
   const rel = src.indexOf('releaseBuildLock(repoRoot)');

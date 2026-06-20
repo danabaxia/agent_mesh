@@ -47,6 +47,7 @@ import { doctor } from '../src/builder/doctor.js';
 import { ensureLabels } from '../src/gh-labels.js';
 import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-lock.js';
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
+import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -157,6 +158,13 @@ if (!once && !selftest) {
     })
       .then((r) => ({ status: 'ok', output: r.disabled ? 'automerge disabled (AUTOMERGE_ENABLED!=true)' : `merged ${r.merged.length}, skipped ${r.skipped}, ineligible ${r.ineligible}` }))
       .catch((e) => { log('automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Post-merge reconciler: close OPEN issues whose closing PR ("Closes #N") has merged
+    // but GitHub's keyword auto-close missed, clearing the orphaned pr:in-review/in-progress
+    // label. Backstops the "done issue hangs open" drift (#183/#175) so the board never
+    // shows a merged item as still in-flight (the always-active invariant).
+    'post-merge-reconcile': () => postMergeReconcile()
+      .then((r) => ({ status: 'ok', output: `post-merge-reconcile: closed ${r.closed}` }))
+      .catch((e) => { log('post-merge-reconcile error:', e.message); return { status: 'fail', error: e.message }; }),
   };
   // Materialize managed wiring (registry.json / .mcp.json) before the scheduler
   // can fire any job — the daemon (unlike the dashboard) has no auto-sync, so
@@ -251,6 +259,40 @@ async function listAllOpen() {
   const { stdout } = await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open',
     '--limit', '100', '--json', 'number,title,body,labels']);
   return JSON.parse(stdout);
+}
+
+async function postMergeReconcile() {
+  if (!cfg.repo) { log('post-merge-reconcile: set DEV_SOCIETY_REPO'); return { closed: 0 }; }
+  let mergedPrs = [], openIssues = [];
+  try {
+    mergedPrs = JSON.parse((await gh(['pr', 'list', '--repo', cfg.repo, '--state', 'merged', '--limit', '100', '--json', 'number,closingIssuesReferences'])).stdout);
+  } catch (e) { log('post-merge-reconcile: pr list failed', e.message); return { closed: 0 }; }
+  try {
+    openIssues = JSON.parse((await gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '100', '--json', 'number,labels'])).stdout);
+  } catch (e) { log('post-merge-reconcile: issue list failed', e.message); return { closed: 0 }; }
+  const plan = planPostMergeReconcile(openIssues, mergedPrs);
+  let closed = 0;
+  for (const item of plan) {
+    for (const l of item.removeLabels) await rmLabel(item.issue, l);
+    try {
+      await gh(['issue', 'close', String(item.issue), '--repo', cfg.repo, '--reason', 'completed',
+        '--comment', `🤖 Auto-closed: fix merged in PR #${item.closingPr} (GitHub keyword auto-close missed). Reconciled by the dev-society post-merge sweep.`]);
+      closed++;
+      log(`post-merge-reconcile: closed #${item.issue} (PR #${item.closingPr})`);
+    } catch (e) { log(`post-merge-reconcile: close #${item.issue} failed`, e.message); }
+  }
+  return { closed };
+}
+
+// Issue numbers whose deterministic head branch (dev-society/issue-N) already MERGED. Feeds
+// routeFor's mergedBranches so a resolved issue that stayed OPEN is never re-claimed onto its
+// stale branch, recreating a conflicting duplicate PR (#226 was a true dup of merged #213).
+async function listMergedIssueBranches() {
+  try {
+    const { stdout } = await gh(['pr', 'list', '--repo', cfg.repo, '--state', 'merged',
+      '--limit', '200', '--json', 'headRefName']);
+    return core.mergedIssueBranches(JSON.parse(stdout));
+  } catch (e) { log('  (merged-branch scan failed; proceeding without it)', e.message); return new Set(); }
 }
 
 async function labelRepairSweep() {
@@ -469,8 +511,10 @@ async function sweep() {
       .filter((i) => { const p = state[i.number]; return !p || (now - (p.dispatchedAt || 0)) > STALE_MS; })
       .map((i) => i.number),
   );
+  // Issues whose implementation PR already merged → never re-claim them onto a stale branch.
+  const mergedBranches = await listMergedIssueBranches();
   const routed = issues
-    .map((i) => ({ issue: i, route: core.routeFor(i, { liveBuilds, staleClaims }) }))
+    .map((i) => ({ issue: i, route: core.routeFor(i, { liveBuilds, staleClaims, mergedBranches }) }))
     .filter((x) => x.route.target);
 
   // Advisory routes (analyst/triager): cheap A2A asks → comments. Dispatch all pending.

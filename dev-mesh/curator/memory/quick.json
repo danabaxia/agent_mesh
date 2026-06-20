@@ -836,5 +836,16 @@
       "source": "PR #231: feat(daemon): automerge-sweep builtin — prompt drain of ready PRs (no idle)",
       "ts": "2026-06-20"
     }
+  },
+  "github-autoclose-reconciler-backstop": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GitHub keyword auto-close is intermittent — poll a post-merge reconciler to close in-flight-labeled issues.",
+    "l1": "PR #235: 'Closes #N' intermittently misses on merge. Issues with pr:in-review/in-progress after their closing PR merged stay open forever — planLabelRepair never touches pr:in-review; terminal sweep only acts on done/rejected/etc. Fix: post-merge-reconcile builtin on 10-min cadence. Query OPEN issues with in-flight labels; cross-reference closingIssuesReferences with the merged set; plan to close those whose PR merged. Scoped to in-flight labels only — won't touch human-reopened issues. Pure planPostMergeReconcile({openIssues,mergedPRs})→[{action:'close',number}]; daemon applies the plan.",
+    "value": "Apply when building a pipeline that routes issues based on labels and relies on GitHub keyword auto-close.\n\n(1) GitHub 'Closes #N' auto-close is unreliable: when a PR merges to main, GitHub attempts to close referenced issues — but the mechanism intermittently misses. Issues #183 and #175 (PR #235) remained open with pr:in-review after their closing PRs had already merged.\n\n(2) Standard pipeline gaps:\n- planLabelRepair: only targets labels its rules explicitly handle. pr:in-review = 'active work in progress' → no repair rule touches it.\n- terminal sweep: only acts on done/rejected/wontfix/duplicate/invalid labels.\n- Neither sweep asks: 'did this issue's closing PR actually merge?'\n\n(3) Post-merge reconciler pattern:\n  pure planPostMergeReconcile({ openIssues, mergedPRsByNumber }):\n    for each open issue:\n      if issue has in-flight label (pr:in-review OR in-progress):\n        for each closingIssuesReference:\n          if reference.number is in mergedPRsByNumber:\n            yield { action:'close', number:issue.number, reason:'closing-pr-merged' }\n  returns: [{ action:'close', number }]\n\n(4) Daemon builtin registration:\n  schedule.json: { kind:'builtin', name:'post-merge-reconcile', intervalMs:600000 }\n  daemon: register async fn → call planPostMergeReconcile + gh issue close --reason completed\n  See scheduler-builtin-for-native-jobs and scheduler-builtin-return-shape.\n\n(5) Safe scoping:\n- Acts ONLY on issues with an in-flight label (pr:in-review/in-progress).\n- Acts ONLY when a closing PR is confirmed MERGED — not just closed.\n- Idempotent: a re-run over an already-closed issue is a no-op.\n- Human-reopened issues: if the human clears pr:in-review on reopen, the reconciler skips them.\n\n(6) Test surface (PR #235 pattern): closes pr:in-review issue with merged closing PR; clears in-progress too; ignores: no in-flight label / unmerged PR / malformed closingIssuesReferences.\n\nDistinct from terminal-close-escalate-sweep (closes terminal-labeled issues) and event-driven-polling-backstop (guards missed webhook events). Provenance: PR #235 (2026-06-20).",
+    "provenance": {
+      "source": "PR #235: feat(daemon): post-merge-reconcile — auto-close merged-but-open issues",
+      "ts": "2026-06-20"
+    }
   }
 }

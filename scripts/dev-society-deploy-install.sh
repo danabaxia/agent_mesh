@@ -181,7 +181,9 @@ fi
 
 mkdir -p "$LA_DIR" "$DEPLOY_ROOT/.dev-society"
 # Stage every plist BEFORE any bootout; back up the prior plist so reload() can roll
-# back to the running daemon if the new service fails to start (no daemon-down window).
+# back to the previous plist on start failure (restores on plist-content errors; a brief
+# down window still exists between bootout and bootstrap/load, and launchd environment
+# errors such as EIO outside a GUI session will leave the daemon down regardless).
 for _lbl in "$LABEL" "$SYNC_LABEL" "$DASH_LABEL"; do
   [ -f "$LA_DIR/$_lbl.plist" ] && cp "$LA_DIR/$_lbl.plist" "$LA_DIR/$_lbl.plist.prev"
 done

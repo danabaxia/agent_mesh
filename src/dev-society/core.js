@@ -132,13 +132,23 @@ export function planLabelRepair(issue) {
  * (label to remove first). target=null means "skip this tick".
  *   opts.liveBuilds  — issue numbers with a build running right now (skip).
  *   opts.staleClaims — in-progress issue numbers whose claim is stale → reclaim.
+ *   opts.mergedBranches — issue numbers whose deterministic head branch (branchName(n))
+ *     was ALREADY merged into base. Its deliverable shipped, so the issue must NOT be
+ *     re-claimed by the coder even if it stayed OPEN with build labels — re-claiming
+ *     pushes onto a stale branch and recreates a conflicting duplicate PR (#226 was a
+ *     true duplicate of merged #213; an issue's resolution is tied to its PR merging).
  */
-export function routeFor(issue, { liveBuilds = new Set(), staleClaims = new Set() } = {}) {
+export function routeFor(issue, { liveBuilds = new Set(), staleClaims = new Set(), mergedBranches = new Set() } = {}) {
   const ls = names(issue);
   const has = (l) => ls.includes(l);
   const n = issue?.number;
   if (TERMINAL.some(has)) return { target: null, reason: 'terminal' };
   if (HARD_GATED.some(has)) return { target: null, reason: 'human-gated' };
+  // The implementation PR for this issue already merged — its work shipped. Skip every
+  // coder route (approved-overrides-review / bug-autofix / stale-reclaim / plain code) so
+  // the daemon never re-claims a resolved issue onto a stale branch. Sits beside the other
+  // hard skips above; the issue still needs a human/curator to close it as done.
+  if (mergedBranches.has(n)) return { target: null, reason: 'branch-already-merged' };
   if (has(IN_PROGRESS)) {
     if (!liveBuilds.has(n) && staleClaims.has(n)) {
       return { target: 'coder', mode: 'do', reason: 'stale-reclaim', clear: IN_PROGRESS };
@@ -213,6 +223,27 @@ export function selectTask(issues = []) {
 /** Deterministic branch name for an issue. */
 export function branchName(number) {
   return `dev-society/issue-${number}`;
+}
+
+const BRANCH_ISSUE_RE = /^dev-society\/issue-(\d+)$/;
+/** Parse an issue number out of a deterministic dev-society head branch, or null. */
+export function issueOfBranch(branch) {
+  const m = BRANCH_ISSUE_RE.exec(String(branch || ''));
+  return m ? Number(m[1]) : null;
+}
+
+/**
+ * From a list of MERGED PRs ({ headRefName }), the Set of issue numbers whose
+ * deterministic head branch already merged. Feeds routeFor's `mergedBranches` so a
+ * resolved issue is never re-claimed onto its stale branch (#226 dup-of-merged-#213).
+ */
+export function mergedIssueBranches(prs = []) {
+  const out = new Set();
+  for (const pr of prs) {
+    const n = issueOfBranch(pr?.headRefName);
+    if (n != null) out.add(n);
+  }
+  return out;
 }
 
 /** A2A v1 Message with the mesh mode in metadata. messageIdFn defaults to a counter for tests. */

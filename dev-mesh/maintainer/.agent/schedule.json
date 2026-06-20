@@ -23,6 +23,14 @@
       "builtin": "automerge-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
       "enabled": true
+    },
+    {
+      "id": "post-merge-reconcile",
+      "name": "Close issues whose closing PR merged (clear stale pr:in-review)",
+      "kind": "builtin",
+      "builtin": "post-merge-reconcile",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true
     }
   ]
 }
