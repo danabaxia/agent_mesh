@@ -273,3 +273,7 @@ is the CI-safe surface.
 - **[MAJOR] §7 rollback is temporary (re-reset next tick)** — accepted; durable
   rollback now means fixing `main` (`git revert` + push); emergency hold = `bootout`
   deploy-sync first, then manual reset + kickstart, re-`bootstrap` after `main` is fixed.
+
+### Round 4 — Codex (gpt-5.5), VERDICT: APPROVED
+
+No remaining actionable findings. Converged (7 → 1 → 2 → 0 across rounds 1–4).
