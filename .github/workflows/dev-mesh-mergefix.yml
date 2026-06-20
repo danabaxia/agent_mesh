@@ -47,9 +47,17 @@ jobs:
           # #199 stuck (3 prior runs logged "no conflicting same-repo PR" while #199 was DIRTY).
           # Gather every plausible candidate (DIRTY or UNKNOWN/blank), then `gh pr view` each —
           # a per-PR read forces GitHub to COMPUTE mergeability — and pick the first real DIRTY.
+          #
+          # Fair rotation, no head-of-line starvation: ORDER candidates LEAST-RECENTLY-UPDATED
+          # first via sort_by(.updatedAt). gh lists PRs descending by number, so without this a
+          # perpetually-conflicting PR that happened to sort first was iterated to and `break`ed on
+          # every run — taking each hourly slot and starving an older APPROVED+green PR (e.g. #224 /
+          # issue #195, while #214 monopolized the slot) forever. Servicing the longest-waiting PR
+          # first guarantees progress; once this run pushes a [mergefix] its updatedAt becomes newest
+          # and it rotates to the back (mirrors the #220 review-respond fair-select fix).
           cands=$(gh pr list --base main --state open \
-                    --json number,isCrossRepository,isDraft,mergeStateStatus \
-                    --jq '[.[] | select(.isCrossRepository==false and .isDraft==false and (.mergeStateStatus=="DIRTY" or .mergeStateStatus=="UNKNOWN" or .mergeStateStatus==""))] | .[].number')
+                    --json number,isCrossRepository,isDraft,mergeStateStatus,updatedAt \
+                    --jq '[.[] | select(.isCrossRepository==false and .isDraft==false and (.mergeStateStatus=="DIRTY" or .mergeStateStatus=="UNKNOWN" or .mergeStateStatus==""))] | sort_by(.updatedAt) | .[].number')
           num=""; head=""
           for c in $cands; do
             st=$(gh pr view "$c" --json mergeStateStatus --jq '.mergeStateStatus // ""')
