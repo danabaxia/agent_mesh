@@ -24,10 +24,14 @@ one place.
   last *scheduled* run (many scheduled workflows also fire on `workflow_dispatch`/
   `push`); the UI labels it accordingly. **Conclusion coverage is partial:** status
   lives only on the gh-activity `:e` edge record, which is emitted only for
-  non-orchestrator workflows — so the many `workflowToAgent`→`orchestrator`
-  (catch-all) workflows (incl. `integration.yml`, `dev-mesh-security`, `dev-mesh-health`,
-  `dev-mesh-dogfood`, `dev-mesh-pr-janitor`, `dev-mesh-memory-automerge`, and any
-  unmapped name) show last-run time but `—` conclusion.
+  non-orchestrator workflows — so every `workflowToAgent`→`orchestrator` workflow
+  shows last-run time but `—` conclusion. **`workflowToAgent` maps a fixed `ROLE`
+  set and defaults ALL other names to `orchestrator`**, so this is the majority of
+  scheduled workflows — non-exhaustive examples: `integration`, `dev-mesh-health`,
+  `dev-mesh-dogfood`, `dev-mesh-pr-janitor`, `dev-mesh-memory-automerge`, plus any
+  unmapped name (`dev-mesh-issue-gate`, `dev-mesh-automerge`, `dev-mesh-escalate`,
+  `dev-mesh-security`, …). Only the explicitly-mapped roles (analyst/maintainer/
+  triager/reviewer/curator/coder) get a `:e` edge and thus a conclusion.
 - **No cron→next-run computation.** We display the cron expression (and a light
   label for trivial cases); computing the next fire time would need a cron library
   (zero-dep repo). Out of scope.
@@ -76,8 +80,12 @@ table gains a second `<tbody>` group; both rows carry an executor.
     are indented, so the column-0 rule ignores them.)
   - `crons` = every `cron:` value found **inside the `on:` → `schedule:` block only**
     (track the `on:` section and its `schedule:` child by indentation; stop at the
-    next top-level key). **Skip lines whose first non-space char is `#`** (commented
-    crons). A workflow with no in-`schedule` cron is excluded.
+    next top-level key). **Skip lines whose first non-space char is `#`** (full-line
+    commented crons). **Comment-safe scalar extraction:** read the cron *value* as the
+    quoted scalar (`'…'`/`"…"`) — ignoring any trailing inline comment after the
+    closing quote (e.g. `- cron: '*/30 * * * *' # poll` → `*/30 * * * *`); for an
+    unquoted value, strip a trailing ` #…`. A workflow with no in-`schedule` cron is
+    excluded.
 - `normalizeCiStatus(conclusion) → 'ok' | 'fail' | null` (pure): maps the raw GitHub
   conclusion — `success`→`ok`; `failure`/`timed_out`/`startup_failure`→`fail`;
   `cancelled`/`skipped`/`neutral`/`action_required`/`null`/missing→`null` (renders `—`).
@@ -128,7 +136,7 @@ may not have been a scheduled one (§2).
 
 | Test | Covers |
 |------|--------|
-| `test/ci-schedules.test.js` | `parseCronWorkflows`: single + multi `cron:` extraction; top-level `name:` capture vs **nested `jobs.*.name`/`steps.*.name` ignored** (indentation); **commented-out `cron:` (leading `#`) excluded**; a `cron:` outside the `on.schedule` block excluded; **quoted/special-char `name:`** (e.g. `Integration (nightly)`) parsed; schedule-less workflow excluded; basename fallback when no top-level `name:`. `normalizeCiStatus`: `success`→`ok`; `failure`/`timed_out`/`startup_failure`→`fail`; `cancelled`/`skipped`/`neutral`/`null`→`null`. `latestCiRuns`: keys by display name, latest by `started_at`, joins `:e` edge status through the normalizer, `running` when no `finished_at`. `listCiSchedules`: **non-orchestrator** workflow w/ cached edge → `status` set; **orchestrator-mapped (no edge)** → `lastRunAt` set, `status:null`; workflow **absent from cache** → row still present, `lastRunAt:null,status:null`. |
+| `test/ci-schedules.test.js` | `parseCronWorkflows`: single + multi `cron:` extraction; top-level `name:` capture vs **nested `jobs.*.name`/`steps.*.name` ignored** (indentation); **commented-out `cron:` (leading `#`) excluded**; **inline trailing comment after a quoted cron stripped** (fixture: `- cron: '*/30 * * * *' # poll` → `*/30 * * * *`); a `cron:` outside the `on.schedule` block excluded; **quoted/special-char `name:`** (e.g. `Integration (nightly)`) parsed; schedule-less workflow excluded; basename fallback when no top-level `name:`. `normalizeCiStatus`: `success`→`ok`; `failure`/`timed_out`/`startup_failure`→`fail`; `cancelled`/`skipped`/`neutral`/`null`→`null`. `latestCiRuns`: keys by display name, latest by `started_at`, joins `:e` edge status through the normalizer, `running` when no `finished_at`. `listCiSchedules`: **non-orchestrator** workflow w/ cached edge → `status` set; **orchestrator-mapped (no edge)** → `lastRunAt` set, `status:null`; workflow **absent from cache** → row still present, `lastRunAt:null,status:null`. |
 | `test/ci-schedules-route.test.js` | `GET /api/ci-schedules`: cookie-gated (403 without cookie); temp `repoRoot/.github/workflows` fixture + gh-activity fixture → expected `{workflows}`; **missing/corrupt cache → workflows still returned with `—` status** (NOT empty); **missing workflows dir → `{workflows: []}`**; no throw in any case. |
 
 UI (`graph-view.js`) rendering is exercised manually (browser); no DOM unit test
@@ -160,3 +168,12 @@ for authoritative status, surfacing non-cron workflow triggers.
 - **[MAJOR] regex parsing underspecified** — replaced with an indentation/section-aware scanner: column-0 `name:` only, crons only inside `on.schedule`, skip comment lines; added tests for nested-name/commented-cron/multi-cron/special-char-name (§5.1/§6).
 - **[MAJOR] "last run" ≠ "last scheduled run"** — cache drops `event`; relabeled UI/spec to "latest cached run" and documented the caveat (§2/§5.3).
 - **[MINOR] conclusion coverage broader than implied** — §2 now enumerates the orchestrator-catch-all workflows (incl. integration) that show last-run but `—` conclusion; tests cover both orchestrator-owned and non-orchestrator (§2/§6).
+
+### Round 2 — Codex (gpt-5.5), VERDICT: CHANGES_REQUESTED → both findings accepted (0 blockers)
+
+- **[MAJOR] inline comment after a quoted cron scalar** — added comment-safe scalar
+  extraction (read the quoted value, ignore trailing `# …`; unquoted → strip ` #…`)
+  + fixture `- cron: '*/30 * * * *' # poll` (§5.1/§6).
+- **[MINOR] orchestrator-catch-all list incomplete** — reworded §2 as non-exhaustive;
+  noted `workflowToAgent` defaults ALL unmapped names to orchestrator (so most
+  scheduled workflows show `—` conclusion), only the 6 mapped roles get an edge.
