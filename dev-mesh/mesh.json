@@ -16,7 +16,10 @@
       "card": "agent.json",
       "served": true,
       "enabledModes": ["ask"],
-      "peers": []
+      "webTools": true,
+      "peers": [
+        "tester"
+      ]
     },
     {
       "name": "triager",
