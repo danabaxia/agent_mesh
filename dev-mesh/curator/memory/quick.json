@@ -726,5 +726,16 @@
       "source": "PR #172: feat(deploy): run the 24/7 daemon from a deploy worktree pinned to main",
       "ts": "2026-06-20"
     }
+  },
+  "git-worktree-reset-not-ffonly": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "git worktree sync: `reset --hard`, not `--ff-only` — ff-only skips silently on detached HEAD and dirty files.",
+    "l1": "Deploy worktrees are created via `git worktree add $PATH origin/main` → detached HEAD. `git merge --ff-only origin/main` silently exits 0 on detached HEAD (skip_detached) and on dirty files (skip_dirty) — the worktree appears current but is stale. `git reset --hard origin/main` always advances, works on detached HEAD, and fails loudly on real fetch errors. PR #172 deploy-sync confirmed: ff-only would silently leave the daemon serving stale code. Promoted via PR #174.",
+    "value": "Pattern: for any automation that advances a git worktree to track a remote ref — deploy sync, CI fixture refresh, scheduled advance:\n\n(1) Always: `git fetch origin && git reset --hard origin/<branch>` — never `git merge --ff-only origin/<branch>`.\n\n(2) Why ff-only fails silently:\n  - Detached HEAD (normal after `git worktree add $PATH origin/<branch>`): ff-only returns skip_detached, exits 0, writes nothing.\n  - Any dirty file: ff-only returns skip_dirty, exits 0, writes nothing.\n\n(3) reset --hard is safe for deploy worktrees: no local edits expected; works on detached HEAD; fails loudly on bad fetch or missing ref — no silent skips.\n\n(4) Advance verification: `git rev-parse HEAD` should equal `git rev-parse origin/<branch>` after a successful sync; assert equality in automated tests.\n\nRelated: deploy-worktree-daemon-isolation. Provenance: PR #172 (2026-06-19), promoted PR #174 (2026-06-20).",
+    "provenance": {
+      "source": "PR #174: memory:promote — deploy-worktree-daemon-isolation",
+      "ts": "2026-06-20"
+    }
   }
 }
