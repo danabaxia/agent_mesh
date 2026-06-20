@@ -40,9 +40,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Fair rotation, no head-of-line starvation: pick the LEAST-RECENTLY-UPDATED
+          # CHANGES_REQUESTED PR. gh lists PRs descending by number, so a bare [0] always
+          # picked the newest and starved older PRs (e.g. #187 sat untouched while #199 took
+          # every slot). sort_by(.updatedAt) services the longest-waiting PR; once this run
+          # pushes a [review-fix] its updatedAt becomes newest and it rotates to the back.
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-                 --json number,headRefName,isCrossRepository,isDraft,reviewDecision \
-                 --jq '[.[] | select(.isCrossRepository==false and .isDraft==false and .reviewDecision=="CHANGES_REQUESTED")][0] // empty')
+                 --json number,headRefName,isCrossRepository,isDraft,reviewDecision,updatedAt \
+                 --jq '[.[] | select(.isCrossRepository==false and .isDraft==false and .reviewDecision=="CHANGES_REQUESTED")] | sort_by(.updatedAt) | .[0] // empty')
           if [ -z "$pr" ]; then echo "no PR with requested changes"; echo "none=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           echo "number=$(echo "$pr" | jq -r .number)" >> "$GITHUB_OUTPUT"
           echo "head=$(echo "$pr" | jq -r .headRefName)" >> "$GITHUB_OUTPUT"
