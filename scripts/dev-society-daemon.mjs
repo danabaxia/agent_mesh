@@ -42,6 +42,8 @@ import { computeNextRun } from '../src/schedule/schedule-cadence.js';
 import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER, DEFAULT_ACTIVITY_KEEP_DAYS } from '../src/config.js';
 import { recordActivity, pruneActivity } from '../src/activity-log/log.js';
 import { runMir } from './mir-run.mjs';
+import { runAnalystDailyReview } from './analyst-review-run.mjs';
+import { doctor } from '../src/builder/doctor.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -122,6 +124,18 @@ if (!once && !selftest) {
         ? { status: 'ok', output: res.summary }
         : { status: 'fail', error: res.summary };
     },
+    // Analyst-owned: agent-driven daily performance review → deduped `idea` issues.
+    'analyst-daily-review': async () => {
+      const res = await runAnalystDailyReview({
+        repoRoot,
+        dryRun: false,
+        gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+        now: () => new Date(),
+      });
+      return res.status === 'ok'
+        ? { status: 'ok', output: res.output }
+        : { status: 'fail', error: res.output };
+    },
     'label-repair-sweep': () => labelRepairSweep()
       .then((r) => ({ status: 'ok', output: `label-repair-sweep complete (${r.repaired} repaired)` }))
       .catch((e) => { log('label-repair-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
@@ -129,6 +143,16 @@ if (!once && !selftest) {
       .then(() => ({ status: 'ok', output: 'issue-sweep complete' }))
       .catch((e) => { log('issue-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
   };
+  // Materialize managed wiring (registry.json / .mcp.json) before the scheduler
+  // can fire any job — the daemon (unlike the dashboard) has no auto-sync, so
+  // without this the analyst→tester peer bridge would be missing. registry.json
+  // is gitignored generated state; doctor regenerates it in place.
+  try {
+    await doctor(SCHED_MESH_ROOT, { apply: true, managedOnly: true });
+    log('managed wiring synced — meshRoot=' + SCHED_MESH_ROOT);
+  } catch (e) {
+    log('doctor managed-sync failed (continuing):', e?.message || String(e));
+  }
   sched = createScheduler({
     meshRoot: SCHED_MESH_ROOT, builtins,
     onJobResult: ({ agentName, jobId, status, summary }) =>

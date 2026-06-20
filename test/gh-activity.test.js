@@ -9,7 +9,6 @@ test('workflowToAgent maps dev-mesh workflows to role agents (catch-all → orch
   assert.equal(workflowToAgent('dev-mesh-triage'), 'triager');
   assert.equal(workflowToAgent('dev-mesh-research'), 'analyst');
   assert.equal(workflowToAgent('dev-mesh-intake'), 'analyst');
-  assert.equal(workflowToAgent('dev-mesh-analyst-review'), 'analyst');
   assert.equal(workflowToAgent('dev-mesh-backlog'), 'maintainer');
   assert.equal(workflowToAgent('dev-mesh-curate'), 'curator');
   assert.equal(workflowToAgent('dev-mesh-autofix'), 'coder');
