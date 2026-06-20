@@ -90,15 +90,24 @@ export async function runDeploySyncOnce({
 // CLI: node scripts/dev-society-deploy-sync.mjs  (run from inside the deploy worktree)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const deployPath = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
-  const label = process.env.DEV_SOCIETY_DAEMON_LABEL || 'com.danabaxia.agent-mesh.dev-society';
+  const daemonLabel = process.env.DEV_SOCIETY_DAEMON_LABEL || 'com.danabaxia.agent-mesh.dev-society';
+  const dashLabel = process.env.DEV_SOCIETY_DASHBOARD_LABEL || '';   // optional; unset → daemon-only (back-compat)
   const statePath = join(deployPath, '.dev-society', 'deploy-sync-state.json');
   const logPath = join(deployPath, '.dev-society', 'deploy-sync.log');
   const { readState, writeState } = makeFileState(statePath);
+  const appendLog = (r) => {
+    try { mkdirSync(dirname(logPath), { recursive: true });
+          writeFileSync(logPath, JSON.stringify(r) + '\n', { flag: 'a' }); } catch { /* best effort */ }
+  };
+  const restart = makeMultiRestart({
+    required: [daemonLabel],
+    optional: dashLabel ? [dashLabel] : [],
+    log: (r) => { appendLog(r); console.log(r.ts, r.action, r.label || ''); },
+  });
   const rec = await runDeploySyncOnce({
-    deployPath, restart: makeLaunchctlRestart(label), readState, writeState,
+    deployPath, restart, readState, writeState,
     log: (r) => {
-      try { mkdirSync(dirname(logPath), { recursive: true });
-            writeFileSync(logPath, JSON.stringify(r) + '\n', { flag: 'a' }); } catch { /* best effort */ }
+      appendLog(r);
       console.log(r.ts, r.action, r.target || '', r.restarted ? 'restarted' : (r.deferredRestart ? 'restart-deferred(build-busy)' : ''));
     },
   });
