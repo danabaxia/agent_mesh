@@ -671,5 +671,16 @@
       "source": "PR #165: feat(mir): Mesh Improvement Report — Tester-owned self-evolve signal",
       "ts": "2026-06-20"
     }
+  },
+  "deploy-worktree-daemon-isolation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon sharing dev checkout breaks when agents branch-switch — run it from a deploy worktree pinned to main.",
+    "l1": "PR #172: daemon's repoRoot is script-relative — it serves whatever the shared dev checkout has. When another agent branch-switches, the 24/7 daemon runs stale code without warning. Fix: `git worktree add $DEPLOY_ROOT origin/main` (detached, deploy-only). Sync fetches and `reset --hard origin/main` — NOT ff-only (ff-only fails on detached HEAD and skips on dirty files). Restart only when target SHA differs from lastRestartedTarget (persisted in state.json). Reset and restart are independent — a failed restart retries next tick without re-fetching.",
+    "value": "Apply when a daemon resolves its root from its own script location and shares a dev checkout with active agents.\n\n(1) Deploy worktree: `git worktree add \"$DEPLOY_ROOT\" origin/main`. Detached HEAD is correct — deploy-sync uses reset --hard, not ff-only. Default path: `~/.agent-mesh/deploy`.\n\n(2) OS service config: point launchd ProgramArguments / systemd ExecStart at the deploy worktree's script, not the dev checkout.\n\n(3) Sync (StartInterval=300): `fetch → rev-parse HEAD → rev-parse origin/main → planDeploySync → reset --hard (if head≠target) → restart (if target≠lastRestartedTarget)`. Never ff-only: ff-only returns skip_detached on detached HEAD and skip_dirty on modified files.\n\n(4) Independent decisions: reset = (head ≠ target); restart = (target ≠ lastRestartedTarget). Keep them independent — a failed restart leaves the worktree already advanced; next tick retries only restart.\n\n(5) State file: `.dev-society/deploy-sync-state.json` → `{ \"lastRestartedTarget\": \"<sha>\" }`. Write ONLY after successful restart. If restart fails, do not write — next tick retries.\n\n(6) Error handling: wrap in try/catch; a git failure returns `{ action: 'error' }` and skips restart. Never restart after a fetch failure.\n\n(7) Install script: generate .plist/.service from detected absolute paths at install time (see os-service-installer-generate-at-install). Never commit generated unit files.\n\nRelated: os-service-installer-generate-at-install, subsystem-promote-and-daemon-guard, doctor-apply-on-framework-upgrade. Provenance: PR #172 (2026-06-19).",
+    "provenance": {
+      "source": "PR #172: feat(deploy): run the 24/7 daemon from a deploy worktree pinned to main",
+      "ts": "2026-06-20"
+    }
   }
 }
