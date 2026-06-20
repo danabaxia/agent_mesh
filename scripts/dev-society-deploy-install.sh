@@ -130,7 +130,7 @@ PLIST
 # `bootstrap` is the modern API but fails with `5: Input/output error` outside a GUI
 # login session; legacy `launchctl load -w` succeeds there. On a total failure, restore
 # the previous plist (saved as <plist>.prev by the caller) and re-load it, so the
-# canonical daemon is never left down with stale wiring. See memory dev-society-247-launchd.
+# canonical daemon is not unnecessarily left down. See memory dev-society-247-launchd.
 reload() {   # $1 = label, $2 = plist path
   local label="$1" plist="$2" backup="$2.prev"
   launchctl bootout "gui/$UID_NUM/$label" 2>/dev/null || true
@@ -140,11 +140,12 @@ reload() {   # $1 = label, $2 = plist path
     echo "note: 'launchctl bootstrap' failed (EIO outside a GUI session?); used 'launchctl load -w' for $label" >&2
   else
     echo "error: could not start $label via 'launchctl bootstrap' or 'launchctl load -w'" >&2
-    echo "hint: run from a GUI Terminal/login session, or manually: launchctl load -w \"$plist\"" >&2
     if [ -f "$backup" ]; then
-      echo "rolling back $label to its previous plist so the daemon is not left down" >&2
+      echo "rolling back $label to its previous plist so the daemon is not unnecessarily left down" >&2
       cp "$backup" "$plist"
       launchctl bootstrap "gui/$UID_NUM" "$plist" 2>/dev/null || launchctl load -w "$plist" 2>/dev/null || true
+    else
+      echo "hint: run from a GUI Terminal/login session, or manually: launchctl load -w \"$plist\"" >&2
     fi
     return 1
   fi
@@ -161,7 +162,7 @@ if [ "$DRY_RUN" = "1" ]; then
   echo "[dry-run] reload daemon: launchctl bootout gui/$UID_NUM/$LABEL || true; bootstrap (fallback: launchctl load -w); enable; kickstart -k"
   echo "[dry-run] reload sync:   launchctl bootout gui/$UID_NUM/$SYNC_LABEL || true; bootstrap (fallback: launchctl load -w); enable; kickstart -k"
   echo "[dry-run] reload dashboard: launchctl bootout gui/$UID_NUM/$DASH_LABEL || true; bootstrap (fallback: launchctl load -w); enable; kickstart -k"
-  echo "[dry-run] on start failure: roll back to <plist>.prev and re-load so the daemon is never left down"
+  echo "[dry-run] on start failure: roll back to <plist>.prev and re-load so the daemon is not unnecessarily left down"
   echo "[dry-run] dedupe legacy: launchctl bootout gui/$UID_NUM/$LEGACY_LABEL || true; rm -f $LA_DIR/$LEGACY_LABEL.plist"
   exit 0
 fi
