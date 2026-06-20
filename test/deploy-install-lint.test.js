@@ -76,6 +76,10 @@ test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchc
   // Issue #175: plists staged before bootout, with rollback to <plist>.prev on failure
   assert.match(out, /stage plists before any bootout/);
   assert.match(out, /roll back to <plist>\.prev/);
+  // Issue #209: rollback guarantee must be scoped — only plist-content errors, NOT
+  // launchd-environment errors (EIO outside a GUI session). Guard against overclaiming.
+  assert.match(out, /plist.content errors/i);
+  assert.match(out, /launchd environment errors.*(leave|left) the daemon down/i);
   // bootout must be described before bootstrap (stage → bootout → bootstrap ordering)
   assert.ok(out.indexOf('stage plists before any bootout') < out.indexOf('reload daemon'),
     'plists must be staged before the reload/bootout step');
