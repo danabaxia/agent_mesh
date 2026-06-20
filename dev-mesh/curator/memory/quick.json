@@ -727,6 +727,17 @@
       "ts": "2026-06-20"
     }
   },
+  "label-preflight-before-issue-create": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "ensureLabels() before every gh issue create loop — label-missing 422 aborts the whole run silently, not per-label.",
+    "l1": "PR #191: `gh issue create --label X` 422s when label X is absent — GitHub never auto-creates labels, silently aborting the whole run. All 4 mesh filers had latent 422 risk: analyst (patched manually #182), MIR syncReport, daemon heartbeat, automerge escalation still exposed. Fix: src/gh-labels.js ensureLabels(gh, labels, {repo,color}) — idempotent, best-effort, injected-gh for unit testing. Call once per filer before the issue-create loop. A single-filer manual patch is a systemic-gap signal: audit all filers sharing the same create verb.",
+    "value": "Apply to any autonomous process calling `gh issue create --label X`.\n\n(1) `gh issue create --label X` returns HTTP 422 when label X is absent — GitHub does NOT auto-create labels. The run aborts silently with no issues created. A single manual `gh label create` patch leaves all other filers at risk.\n\n(2) Idempotent label preflight: call `ensureLabels(gh, labels, {repo, color})` once per filer before its issue-create loop. It calls `gh label create` for each label and silently swallows the already-exists error — never throws. Safe to call on every run.\n\n(3) Blast radius audit: when you add label preflight to ONE filer, grep for every other `gh issue create` or `gh issue edit --add-label` in the codebase. Each is a latent 422 if its label set is not pre-ensured.\n\n(4) Inject `gh` for hermetic unit testing. Test cases: dedup (labels deduplicated before calling), idempotent (already-exists swallowed), correct repo/color args, empty/non-string names ignored. Wiring test: assert `gh label create` precedes the first `gh issue create` call for each filer.\n\n(5) Filer inventory (this mesh): analyst-review-run.mjs, src/mesh-improvement/run.js, scripts/dev-society-daemon.mjs, src/automerge/escalation-sweep.js — all wired in PR #191.\n\nProvenance: PR #191 (2026-06-20), closes #188 #182.",
+    "provenance": {
+      "source": "PR #191: feat(gh-labels): self-healing ensureLabels at every mesh issue-filer",
+      "ts": "2026-06-20"
+    }
+  },
   "label-lifecycle-predecessor-clear": {
     "status": "active",
     "valid_to": null,
