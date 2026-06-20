@@ -38,8 +38,9 @@ equivalent and avoids spinning the mesh inside Actions.
 
 - **No code / no PR / no merge.** Proposal-only; STOP after filing `idea` issues (§5.3 gate).
 - **No daemon schedule.json job** for this (see §2 — ask-mode can't web-search or file issues).
-- **No `contents: write`.** Least privilege: `contents: read` + `issues: write` only; no
-  `Edit`/`Write` (this task files issues, not draft-spec files — that stays with
+- **No `contents: write`.** Least privilege: `contents: read` + `issues: write` (+ the
+  read-only `pull-requests: read`/`actions: read` needed for `gh pr list`/`gh run download`);
+  no `Edit`/`Write` (this task files issues, not draft-spec files — that stays with
   `dev-mesh-research`).
 - **Not a replacement for `dev-mesh-research.yml`.** That is generic OSS-landscape research;
   this is **performance-driven** (MIR regressions + stuck/failed issues → targeted ideas).
