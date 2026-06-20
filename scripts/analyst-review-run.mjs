@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { delegateTask } from '../src/delegate.js';
 import { latestMirPath } from '../src/mesh-improvement/collect.js';
 import { parseIdeas, extractMarkers, planIdeaIssues } from '../src/dev-society/analyst-ideas.js';
+import { ensureLabels } from '../src/gh-labels.js';
 import { DEFAULT_MIR_DIR } from '../src/config.js';
 
 const env = (k, d) => process.env[k] || d;
@@ -70,6 +71,9 @@ export async function runAnalystDailyReview({ repoRoot, dryRun = false, delegate
     return { status: 'ok', output: `${ideas.length} ideas, ${plan.length} planned (dry-run; no issues filed)` };
   }
 
+  // Self-heal: ensure every label the plan uses exists before filing, so a new
+  // label (e.g. `generated:analyst`) never 422s the run (the #182 bug class).
+  await ensureLabels(gh, [...new Set(plan.flatMap((p) => p.labels))]);
   let filed = 0;
   for (const p of plan) {
     const labelArgs = p.labels.flatMap((l) => ['--label', l]);

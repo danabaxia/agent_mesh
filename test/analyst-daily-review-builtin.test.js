@@ -48,6 +48,15 @@ test('live run files create calls with --limit 500 on the list', async () => {
   const listCall = ghCalls.find((a) => a[0] === 'issue' && a[1] === 'list');
   assert.ok(listCall.includes('--limit') && listCall[listCall.indexOf('--limit') + 1] === '500');
   assert.ok(ghCalls.some((a) => a[0] === 'issue' && a[1] === 'create'));
+  // Self-heal: ensureLabels must `gh label create` each plan label BEFORE the first
+  // issue create, so a new label (e.g. generated:analyst) can't 422 the run (#182).
+  const order = ghCalls.map((a) => a.slice(0, 2).join(' '));
+  const firstLabel = order.indexOf('label create');
+  const firstCreate = order.indexOf('issue create');
+  assert.ok(firstLabel !== -1, 'expected ensureLabels to call `gh label create`');
+  assert.ok(firstLabel < firstCreate, 'labels must be ensured before the first issue create');
+  const labeled = ghCalls.filter((a) => a[0] === 'label' && a[1] === 'create').map((a) => a[2]);
+  assert.ok(labeled.includes('idea') && labeled.includes('generated:analyst'), `ensured: ${labeled}`);
 });
 
 test('the resolved latest MIR path is interpolated into the delegate prompt', async () => {
