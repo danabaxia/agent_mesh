@@ -121,6 +121,21 @@ test('mergefix: selector survives lazy-mergeability (picks DIRTY or UNKNOWN/blan
   assert.doesNotMatch(wf, /select\([^)]*mergeStateStatus=="DIRTY"\)\]\[0\]/, 'must not use the bulk ==DIRTY-only [0] picker');
 });
 
+test('mergefix: fair selection — least-recently-updated, no head-of-line starvation', () => {
+  // Bug #195 (PR #224): with several DIRTY PRs open at once (#214/#223/#224/#226), the bulk
+  // `gh pr list` returns them newest-first (descending number) and the selector picked the
+  // FIRST DIRTY candidate it iterated to (`break`), so a perpetually-conflicting PR (#214)
+  // took every hourly slot and starved an APPROVED+green PR (#224) forever. Mirror the #220
+  // review-respond fix: order candidates LEAST-RECENTLY-UPDATED first so the longest-waiting
+  // conflicting PR is serviced; once this run pushes a [mergefix], its updatedAt becomes
+  // newest and it rotates to the back.
+  assert.match(wf, /sort_by\(\.updatedAt\)/,
+    'candidate selection must sort_by(.updatedAt) to service the longest-waiting PR (no starvation)');
+  // updatedAt can only be sorted on if the candidate `gh pr list` actually requests it.
+  assert.match(wf, /--json[^\n]*\bupdatedAt\b/,
+    'the candidate `gh pr list --json` must include updatedAt so it can be sorted on');
+});
+
 test('mergefix: sets a git identity before merging (no `fatal: empty ident name`)', () => {
   // `git merge origin/main` makes a merge commit; a fresh runner has no identity → exit 128
   // aborts the drain (observed live on #199). The merge step must configure user.email/name.
