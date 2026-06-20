@@ -144,6 +144,10 @@ export function routeFor(issue, { liveBuilds = new Set(), staleClaims = new Set(
   const n = issue?.number;
   if (TERMINAL.some(has)) return { target: null, reason: 'terminal' };
   if (HARD_GATED.some(has)) return { target: null, reason: 'human-gated' };
+  // ③a owns `needs-human` escalations: the research-escalation builtin posts a
+  // researched diagnosis on these. Skip the Triager fallback so it doesn't also
+  // comment (no double-handling). The issue still needs a human to close it.
+  if (has('needs-human')) return { target: null, reason: 'needs-human-research-owned' };
   // The implementation PR for this issue already merged — its work shipped. Skip every
   // coder route (approved-overrides-review / bug-autofix / stale-reclaim / plain code) so
   // the daemon never re-claims a resolved issue onto a stale branch. Sits beside the other
@@ -248,12 +252,15 @@ export function mergedIssueBranches(prs = []) {
 
 /** A2A v1 Message with the mesh mode in metadata. messageIdFn defaults to a counter for tests. */
 let _seq = 0;
-export function a2aMessage(mode, text, messageId) {
+export function a2aMessage(mode, text, opts) {
+  const o = typeof opts === 'string' ? { messageId: opts } : (opts || {});
+  const metadata = { 'agentmesh/mode': mode };
+  if (o.caller) metadata['agentmesh/caller'] = o.caller;
   return {
     role: 'ROLE_AGENT',
-    messageId: messageId || `dev-society-${++_seq}`,
+    messageId: o.messageId || `dev-society-${++_seq}`,
     parts: [{ text }],
-    metadata: { 'agentmesh/mode': mode },
+    metadata,
   };
 }
 
@@ -279,7 +286,11 @@ export function advisoryRegistry({ binPath, meshRoot, nodePath = process.execPat
   const peers = {};
   for (const name of peerNames) {
     const root = join(meshRoot, name);
-    peers[name] = { root, command: nodePath, args: [binPath, 'serve-a2a', root], cwd: root, env: { AGENT_MESH_ENABLED_MODES: 'ask' } };
+    peers[name] = { root, command: nodePath, args: [binPath, 'serve-a2a', root], cwd: root, env: {
+        AGENT_MESH_ENABLED_MODES: 'ask',
+        AGENT_MESH_MESH_ROOT: join(meshRoot, 'mesh'),
+        AGENT_MESH_MESH_CEILING: meshRoot,
+      } };
   }
   return { peers };
 }
