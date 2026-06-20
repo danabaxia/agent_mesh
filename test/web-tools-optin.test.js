@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { agentWantsWebTools } from '../src/delegate-invocation.js';
+import { agentWantsWebTools, buildClaudeInvocation } from '../src/delegate-invocation.js';
+
+function toolsOf(args) {
+  const i = args.indexOf('--tools');
+  return i === -1 ? [] : args[i + 1].split(',');
+}
 
 // Build a temp mesh: <root>/mesh.json + an agent folder.
 async function makeMesh({ webTools, served = true, modes = ['ask'] } = {}) {
@@ -47,4 +52,34 @@ test('denied for a root not matching any manifest agent (spoof)', async () => {
 
 test('denied when manifestRoot is missing/null', async () => {
   assert.equal(await agentWantsWebTools({ root: '/whatever', manifestRoot: null, route: 'x' }), false);
+});
+
+test('ask allowlist INCLUDES WebSearch/WebFetch for a granted analyst run', async () => {
+  const { manifestRoot, agentRoot } = await makeMesh({ webTools: true });
+  const env = { AGENT_MESH_MESH_ROOT: join(manifestRoot, 'mesh'), AGENT_MESH_MESH_CEILING: manifestRoot };
+  const { args } = await buildClaudeInvocation({
+    root: agentRoot, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: {}, route: 'scheduled:analyst-daily-review',
+  });
+  const tools = toolsOf(args);
+  assert.ok(tools.includes('WebSearch') && tools.includes('WebFetch'), `got ${tools}`);
+});
+
+test('ask allowlist EXCLUDES web tools on the digest route', async () => {
+  const { manifestRoot, agentRoot } = await makeMesh({ webTools: true });
+  const env = { AGENT_MESH_MESH_ROOT: join(manifestRoot, 'mesh'), AGENT_MESH_MESH_CEILING: manifestRoot };
+  const { args } = await buildClaudeInvocation({
+    root: agentRoot, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: {}, route: 'digest',
+  });
+  const tools = toolsOf(args);
+  assert.ok(!tools.includes('WebSearch') && !tools.includes('WebFetch'), `got ${tools}`);
+});
+
+test('do path never gets web tools even if opted in', async () => {
+  const { manifestRoot, agentRoot } = await makeMesh({ webTools: true });
+  const env = { AGENT_MESH_MESH_ROOT: join(manifestRoot, 'mesh'), AGENT_MESH_MESH_CEILING: manifestRoot };
+  const { args } = await buildClaudeInvocation({
+    root: agentRoot, mode: 'do', task: 'hi', env, callEnv: env, claudeEnv: {}, route: 'scheduled:x',
+  });
+  const tools = toolsOf(args);
+  assert.ok(!tools.includes('WebSearch') && !tools.includes('WebFetch'), `got ${tools}`);
 });

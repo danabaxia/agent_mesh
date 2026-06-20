@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_LOG_DIR, READ_TOOLS, WRITE_TOOLS } from './config.js';
+import { DEFAULT_LOG_DIR, READ_TOOLS, WRITE_TOOLS, WEB_TOOLS } from './config.js';
 import { readManifest } from './builder/manifest.js';
 import { buildAgentRuntimePrompt } from './agent-context.js';
 import { readQuickMemory } from './quick-memory.js';
@@ -26,7 +26,7 @@ export function compactArgv(argv) {
   return out;
 }
 
-export async function buildClaudeInvocation({ root, mode, task, env, callEnv, claudeEnv, session = null }) {
+export async function buildClaudeInvocation({ root, mode, task, env, callEnv, claudeEnv, session = null, route = null }) {
   // Spec §4: prompt is now assembled by agent-context.buildAgentRuntimePrompt
   // (system → memory → workflows → mode prompt → global/local skill summaries).
   // meshRoot is resolved per chunk-2 rule: env override → walk-up to nearest
@@ -34,7 +34,16 @@ export async function buildClaudeInvocation({ root, mode, task, env, callEnv, cl
   // at the `mesh/` dir itself; the mesh ROOT (where mesh.json lives) is parent.
   const meshRoot = await resolveMeshRoot(root, env);
   const skillPolicy = await resolveSkillPolicy(root, meshRoot ? dirname(meshRoot) : null);
-  const args = buildClaudeInvocationSync(mode, task, skillToolEnabled(skillPolicy));
+  // Web-tools opt-in (read-only egress) for manifest-opted ask agents only.
+  // manifestRoot = dir holding mesh.json = parent of the resolved mesh/ dir,
+  // or the env-derived ceiling/dirname(MESH_ROOT) when mesh/ wasn't resolved.
+  const manifestRoot = meshRoot
+    ? dirname(meshRoot)
+    : (env?.AGENT_MESH_MESH_CEILING
+        || (env?.AGENT_MESH_MESH_ROOT ? dirname(env.AGENT_MESH_MESH_ROOT) : null));
+  const webTools = (mode === 'ask' && await agentWantsWebTools({ root, manifestRoot, route }))
+    ? WEB_TOOLS : [];
+  const args = buildClaudeInvocationSync(mode, task, skillToolEnabled(skillPolicy), webTools);
   // Multi-turn peer sessions (§5.5): when C derives a session, resume the existing
   // transcript (--resume) or start a new one (--session-id), mirroring the dashboard
   // session-runner's choice. session=null (every non-multi-turn caller) → unchanged.
@@ -175,12 +184,14 @@ export async function agentWantsWebTools({ root, manifestRoot, route }) {
   return false;
 }
 
-function buildClaudeInvocationSync(mode, task, includeSkill = false) {
+function buildClaudeInvocationSync(mode, task, includeSkill = false, extraTools = []) {
   const tools = mode === 'ask' ? [...READ_TOOLS] : [...READ_TOOLS, ...WRITE_TOOLS];
   // `Skill` must be in --tools for headless `claude -p` to run ANY skill; the
   // per-skill restriction is enforced separately via the settings permissions
   // block (skillPermissions). Omitting Skill = "no skills at all" (mode:none).
   if (includeSkill) tools.push('Skill');
+  // Manifest-opted ask agents (and only them) get read-only web egress.
+  for (const t of extraTools) if (!tools.includes(t)) tools.push(t);
   return ['-p', task, '--tools', tools.join(',')];
 }
 
