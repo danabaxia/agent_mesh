@@ -62,6 +62,31 @@ const present = (want, have) => want.filter((l) => have.has(l));
  */
 export function planLabelRepair(issue) {
   const have = new Set(names(issue));
+
+  // Approved overrides the spec-review gate for code-typed issues. A human's
+  // natural action on a finished spec is to ADD `approved` — but `routeFor`
+  // human-gates `spec:in-review` ahead of the code route, so `approved` +
+  // `spec:in-review` deadlocks forever (not blocked → no repair; gated → no
+  // build). Once approved, the spec review is satisfied: clear it and let the
+  // daemon drain to the coder. Scoped to code-types (bug/enhancement/doc) so
+  // approved IDEAs don't ping-pong through the spec-draft loop; never touches an
+  // issue already at `pr:in-review`/`in-progress` (past this stage) or `blocked`
+  // (handled below).
+  if (!have.has(BLOCKED) && have.has(APPROVED) && have.has(SPEC_IN_REVIEW)
+      && !have.has(PR_IN_REVIEW) && !have.has(IN_PROGRESS)
+      && CODE_TYPES.some((l) => have.has(l))) {
+    return {
+      reason: 'approved-clears-spec-review',
+      add: [],
+      remove: [SPEC_IN_REVIEW],
+      comment: [
+        'Auto-cleared `spec:in-review` because this code-typed issue is `approved`.',
+        '',
+        'Approval satisfies the spec review gate; removing `spec:in-review` lets the dev-society daemon route it to the coder. Without this, an approved issue still carrying `spec:in-review` deadlocks (approved but human-gated).',
+      ].join('\n'),
+    };
+  }
+
   if (!have.has(BLOCKED)) return null;
 
   const title = String(issue?.title || '');
