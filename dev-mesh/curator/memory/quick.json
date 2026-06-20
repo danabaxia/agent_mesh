@@ -726,5 +726,16 @@
       "source": "PR #174: memory:promote — deploy-worktree-daemon-isolation",
       "ts": "2026-06-20"
     }
+  },
+  "label-lifecycle-predecessor-clear": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Approved+spec:in-review deadlock: planLabelRepair must clear predecessor labels when approval supersedes them.",
+    "l1": "routeFor lists spec:in-review as HUMAN_GATED before the code route. Human adding 'approved' without removing 'spec:in-review' permanently strands the issue: planLabelRepair returns null (not blocked), routeFor returns {target:null} (human-gated). Issue #175 sat ~11h in this dead state. Fix: planLabelRepair clears spec:in-review when approved AND code-type AND not already past the gate (blocked/pr:in-review/in-progress). Scoped to code-types: idea→spec:in-review→cleared→idea loops must not happen. Provenance: PR #192 (2026-06-20).",
+    "value": "For any multi-step label lifecycle where a human approval action supersedes a prior automated state:\n\n(1) Identify predecessor labels that can co-exist with 'approved' after a single human action (e.g. adding 'approved' without removing 'spec:in-review'). Co-existence that leaves the issue unrouted AND unrepaired is a deadlock.\n\n(2) Fix in planLabelRepair, not routeFor: planLabelRepair is the repair layer; routeFor is the routing layer. After the repair sweep clears the predecessor, the issue arrives at routeFor in a clean state.\n\n(3) Scope to applicable issue types: code-type (bug/enhancement/documentation). 'idea' must be excluded — idea → spec:draft → spec:in-review → cleared → idea is an infinite loop.\n\n(4) Guard on post-gate conditions: skip when blocked/pr:in-review/in-progress — the issue is already past the spec stage.\n\n(5) Latency: label-repair-sweep runs every 10 min; max 10 min after human approval before drain.\n\nTest matrix: approved+spec:in-review+code-type → removes spec:in-review → routed; approved+spec:in-review+idea → no repair; approved+spec:in-review+in-progress → no repair; spec:in-review without approved → stays human-gated.\n\nRed flag: approved+lifecycle-predecessor-label sitting unchanged >10 min → planLabelRepair is missing a rule. Provenance: PR #192 (2026-06-20), issue #175 stranded ~11h.",
+    "provenance": {
+      "source": "PR #192: fix(dev-society): drain the approved+spec:in-review deadlock (unblocks #175)",
+      "ts": "2026-06-20"
+    }
   }
 }
