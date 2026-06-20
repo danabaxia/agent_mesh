@@ -1,0 +1,48 @@
+// test/mesh-improvement-run.test.js
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { buildReport, syncReport } from '../src/mesh-improvement/run.js';
+
+const inputs = {
+  tests: { summary: { files: 180, green: 180, red: 0 }, results: [] },
+  behavior: { aggregate: { trials: 9, passed: 6, passRate: 0.6 }, scenarios: [] },
+  adversarial: { aggregate: { trials: 7, passed: 7, passRate: 1 }, scenarios: [] },
+  perf: null, runLogs: [],
+};
+const previousMir = {
+  schema: 'mesh-improvement-report/v1', at: '2026-06-19T06:30:00Z', ref: { commit: 'prev' },
+  summary: { behavior: { passRate: 0.9 } },
+  findings: [{ id: 'behavior:overall:pass-rate', metric: { name: 'passRate', value: 0.9 } }],
+  ledger: { 'behavior:overall:pass-rate': { firstSeen: '2026-06-19', lastSeen: '2026-06-19', occurrences: 1, cleanRuns: 0, issueNumber: null } },
+  trend: { passRate: [0.9], quality_per_1k_tokens: [] },
+};
+
+test('buildReport composes into a gated MIR with deltas', () => {
+  const mir = buildReport({ inputs, previousMir, at: '2026-06-20T06:30:00Z',
+    ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
+  const beh = mir.findings.find((f) => f.id === 'behavior:overall:pass-rate');
+  assert.equal(beh.metric.baseline, 0.9);
+  assert.ok(beh.metric.deltaPct < -10);
+  assert.equal(beh.fileable, true);            // regressed past band
+});
+
+test('dry-run never calls gh; live-run creates and records issueNumber', async () => {
+  const mir = buildReport({ inputs, previousMir, at: '2026-06-20T06:30:00Z',
+    ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
+  const writes = {};
+  const writeFile = (p, c) => { writes[p] = c; };
+
+  let ghCalls = 0;
+  const dry = await syncReport({ mir, mirDir: '/tmp/mir', dryRun: true,
+    gh: async () => { ghCalls++; return ''; }, writeFile, recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
+  assert.equal(ghCalls, 0);
+  assert.equal(dry.mutations, 0);
+  assert.ok(dry.plan.some((p) => p.action === 'create'));
+
+  const live = await syncReport({ mir, mirDir: '/tmp/mir', dryRun: false,
+    gh: async (args) => (args[0] === 'issue' && args[1] === 'create' ? 'https://github.com/o/r/issues/777' : ''),
+    writeFile, recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
+  assert.ok(live.mutations >= 1);
+  const persisted = JSON.parse(writes[Object.keys(writes).find((k) => k.endsWith('.json'))]);
+  assert.equal(persisted.ledger['behavior:overall:pass-rate'].issueNumber, 777);
+});

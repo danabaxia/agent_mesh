@@ -123,3 +123,21 @@ test('every workflow that runs an agent uses agent-postrun (gate + usage capture
       `${f} still calls assert-run-healthy directly; route it through agent-postrun`);
   }
 });
+
+test('integration workflow: l0-json producer uploads test-results before exit', () => {
+  assert.match(wf, /l0-json:/);
+  assert.match(wf, /run-all-tests\.mjs --json test-results\.json/);
+  // the upload must survive a red suite (nonzero exit) → if: always()
+  assert.match(wf, /if: always\(\)[\s\S]{0,200}?name: l0-json-results/);
+});
+
+test('integration workflow: mir job aggregates, with permissions and schedule-gated mutation', () => {
+  assert.match(wf, /\n  mir:/);
+  assert.match(wf, /needs:\s*\[l0-json, l2-behavior, l3-adversarial, l4-perf\]/);
+  assert.match(wf, /\n    if: always\(\)/);
+  assert.match(wf, /issues: write/);
+  assert.match(wf, /actions: read/);
+  // live mutation only on schedule; workflow_dispatch is dry-run.
+  assert.match(wf, /github\.event_name == 'schedule'/);
+  assert.match(wf, /--dry-run/);
+});

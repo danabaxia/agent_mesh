@@ -1,0 +1,13 @@
+{
+  "jobs": [
+    {
+      "id": "tester-suite-run",
+      "name": "Suite + improvement report",
+      "kind": "builtin",
+      "builtin": "tester-suite-run",
+      "cadence": { "kind": "daily", "at": "06:30" },
+      "enabled": true,
+      "saveArtifact": false
+    }
+  ]
+}

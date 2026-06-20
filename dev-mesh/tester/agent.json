@@ -27,6 +27,15 @@
       "tags": [
         "health"
       ]
+    },
+    {
+      "id": "file-improvement-findings",
+      "name": "File improvement findings",
+      "description": "Interpret mir.json and explain the filed regression findings.",
+      "tags": [
+        "mir",
+        "backlog"
+      ]
     }
   ],
   "x-agentmesh": {

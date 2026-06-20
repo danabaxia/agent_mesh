@@ -44,3 +44,12 @@ export function readPositiveInt(value, fallback) {
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
+
+// Mesh Improvement Report (MIR) — spec 2026-06-19. All optional; see CLAUDE.md Config.
+export const DEFAULT_MIR_DIR = '.dev-society/mir';
+export const DEFAULT_MIR_NOISE_BAND_PCT = 10;   // soft-finding regression threshold (%)
+export const DEFAULT_MIR_RECOVER_RUNS = 2;       // consecutive clean runs before an issue closes
+export const DEFAULT_MIR_TREND_N = 10;           // trend-history length + ledger GC bound
+export const DEFAULT_MESH_SCAN_LABEL = 'generated:mesh-scan';
+// finding.id controlled vocabulary — becomes a label/marker, so it must be injection-safe.
+export const MIR_ID_RE = /^[a-z0-9:_-]+$/;

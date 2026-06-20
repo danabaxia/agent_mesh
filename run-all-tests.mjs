@@ -1,7 +1,7 @@
 // run-all-tests.mjs — sequential per-file suite runner (Windows-stable):
 // each test file gets its own node --test process and a hard timeout, so one
 // wedged spawn-heavy file cannot hang the whole run. Prints a final table.
-import { readdirSync } from 'node:fs';
+import { readdirSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 
 const FILE_TIMEOUT_MS = 240_000;
@@ -46,4 +46,15 @@ const bad = results.filter((r) => r.status !== 'PASS');
 console.log('\n=== SUMMARY ===');
 console.log(`files: ${results.length}, green: ${results.length - bad.length}, red: ${bad.length}`);
 for (const r of bad) console.log(`  ${r.status} ${r.f} (pass=${r.pass} fail=${r.fail})`);
+
+// --json <path>: persist a machine-readable report BEFORE the nonzero exit, so a
+// red suite (which exits 1) still leaves the L0 signal on disk for the MIR.
+const jsonIdx = process.argv.indexOf('--json');
+if (jsonIdx !== -1 && process.argv[jsonIdx + 1]) {
+  writeFileSync(process.argv[jsonIdx + 1], JSON.stringify({
+    at: new Date().toISOString(),
+    results,
+    summary: { files: results.length, green: results.length - bad.length, red: bad.length },
+  }, null, 2));
+}
 process.exit(bad.length ? 1 : 0);

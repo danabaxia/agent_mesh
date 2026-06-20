@@ -41,6 +41,7 @@ import { listAllSchedules } from '../src/schedule/list-all.js';
 import { computeNextRun } from '../src/schedule/schedule-cadence.js';
 import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER, DEFAULT_ACTIVITY_KEEP_DAYS } from '../src/config.js';
 import { recordActivity, pruneActivity } from '../src/activity-log/log.js';
+import { runMir } from './mir-run.mjs';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -106,6 +107,20 @@ if (!once && !selftest) {
       } catch (e) {
         return { status: 'fail', error: e?.message || String(e) };
       }
+    },
+    // Tester-owned: run the suites + emit mir.json/mir.md and sync backlog issues.
+    'tester-suite-run': async () => {
+      const res = await runMir({
+        repoRoot,
+        ref: { commit: process.env.GITHUB_SHA || 'local', branch: 'main' },
+        dryRun: false,
+        runSuites: true,
+        gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+        now: () => new Date(),
+      });
+      return res.status === 'ok'
+        ? { status: 'ok', output: res.summary }
+        : { status: 'fail', error: res.summary };
     },
     'label-repair-sweep': () => labelRepairSweep()
       .then((r) => ({ status: 'ok', output: `label-repair-sweep complete (${r.repaired} repaired)` }))
