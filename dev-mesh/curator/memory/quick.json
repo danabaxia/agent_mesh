@@ -913,5 +913,16 @@
       "source": "PR #254 (2026-06-20): feat(remediation): orchestrator backstop loop ② — Codex BLOCKER state-before-mutation",
       "ts": "2026-06-20"
     }
+  },
+  "intake-approved-label-fence": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Analyst intake must never mutate labels on `approved` issues — re-triggers strip the review gate and deadlock routing.",
+    "l1": "PR #258: after a human adds `approved`, the intake workflow re-fires via the label event and strips `spec:in-review` (looks redundant). routeFor needs BOTH `approved` AND a review-gate label for approved-overrides-review; without spec:in-review the issue falls through to the advisory triager and stalls permanently. Two fixes: (1) YAML fence — Analyst never edits labels on issues already carrying `approved`; (2) re-arm-approved-route branch in planLabelRepair — the daemon self-heals approved idea-lineage issues that lost their review gate by re-adding spec:in-review.",
+    "value": "Pattern: gate intake label mutations on the `approved` label; self-heal routing deadlocks in planLabelRepair.\n\n**Root cause:** The Analyst intake workflow fires on EVERY label event, including when a human adds `approved`. At that point, `spec:in-review` is still present (the human gate just passed). The intake logic sees `spec:in-review` as now-redundant and removes it to 'match reality'. This severs `approved-overrides-review` in routeFor, which requires BOTH `approved` AND a review-gate label. The issue falls through to the advisory triager, which dispatches once and stops — the issue stalls indefinitely.\n\n**Fix 1 — YAML fence (preventive):** In `dev-mesh-intake.yml`, gate the label-mutation step:\n  `if: ${{ !contains(github.event.issue.labels.*.name, 'approved') }}`\n  (or equivalent) so the Analyst never edits labels once a human has approved. The intake role ends at the `spec:in-review` human gate; post-approval label state is owned by the daemon routing layer.\n\n**Fix 2 — planLabelRepair self-healing (recovery):** Add a `re-arm-approved-route` branch in core.js planLabelRepair:\n  Trigger when: issue has `approved`, idea-lineage (`generated:analyst` or `idea`), NO code-type, NO review-gate label, NO route label, and NOT in a hard/active/terminal state (not blocked, not in-progress, not pr:in-review).\n  Action: add `spec:in-review` — restores the approved-overrides-review path so the daemon's next tick routes to the Coder.\n  Scoped to idea-lineage only: prevents hijacking arbitrary typeless issues.\n\n**Ad-hoc re-adds are wrong:** Manually re-adding `spec:in-review` to an approved issue is immediately re-stripped by the next intake label-event — same bug, same stall. The systematic fix (YAML fence + planLabelRepair) is the only durable path.\n\n**Test coverage:** planLabelRepair `re-arm-approved-route` fires for the stranded state; negative cases (already-routable, gated, not-approved, non-lineage) do not re-arm. Prompt-lint asserts the Analyst never mutates labels on approved issues.\n\nProvenance: PR #258 (2026-06-20).",
+    "provenance": {
+      "source": "PR #258: fix(dev-society): self-heal the #248 approved-deadlock (re-arm stripped route)",
+      "ts": "2026-06-20"
+    }
   }
 }
