@@ -2,7 +2,10 @@
   "mcpServers": {
     "library": {
       "command": "node",
-      "args": ["__AGENT_MESH_BIN__", "serve", "__AGENT_B_ROOT__"]
+      "args": ["__AGENT_MESH_BIN__", "serve", "__AGENT_B_ROOT__"],
+      "env": {
+        "CLAUDE_CODE_OAUTH_TOKEN": "${CLAUDE_CODE_OAUTH_TOKEN}"
+      }
     }
   }
 }
