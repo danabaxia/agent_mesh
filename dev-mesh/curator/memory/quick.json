@@ -672,6 +672,28 @@
       "ts": "2026-06-20"
     }
   },
+  "ci-schedules-yaml-section-scope": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "YAML cron parse: track indentation — top-level `name:` = workflow; crons only under `on.schedule`; skip `#` lines.",
+    "l1": "PR #176: surfacing CI cron workflows in the SCHEDULES panel. (1) YAML scanner must be section-aware: top-level `name:` is the workflow display name; crons live only inside `on.schedule:`; `#` comments (full-line or inline) skipped. Naive line-grep matches nested `name:` fields too. (2) Producer→consumer join key must match end-to-end: `latestCiRuns` keys by `ci:<name>`; graph-view joins on the same string — mismatch silently drops the status column. (3) Fetch all sources before the empty-state gate; a missing endpoint collapses the panel incorrectly.",
+    "value": "When adding a dashboard panel that aggregates scheduled jobs from multiple sources (daemon + GitHub Actions CI):\n\n(1) YAML section-aware scanner: do NOT use a naive line-grep to extract workflow names or cron expressions from .github/workflows/*.yml. Top-level `name:` (at indent 0) is the workflow display name; a nested `name:` inside a job or step is NOT. Cron expressions live only inside the `on.schedule:` block. Full-line comments (`# ...`) and inline comments (trailing `# ...`) must be stripped before parsing. Use a three-state machine: scanning-for-name → found-name → in-schedule-block → collecting-crons → back-to-top. The indentation of each line determines which state transition applies.\n\n(2) Producer↔consumer join key — verify end-to-end: the key used to index runs in the cache (e.g. `ci:<workflowDisplayName>`) must be the exact same string the consumer uses to look up status. A capitalisation or prefix mismatch produces a silently missing status column — no error, just `—` everywhere. Write a test that asserts the key from `latestCiRuns` appears verbatim in the rendered group data.\n\n(3) Multi-source pre-empty-state fetch: when a panel aggregates N endpoints, fetch ALL of them before the empty-state decision. If you check `results.length === 0` after only the first endpoint, the panel incorrectly collapses when the second endpoint has data but the first is empty.\n\n(4) Reuse existing caches for read-only CI endpoints: the `gh-activity.json` cache (populated by the scheduler builtin `gh-activity-poll`) already holds workflow run conclusions. A new `/api/ci-schedules` route can serve those without any additional `gh` CLI calls — missing cache → show `—` status (fail-open, not an error).\n\n(5) node --check for syntax validation: when a .js/.mjs file cannot be loaded in a test (e.g. it has smart-quote regressions from copy-paste), run `node --check <file>` as a quick parse-only gate — catches syntax errors before runtime.\n\nProvenance: PR #176 (2026-06-20).",
+    "provenance": {
+      "source": "PR #176: feat(dashboard): surface GitHub Actions cron workflows in the SCHEDULES panel",
+      "ts": "2026-06-20"
+    }
+  },
+  "capability-bound-schedule-placement": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Daemon ask-mode jobs have only READ_TOOLS: agents needing WebSearch/gh-write/issue-filing must be GitHub Actions jobs.",
+    "l1": "The daemon scheduler's ask-mode jobs allow only READ_TOOLS — no WebSearch, WebFetch, Bash/gh, or GitHub state mutation. PR #178: the daily Analyst review needed WebSearch + issue filing, so it runs as a GitHub Actions cron (claude-code-action), not a daemon schedule.json entry. The dashboard SCHEDULES panel shows both daemon builtins and Actions jobs in the same view, so the user experience is unified even when the execution context differs.",
+    "value": "Placement decision rule: if the agent needs WebSearch, WebFetch, gh mutations (issue create/close/edit), or non-mesh file writes → GitHub Actions cron with claude-code-action. If read-only (READ_TOOLS: list files, read git log, inspect artifacts) → daemon schedule.json builtin or inline builtin fn.\n\nFor Actions jobs: list WebSearch+WebFetch explicitly in allowedTools; use contents:read + issues:write (never contents:write for ask-mode research roles); pass advisory_blocked:true; degrade gracefully when upstream artifacts (e.g. mir.json) are absent.\n\nSymptom of wrong placement: job runs but silently does nothing — ask-mode blocks the gh/web call it needs. Provenance: PR #178 (2026-06-20).",
+    "provenance": {
+      "source": "PR #178: feat(analyst): daily performance-review → improvement-ideas CI workflow",
+      "ts": "2026-06-20"
+    }
+  },
   "agent-reasoning-host-action-split": {
     "status": "active",
     "valid_to": null,
