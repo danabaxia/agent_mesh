@@ -7,7 +7,7 @@
 // silent auto-merge. Spec: docs/superpowers/specs/2026-06-14-self-hosting-dev-mesh-design.md §6/§9/§15
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const dir = fileURLToPath(new URL('../.github/workflows/', import.meta.url));
@@ -338,4 +338,49 @@ test('janitor: every PR query filters out cross-repository (fork) PRs (§F4 runt
   // must carry the guard; >= 3 so dropping it from the highest-stakes Step 1 (PR close) fails.
   const count = (janitor.match(/isCrossRepository==false/g) || []).length;
   assert.ok(count >= 3, `expected isCrossRepository==false in every PR query (3), found ${count}`);
+});
+
+// --- PERMISSIONS FLOOR LINT: auto-discovered (issue #248) ---
+// Auto-discover every dev-mesh-*.yml so new workflows are covered without
+// editing this file. Asserts the minimum permissions floor: a permissions:
+// block must exist, contents must be at least read (required for checkout),
+// and any workflow using gh pr list or pull-requests must grant that scope.
+const ALL_NAMES = readdirSync(dir)
+  .filter((f) => f.startsWith('dev-mesh-') && f.endsWith('.yml'))
+  .map((f) => f.replace(/\.yml$/, '').replace(/^dev-mesh-/, ''));
+
+const allWf = Object.fromEntries(ALL_NAMES.map((n) => [n, readFileSync(`${dir}dev-mesh-${n}.yml`, 'utf8')]));
+
+test('PERMISSIONS FLOOR: every dev-mesh-*.yml has a permissions: block', () => {
+  for (const n of ALL_NAMES) {
+    assert.match(allWf[n], /^permissions:/m, `dev-mesh-${n}.yml: missing top-level permissions: block`);
+  }
+});
+
+test('PERMISSIONS FLOOR: every dev-mesh-*.yml grants at least contents: read (checkout requirement)', () => {
+  // Without contents: read (or write), GitHub sets all unlisted scopes to none
+  // and actions/checkout@v4 will 403. contents: write satisfies the floor.
+  for (const n of ALL_NAMES) {
+    assert.match(
+      allWf[n],
+      /contents:\s*(read|write)/,
+      `dev-mesh-${n}.yml: must grant at least contents: read (required for actions/checkout@v4)`,
+    );
+  }
+});
+
+test('PERMISSIONS FLOOR: workflows using gh pr list or pull_request trigger must grant pull-requests', () => {
+  // A workflow that queries pull requests (gh pr list) or fires on pull_request events
+  // needs pull-requests: read at minimum; without it the gh call 403s.
+  for (const n of ALL_NAMES) {
+    const body = allWf[n];
+    const needsPR = /gh pr list/.test(body) || /^\s*pull_request:/m.test(body);
+    if (needsPR) {
+      assert.match(
+        body,
+        /pull-requests:\s*(read|write)/,
+        `dev-mesh-${n}.yml: uses gh pr list or pull_request trigger but missing pull-requests: read/write`,
+      );
+    }
+  }
 });
