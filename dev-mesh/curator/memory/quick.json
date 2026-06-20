@@ -617,6 +617,17 @@
       "ts": "2026-06-19"
     }
   },
+  "credential-forwarding-all-env-sites": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "OAuth in bridgeEnv: patch ALL independent constructors — buildBridgeEnv fix alone misses doctor's own env builder.",
+    "l1": "PR #166 added ${CLAUDE_CODE_OAUTH_TOKEN} to buildBridgeEnv (demo serve template + delegate-time bridge). PR #169 found doctor.js builds its own bridgeEnv block independently — token absent on the doctor-persisted path caused 'Not logged in' on trio two-hop. A shared-helper fix silently leaves co-constructors unpatched; simpler tests pass while the doctor-wired multi-hop path fails.",
+    "value": "When adding a credential placeholder (e.g. ${CLAUDE_CODE_OAUTH_TOKEN}) to a bridge or worker env block, locate ALL independent construction sites — not just the shared helper. Three distinct paths build bridgeEnv in the A2A bridge: (1) serve template; (2) delegate-time buildBridgeEnv; (3) doctor's own bridgeEnv block in src/builder/doctor.js. Each must carry the placeholder.\n\nPattern: (a) add the credential to the shared helper; (b) grep the codebase for the env-variable name AND for 'bridgeEnv' to find co-constructors; (c) update each; (d) add a test asserting the doctor-persisted entry carries the placeholder (test/doctor-bridge.test.js does this).\n\nDiagnostic signal: failure reproduces only on multi-hop scenarios exercising doctor-generated wiring (e.g. trio two-hop) but not on simpler demo-e2e smoke tests — the missing site is whichever path those simpler tests don't exercise.\n\nProvenance: PR #166 (partial — buildBridgeEnv only) + PR #169 (2026-06-20, doctor path — completes all three bridge-env sites, closes #150).",
+    "provenance": {
+      "source": "PR #169: fix(doctor): forward OAuth token in bridge entry — fixes trio two-hop (#150)",
+      "ts": "2026-06-20"
+    }
+  },
   "a2a-http-dual-transport-dispatch": {
     "status": "active",
     "valid_to": null,
