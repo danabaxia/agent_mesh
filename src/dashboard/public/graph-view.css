@@ -131,6 +131,12 @@
 #view-graph .sched-run { font: 11px var(--mono); padding: 1px 7px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--teal); cursor: pointer; }
 #view-graph .sched-run:hover:not(:disabled) { background: var(--amber-bg); }
 #view-graph .sched-run:disabled { color: var(--idle); cursor: default; opacity: .55; }
+#view-graph .sched-result { color: var(--ink2); font: 11px var(--mono); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+#view-graph .sched-result.fail { color: #b91c1c; }
+#view-graph .sched-expand { font: 11px var(--mono); padding: 1px 6px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--ink2); cursor: pointer; }
+#view-graph .sched-expand:hover { background: var(--amber-bg); }
+#view-graph .sched-detail > td { padding: 0 12px 10px; background: #fbf9f3; }
+#view-graph .sched-report { border-left: 2px solid var(--line); }
 
 /* health panel header pills */
 #view-graph .hpill{font:600 10px var(--mono);padding:2px 9px;border-radius:999px;border:1px solid var(--line)}
