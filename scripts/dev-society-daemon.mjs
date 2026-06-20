@@ -46,6 +46,7 @@ import { runAnalystDailyReview } from './analyst-review-run.mjs';
 import { doctor } from '../src/builder/doctor.js';
 import { ensureLabels } from '../src/gh-labels.js';
 import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-lock.js';
+import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -144,6 +145,18 @@ if (!once && !selftest) {
     'issue-sweep': () => sweep()
       .then(() => ({ status: 'ok', output: 'issue-sweep complete' }))
       .catch((e) => { log('issue-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Daemon-driven prompt drain: merge CLEAN+APPROVED PRs on the daemon's reliable ~10min
+    // cadence instead of waiting on GitHub Actions' throttled cron (which leaves ready PRs
+    // idle ~1-2h). Reuses the gated, tested runSweep (AUTOMERGE_ENABLED + isAutoMergeable);
+    // the GitHub-Actions automerge stays as a backstop.
+    'automerge-sweep': () => runAutomergeSweep({
+      gh: async (a) => (await sh('gh', a, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      enabled: process.env.AUTOMERGE_ENABLED === 'true',
+      log: (...a) => log('automerge:', ...a),
+    })
+      .then((r) => ({ status: 'ok', output: r.disabled ? 'automerge disabled (AUTOMERGE_ENABLED!=true)' : `merged ${r.merged.length}, skipped ${r.skipped}, ineligible ${r.ineligible}` }))
+      .catch((e) => { log('automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
   };
   // Materialize managed wiring (registry.json / .mcp.json) before the scheduler
   // can fire any job — the daemon (unlike the dashboard) has no auto-sync, so
