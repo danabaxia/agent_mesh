@@ -60,6 +60,14 @@ export function buildBridgeEnv(callEnv, env, { mode } = {}) {
   ]) {
     if (env?.[k] !== undefined) out[k] = env[k];
   }
+  // Forward the Claude OAuth credential to the bridge as a `${VAR}` placeholder (NOT the
+  // literal — this entry is persisted to disk by doctor; the secret must never be written
+  // there). claude expands it from the parent worker's env when it spawns the bridge, and
+  // it cascades to the nested peer's serve-a2a → worker. Without this, nested delegation
+  // works only under keychain auth (local) and fails under env-token auth (CI / headless /
+  // server) with "Not logged in" — the root cause of the nightly L1 e2e failure (#150).
+  // When the var is unset (keychain dev) claude omits it, so keychain auth is unaffected.
+  out.CLAUDE_CODE_OAUTH_TOKEN = '${CLAUDE_CODE_OAUTH_TOKEN}';
   return out;
 }
 
