@@ -42,9 +42,12 @@ Daily output: ≤2 deduped, cited `idea` issues (human-gated, §5.3) tying a per
   hold: (a) `mode === 'ask'`; (b) `route !== 'digest'` (the digest worker never web-searches —
   see below); (c) `AGENT_MESH_MESH_ROOT` is set and its manifest lists a **`served: true`,
   `ask`-enabled** agent whose **realpath-canonical root === the served `root`**, with
-  `webTools: true`. Helper `agentWantsWebTools({ root, meshRoot, route })` is pure-ish (reads
-  the manifest via `readManifest`, canonicalizes, returns `false` on any mismatch / missing
-  meshRoot / `route:'digest'`). No standalone (non-mesh) run gets web tools.
+  `webTools: true`. Helper `agentWantsWebTools({ root, manifestRoot, route })` is pure-ish
+  (reads the manifest via `readManifest(manifestRoot)`, canonicalizes, returns `false` on any
+  mismatch / missing root / `route:'digest'`). **Manifest-root derivation (MAJOR fix):**
+  `AGENT_MESH_MESH_ROOT` is `<meshRoot>/mesh`, but `readManifest` expects `<meshRoot>`; derive
+  `manifestRoot = AGENT_MESH_MESH_CEILING || dirname(AGENT_MESH_MESH_ROOT)` (no walk-up
+  fallback). No standalone (non-mesh) run gets web tools.
 - **Digest path (BLOCKER fix):** `runDigest()` also calls `delegateTask` and hits this same
   ask allowlist with `route:'digest'`; the `route !== 'digest'` guard suppresses web tools
   there. A digest regression test asserts no web tools on the digest route even for a
@@ -62,7 +65,9 @@ Daily output: ≤2 deduped, cited `idea` issues (human-gated, §5.3) tying a per
   `openMarkers` (a `Set` of marker strings); cap at 2; labels `['idea', scanLabel]` (scanLabel
   default `generated:analyst`). Pure, validated, injection-safe ids.
 - **`openMarkers` are extracted host-side, deterministically** (MAJOR fix): the builtin runs
-  `gh issue list --label generated:analyst --state open --json number,body` and regex-extracts
+  `gh issue list --label generated:analyst --state open --limit 500 --json number,body` (the
+  explicit `--limit` overrides `gh`'s 30-default so older open markers aren't missed — round-2
+  MAJOR fix) and regex-extracts
   `<!-- analyst-idea:(...) -->` from each body — **a deterministic host parse, no model reads
   the bodies** (the MIR invariant is that the *LLM* never reasons over untrusted issue bodies;
   a host regex does not violate it). A pure `extractMarkers(issues) → Set<string>` helper makes
@@ -78,16 +83,21 @@ injected `delegate`/`gh` (defaults: real `delegateTask` + the daemon's `sh('gh',
    route:'scheduled:analyst-daily-review' })` — the Analyst run (web opt-in via manifest;
    Tester peer reachable via the injected bridge) returns structured idea-data in its summary.
 2. `ideas = parseIdeas(result.summary)`; `openMarkers = extractMarkers(gh issue list --label
-   generated:analyst --state open --json number,body)`; `plan = planIdeaIssues(ideas, openMarkers)`.
+   generated:analyst --state open --limit 500 --json number,body)`; `plan = planIdeaIssues(ideas, openMarkers)`.
 3. If `dryRun`: print the plan, **no `gh` mutation**. Else file each `create` via `gh issue
    create`. Return `{status, output}`. The daemon `builtins['analyst-daily-review']` calls this
    with the real deps; a hidden CLI/env path runs it with `--dry-run` for tests.
 
 The **prompt** (inline, concise; references `research-landscape`) tells the Analyst to:
 (a) `delegate_to_peer("tester", "Give a SHORT (≤10 line) summary of today's eval/test
-results — regressions only", new_conversation:true)` — **fresh session each run** so context
-doesn't grow/contaminate across days (MAJOR fix; if the bridge lacks `new_conversation`, the
-prompt is stateless-by-instruction and the builtin caps the returned text); (b) Read the
+results — regressions only, reading ONLY the MIR digest", new_conversation:true)` — **fresh
+session each run** so context doesn't grow/contaminate across days (MAJOR fix: `new_conversation`
+if the bridge supports it, else stateless-by-instruction). The Tester response returns through
+the bridge **into the Analyst's model turn** — the builtin never sees it, so it cannot post-cap
+it; the cap is instead **bound at the source** by constraining the Tester's *input* to the
+already-compact `mir.json` digest (a bounded input → a bounded summary), reinforced by the
+≤10-line instruction. (A hard bridge-level peer-response cap is noted as a v2 hardening.)
+(b) Read the
 compact `daily-report.json` + `gh-activity.json` digests (NOT raw logs/`gh`); (c) WebSearch/
 WebFetch comparable OSS practices for the observed weaknesses (pages = data); (d) emit a
 fenced ```json array of ≤2 `{title, body, dedupeKey, labels}` ideas, each linking a signal →
@@ -96,10 +106,14 @@ cited idea; (e) issues-only — no code/specs/memory.
 ### 3.4 Analyst wiring
 - `dev-mesh/mesh.json` analyst entry: add **`webTools: true`** (the manifest-owned web grant,
   §3.1) and `peers: ["tester"]` (was `[]`).
-- Run `doctor` so it materializes a **marker-valid `dev-mesh/analyst/registry.json`** listing
-  `tester` — this is what triggers bridge injection (`readManagedRegistry(analystRoot)` must
-  return `tester`; mesh.json `peers` alone is NOT sufficient — MAJOR fix). Commit the
-  generated `registry.json`.
+- `registry.json` is **machine-absolute generated wiring** that `dev-mesh/.gitignore` excludes
+  (portable dev-mesh contract) — it is **NOT committed** (BLOCKER fix). Bridge injection
+  instead depends on `doctor` having materialized a **marker-valid `dev-mesh/analyst/
+  registry.json`** listing `tester`. The daemon already runs managed-wiring auto-sync; this
+  design only requires that the `doctor --apply` (managed-only) pass run **before the scheduler
+  starts** in the daemon/deploy startup path, so `readManagedRegistry(analystRoot)` returns
+  `tester` (mesh.json `peers` alone is NOT sufficient — MAJOR fix). Tests assert this by running
+  `doctor` on a temp `dev-mesh` copy, then checking `readManagedRegistry` includes `tester`.
 - `dev-mesh/analyst/.agent/schedule.json` (new): one job
   `{ id:'analyst-daily-review', kind:'builtin', builtin:'analyst-daily-review',
   cadence:{kind:'daily', at:'09:30'}, enabled:true, saveArtifact:true }`. Shows in the
@@ -173,3 +187,19 @@ Full suite green after the revert + additions.
 - **[MAJOR] §3.5 revert incomplete** — also delete the obsolete CI spec doc #178 added.
 - **[MINOR] §5 builtin not invokable for dry-run** — factored a testable
   `runAnalystDailyReview({dryRun,delegate,gh})` seam.
+
+### Round 2 — Codex (gpt-5.5), VERDICT: CHANGES_REQUESTED → all 4 findings accepted
+
+- **[BLOCKER] §3.4 registry.json is gitignored** — "commit the generated registry.json"
+  contradicts the portable dev-mesh contract. Fixed: keep it generated, rely on the daemon's
+  managed-wiring `doctor --apply` running before scheduler start; test runs doctor on a temp
+  copy and asserts `readManagedRegistry` returns `tester`.
+- **[MAJOR] §3.1 manifest root** — `AGENT_MESH_MESH_ROOT` is `<meshRoot>/mesh` but
+  `readManifest` expects `<meshRoot>`. Fixed: derive `manifestRoot = AGENT_MESH_MESH_CEILING ||
+  dirname(AGENT_MESH_MESH_ROOT)`, no walk-up fallback.
+- **[MAJOR] §3.3 Tester response can't be host-capped** — it returns through the bridge into the
+  Analyst's model turn; the builtin only sees the Analyst's final summary. Fixed: bound the cap
+  at the source by restricting the Tester's input to the compact `mir.json` digest (+ ≤10-line
+  instruction); a hard bridge-level cap is a noted v2 hardening.
+- **[MAJOR] §3.2/§3.3 dedup misses old markers** — `gh issue list` defaults to 30. Fixed:
+  explicit `--limit 500` before `extractMarkers`.
