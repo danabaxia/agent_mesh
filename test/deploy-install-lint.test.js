@@ -2,7 +2,7 @@
 // output + its live-mode root-mismatch guard. Never invokes real launchctl.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, chmodSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, chmodSync, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -36,7 +36,7 @@ function stubPath() {
 }
 
 test('--dry-run emits correct daemon + deploy-sync plists and dedupe, no launchctl', { skip: POSIX_ONLY }, () => {
-  const stubDir = mkdtempSync(join(tmpdir(), 'stub-'));
+  const stubDir = realpathSync(mkdtempSync(join(tmpdir(), 'stub-')));
   for (const name of ['launchctl', 'claude', 'gh', 'node']) {
     const p = join(stubDir, name);
     writeFileSync(p, name === 'launchctl'
