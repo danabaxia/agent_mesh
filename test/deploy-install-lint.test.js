@@ -21,7 +21,10 @@ const script = fileURLToPath(new URL('../scripts/dev-society-deploy-install.sh',
 // launchctl call during --dry-run / the mismatch guard fails the test.
 // Also plant fake claude/gh/node so command -v resolves them in the stub dir.
 function stubPath() {
-  const dir = mkdtempSync(join(tmpdir(), 'stub-'));
+  // Canonicalize: os.tmpdir() can hand back an 8.3 short-form path (e.g. RUNNER~1)
+  // on some Windows runners and long-form on others; realpathSync pins the stored
+  // dir to one canonical form so any PATH comparison stays deterministic.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'stub-')));
   for (const name of ['launchctl', 'claude', 'gh', 'node']) {
     const p = join(dir, name);
     if (name === 'launchctl') {
@@ -102,7 +105,7 @@ test('live mode rejects empty DEV_SOCIETY_REPO before any mkdir/write', { skip: 
   // Builds a stub PATH that includes fake claude/gh/node + fail-loud launchctl.
   // DEV_SOCIETY_REPO is explicitly unset (empty string) — preflight must exit 1
   // before any mkdir or plist write.
-  const stubDir = mkdtempSync(join(tmpdir(), 'stub-'));
+  const stubDir = realpathSync(mkdtempSync(join(tmpdir(), 'stub-')));
   for (const name of ['launchctl', 'claude', 'gh', 'node']) {
     const p = join(stubDir, name);
     writeFileSync(p, name === 'launchctl'
@@ -129,7 +132,7 @@ test('live mode rejects empty DEV_SOCIETY_REPO before any mkdir/write', { skip: 
 });
 
 test('--dry-run emits the dashboard plist + sync env + reload', { skip: POSIX_ONLY }, () => {
-  const stubDir = mkdtempSync(join(tmpdir(), 'stub-'));
+  const stubDir = realpathSync(mkdtempSync(join(tmpdir(), 'stub-')));
   for (const name of ['launchctl', 'claude', 'gh', 'node']) {
     const p = join(stubDir, name);
     writeFileSync(p, name === 'launchctl'
