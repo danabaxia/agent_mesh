@@ -1,8 +1,10 @@
 import { mkdir, mkdtemp, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_LOG_DIR, READ_TOOLS, WRITE_TOOLS } from './config.js';
+import { readManifest } from './builder/manifest.js';
 import { buildAgentRuntimePrompt } from './agent-context.js';
 import { readQuickMemory } from './quick-memory.js';
 import { selectPrefetch, renderPrefetchBlock } from './prefetch.js';
@@ -134,6 +136,43 @@ export async function resolveMeshRoot(root, env) {
     if (parent === current) return null;
     current = parent;
   }
+}
+
+// Decide whether an ask-mode run may receive WEB_TOOLS. Operator-owned:
+// the grant is read ONLY from the mesh.json manifest (never a self-declared
+// agent.json card), so a tampered third-folder card cannot expand egress.
+// ALL must hold: manifestRoot present; route !== 'digest'; the manifest lists
+// a served:true, ask-enabled agent whose realpath-canonical root === `root`,
+// with webTools === true.
+export async function agentWantsWebTools({ root, manifestRoot, route }) {
+  if (!manifestRoot || route === 'digest') return false;
+  let manifest;
+  try {
+    manifest = await readManifest(manifestRoot);
+  } catch {
+    return false;
+  }
+  const agents = Array.isArray(manifest?.agents) ? manifest.agents : [];
+  let canonRoot;
+  try {
+    canonRoot = await realpath(root);
+  } catch {
+    return false;
+  }
+  for (const a of agents) {
+    if (a?.served !== true) continue;
+    if (!Array.isArray(a.enabledModes) || !a.enabledModes.includes('ask')) continue;
+    if (a.webTools !== true) continue;
+    if (typeof a.root !== 'string') continue;
+    let agentCanon;
+    try {
+      agentCanon = await realpath(join(manifestRoot, a.root));
+    } catch {
+      continue;
+    }
+    if (agentCanon === canonRoot) return true;
+  }
+  return false;
 }
 
 function buildClaudeInvocationSync(mode, task, includeSkill = false) {
