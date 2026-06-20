@@ -457,3 +457,171 @@ test('delegateToPeer(do) a2a log record carries peer_changes for downstream accu
   assert.deepEqual(done.peer_changes, ['lib/x.js'], 'peer_changes in a2a log for downstream accumulation');
   assert.equal(done.parent_run_id, 'run-parent');
 });
+
+// ---------------------------------------------------------------------------
+// fanOutToPeers (v2 scatter-gather)
+// ---------------------------------------------------------------------------
+
+// Registry with two peers for fan-out tests
+const MARKED_TWO = {
+  'x-agentmesh-generated': true,
+  peers: {
+    alpha: { root: '/tmp/alpha', command: 'node', args: ['/bin/agent-mesh.js', 'serve-a2a', '/tmp/alpha'], cwd: '/tmp/alpha', env: {} },
+    beta:  { root: '/tmp/beta',  command: 'node', args: ['/bin/agent-mesh.js', 'serve-a2a', '/tmp/beta'],  cwd: '/tmp/beta',  env: {} }
+  }
+};
+
+function makeMultiClientFactory(answers = {}) {
+  // answers: { peerName: taskResult | Error }
+  const calls = { sent: [] };
+  const factory = async () => ({
+    async send(peer, message) {
+      calls.sent.push({ peer, message });
+      const r = answers[peer];
+      if (r instanceof Error) throw r;
+      return r ?? doneTask(`answer from ${peer}`);
+    },
+    async close() {}
+  });
+  return { factory, calls };
+}
+
+test('fanOutToPeers happy path: 2 peers both succeed, results tagged correctly', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED_TWO);
+  const { factory, calls } = makeMultiClientFactory({
+    alpha: doneTask('alpha answer'),
+    beta:  doneTask('beta answer')
+  });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.fanOutToPeers({ peers: ['alpha', 'beta'], mode: 'ask', task: 'ping' });
+
+  assert.ok(Array.isArray(res), 'result is an array');
+  assert.equal(res.length, 2);
+
+  const alpha = res.find((r) => r.peer === 'alpha');
+  const beta  = res.find((r) => r.peer === 'beta');
+  assert.ok(alpha && beta, 'both peers in result');
+  assert.equal(alpha.status, 'ok');
+  assert.match(alpha.answer, /alpha answer/);
+  assert.equal(beta.status, 'ok');
+  assert.match(beta.answer, /beta answer/);
+
+  // both peers were contacted
+  assert.equal(calls.sent.length, 2);
+  assert.ok(calls.sent.some((c) => c.peer === 'alpha'));
+  assert.ok(calls.sent.some((c) => c.peer === 'beta'));
+});
+
+test('fanOutToPeers partial failure: one peer throws, other succeeds, call still returns array', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED_TWO);
+  const { factory } = makeMultiClientFactory({
+    alpha: doneTask('good answer'),
+    beta:  new Error('connection refused')
+  });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.fanOutToPeers({ peers: ['alpha', 'beta'], mode: 'ask', task: 'ping' });
+
+  assert.ok(Array.isArray(res), 'result is an array even with partial failure');
+  assert.equal(res.length, 2);
+  const alpha = res.find((r) => r.peer === 'alpha');
+  const beta  = res.find((r) => r.peer === 'beta');
+  assert.equal(alpha.status, 'ok');
+  assert.match(alpha.answer, /good answer/);
+  assert.equal(beta.status, 'error');
+  assert.equal(beta.error_code, 'spawn_failed');
+});
+
+test('fanOutToPeers mode_disabled: do-mode is refused, zero peers contacted', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED_TWO);
+  const { factory, calls } = makeMultiClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.fanOutToPeers({ peers: ['alpha', 'beta'], mode: 'do', task: 'write stuff' });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'mode_disabled');
+  assert.equal(calls.sent.length, 0, 'no peers contacted on mode_disabled');
+});
+
+test('fanOutToPeers bad_input: unknown peer is rejected atomically (zero peers contacted)', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED_TWO);
+  const { factory, calls } = makeMultiClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.fanOutToPeers({ peers: ['alpha', 'ghost'], mode: 'ask', task: 'ping' });
+
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
+  assert.match(res.summary, /ghost/);
+  assert.equal(calls.sent.length, 0, 'no peers contacted when any peer is unknown');
+});
+
+test('fanOutToPeers bad_input: empty peers array', async () => {
+  const root = await agentRootWith(MARKED_TWO);
+  const bridge = createBridge({ root, env: {}, createClient: makeMultiClientFactory().factory });
+
+  const res = await bridge.fanOutToPeers({ peers: [], mode: 'ask', task: 'ping' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
+});
+
+test('fanOutToPeers bad_input: peers count exceeds maxPeers cap', async () => {
+  const root = await agentRootWith(MARKED_TWO);
+  const bridge = createBridge({ root, env: { AGENT_MESH_FAN_OUT_MAX_PEERS: '2' }, createClient: makeMultiClientFactory().factory });
+
+  // 3 > cap of 2
+  const res = await bridge.fanOutToPeers({ peers: ['alpha', 'beta', 'alpha'], mode: 'ask', task: 'hi' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
+  assert.match(res.summary, /maxPeers/);
+});
+
+test('fanOutToPeers depth_budget: depth=0 → refusal, zero peers contacted', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED_TWO);
+  const { factory, calls } = makeMultiClientFactory();
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MESH_CEILING: meshRoot, AGENT_MESH_DEPTH: '0' },
+    createClient: factory
+  });
+
+  const res = await bridge.fanOutToPeers({ peers: ['alpha', 'beta'], mode: 'ask', task: 'ping' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'depth_budget');
+  assert.equal(calls.sent.length, 0, 'no peers contacted when depth exhausted');
+});
+
+test('fanOutToPeers markerless registry → bad_input, zero peers contacted', async () => {
+  const root = await agentRootWith({ peers: MARKED_TWO.peers }); // no marker
+  const { factory, calls } = makeMultiClientFactory();
+  const bridge = createBridge({ root, env: {}, createClient: factory });
+
+  const res = await bridge.fanOutToPeers({ peers: ['alpha', 'beta'], mode: 'ask', task: 'ping' });
+  assert.equal(res.ok, false);
+  assert.equal(res.error_code, 'bad_input');
+  assert.equal(calls.sent.length, 0);
+});
+
+test('fanOutToPeers: ask messages carry mode=ask metadata', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED_TWO);
+  const { factory, calls } = makeMultiClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  await bridge.fanOutToPeers({ peers: ['alpha', 'beta'], mode: 'ask', task: 'check this' });
+
+  for (const { message } of calls.sent) {
+    assert.equal(message.metadata['agentmesh/mode'], 'ask');
+    assert.equal(message.parts[0].text, 'check this');
+  }
+});
+
+test('buildTools includes fan_out_to_peers with correct schema', () => {
+  const tool = buildTools().find((t) => t.name === 'fan_out_to_peers');
+  assert.ok(tool, 'fan_out_to_peers tool is registered');
+  assert.ok(tool.inputSchema.properties.peers, 'peers property exists');
+  assert.equal(tool.inputSchema.properties.peers.type, 'array');
+  assert.ok(tool.inputSchema.required.includes('peers'), 'peers is required');
+  assert.ok(tool.inputSchema.required.includes('task'), 'task is required');
+});
