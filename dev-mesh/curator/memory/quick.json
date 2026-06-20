@@ -814,5 +814,16 @@
       "source": "PR #215: feat(dev-society): bug issues auto-fix without human approval (override the review gate)",
       "ts": "2026-06-20"
     }
+  },
+  "github-lazy-mergeability-force-view": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "gh pr list mergeState is lazy — freshly-DIRTY shows UNKNOWN/blank; force via per-PR gh pr view before filtering.",
+    "l1": "PR #205: mergefix filtered bulk gh pr list by mergeStateStatus=='DIRTY'. GitHub computes mergeability lazily — right after main advances, a freshly-conflicting PR reports UNKNOWN or blank, so the selector silently skipped it (3 runs logged 'no conflicting PR' while #199 was DIRTY). Fix: (1) gather DIRTY|UNKNOWN|blank candidates; (2) gh pr view <n> per candidate forces computation; (3) re-poll once for stragglers. Also: git merge origin/main fails with fatal: empty ident name on stock CI runners — set user.name/user.email before any merge commit.",
+    "value": "Apply when selecting PRs by merge state in GitHub Actions workflows:\n\n(1) Lazy mergeability: `gh pr list` does NOT compute mergeStateStatus immediately after main advances. A PR that just became conflicting shows UNKNOWN or blank in bulk list results — it is NOT yet DIRTY. GitHub evaluates mergeability lazily (per-PR read triggers computation).\n\nTwo-phase selection:\n- Bulk: gather candidates where mergeStateStatus ∈ {DIRTY, UNKNOWN, ''} — never filter DIRTY-only.\n- Per-PR force: call `gh pr view <N> --json mergeStateStatus` for each candidate; pick confirmed DIRTY ones. A single re-poll after a short wait catches stragglers.\n\nSymptom: mergefix logs 'no conflicting same-repo PR' across consecutive runs while a known-conflicting PR sits untouched. Root cause is always the bulk selector missing the UNKNOWN/blank window.\n\n(2) Git identity on stock CI runners: `git merge origin/main` produces a merge commit. A fresh GitHub Actions runner has no git identity. Absent → `fatal: empty ident name` (exit 128).\n\nFix: set before any merge commit:\n  git config user.name 'github-actions[bot]'\n  git config user.email 'github-actions[bot]@users.noreply.github.com'\n\nBoth bugs must be fixed together to drain the first conflicting PR: bug 1 blocks selection; bug 2 blocks resolution. PR #199 was DIRTY across multiple mergefix poll cycles without being caught by either.\n\nTest coverage: selector unit tests must include UNKNOWN and blank as positive cases; assert gh pr view is called per candidate; assert git config runs before git merge. Provenance: PR #205 (2026-06-20).",
+    "provenance": {
+      "source": "PR #205: fix(dev-mesh-mergefix): drain freshly-conflicting PRs (lazy-mergeability race + git identity)",
+      "ts": "2026-06-20"
+    }
   }
 }
