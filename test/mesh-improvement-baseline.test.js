@@ -39,6 +39,33 @@ test('second run computes signed deltas vs previous finding values', () => {
   assert.deepEqual(cur.trend.passRate, [0.9, 0.889]);
 });
 
+test('rolling-window median baseline ignores a single high-outlier prior run', () => {
+  // A stable precision history (~0.80), then ONE lucky-high run (0.95), then an ordinary
+  // 0.80 run. The baseline is the median of the recent window (~0.80), NOT the single
+  // previous lucky value (0.95) — so the ordinary run is not flagged as a regression.
+  // (The old single-prev-value baseline would have shown ~ -16% and filed a false positive.)
+  let mir = null;
+  for (const p of [0.80, 0.80, 0.81, 0.79, 0.80]) mir = applyBaseline(mk(0.9, p), mir, { at: AT, trendN: 10 });
+  const lucky = applyBaseline(mk(0.9, 0.95), mir, { at: AT, trendN: 10 });
+  const ordinary = applyBaseline(mk(0.9, 0.80), lucky, { at: AT, trendN: 10 });
+  const prec = ordinary.findings.find((f) => f.id === 'perf:6x-confusable:precision');
+  assert.ok(Math.abs(prec.metric.deltaPct) < 5,
+    `expected a small delta vs the median baseline, got ${prec.metric.deltaPct}`);
+});
+
+test('rolling window is bounded by trendN and a sustained regression still moves the baseline', () => {
+  // Window caps at trendN; once a genuinely lower value persists, the median follows it.
+  let mir = null;
+  for (let i = 0; i < 6; i++) mir = applyBaseline(mk(0.9, 0.90), mir, { at: AT, trendN: 4 });
+  assert.equal(mir.ledger['perf:6x-confusable:precision'].history.length, 4); // bounded
+  // First low run regresses vs the high median; deltas stay negative while it persists.
+  let cur = mir;
+  for (let i = 0; i < 4; i++) cur = applyBaseline(mk(0.9, 0.60), cur, { at: AT, trendN: 4 });
+  const prec = cur.findings.find((f) => f.id === 'perf:6x-confusable:precision');
+  // After the window fills with 0.60, the median has moved down to the new normal.
+  assert.equal(prec.metric.baseline, 0.60);
+});
+
 test('absent id carries forward with cleanRuns++ until GC; present id resets cleanRuns', () => {
   const stale = { id: 'perf:3x-disjoint:cost_usd', tier: 'soft', cluster: 'perf-regression', severity: null,
     metric: { name: 'cost_usd', value: 0.02, baseline: null, direction: 'lower_is_better', deltaPct: null },
