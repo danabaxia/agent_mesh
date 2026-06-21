@@ -11,6 +11,14 @@ function tierLabel(f) {
   if (f.tier === 'hard') return f.cluster === 'security-invariant' ? 'security' : 'regression';
   return f.cluster === 'behavior-regression' ? 'behavior' : 'perf';
 }
+// The label that decides routing (routeFor). A HARD regression — a test/eval that was
+// green and is now red — is a DEFECT, so it gets `bug`: issue-sweep then auto-routes it
+// to the Coder (bug-autofix, do-mode, no human approval). This is the automatic
+// report → Coder handoff. Security-invariant breaks and soft improvement findings stay
+// `idea` (human-gated) — those need a human's judgment before any code change.
+function routingLabel(f) {
+  return (f.tier === 'hard' && f.cluster !== 'security-invariant') ? 'bug' : 'idea';
+}
 function title(f) {
   const m = f.metric;
   if (f.tier === 'hard') return `[mesh-scan] ${f.cluster}: ${f.id}`;
@@ -42,7 +50,7 @@ export function planIssues(mir, { recoverRuns, scanLabel }) {
     plan.push({
       id: f.id, issueNumber, action: issueNumber == null ? 'create' : 'update',
       title: title(f), body: body(f, mir),
-      labels: ['idea', scanLabel, tierLabel(f)], marker: marker(f.id),
+      labels: [routingLabel(f), scanLabel, tierLabel(f)], marker: marker(f.id),
     });
   }
   // Close issues whose finding has been clean for >= recoverRuns and is not fileable now.
