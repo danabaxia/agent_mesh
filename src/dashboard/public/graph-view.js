@@ -24,8 +24,13 @@ let oedges = {};   // key `from|to` → { from, to, el }  (observed edges, persi
 let cx = 410, cy = 230, R = 158;
 const seen = new Set();
 let tip, clockTimer;
-let autoRefreshTimer = null, refreshing = false;
+let autoRefreshTimer = null, schedTimer = null, refreshing = false;
 const AUTO_REFRESH_MS = 20 * 60 * 1000;   // regenerate the daily report every 20 min while open
+// The schedules list (cheap on-disk read, no gh) refreshes on its own short cadence so a
+// newly-added/edited job appears without a manual page reload — the 20-min daily timer is
+// far too slow for the job list. (Bug: a job added while the Graph view was open never
+// showed up because loadSchedules() only ran once on view entry.)
+const SCHED_REFRESH_MS = 60 * 1000;
 
 // Regenerate the Daily Mesh Report (live gh + token logs), then reload the panels it
 // feeds (Token / Issues / PR). `manual` is from the ↻ button; auto calls pass false.
@@ -155,6 +160,8 @@ function loadAll() {
   // update on the daily schedule). Skipped while the tab is hidden to avoid background
   // gh queries; the manual ↻ button calls the same path.
   if (!autoRefreshTimer) autoRefreshTimer = setInterval(() => { if (!document.hidden) refreshDaily(false); }, AUTO_REFRESH_MS);
+  // Keep the SCHEDULES list fresh (newly-added jobs appear without a manual reload).
+  if (!schedTimer) schedTimer = setInterval(() => { if (!document.hidden) loadSchedules(); }, SCHED_REFRESH_MS);
   if (!es) {
     try { es = new EventSource('/api/events'); es.addEventListener('activity', () => loadActivity()); es.onerror = () => {}; } catch { /* no SSE */ }
   }

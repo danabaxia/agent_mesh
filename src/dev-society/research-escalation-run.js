@@ -1,7 +1,7 @@
 // src/dev-society/research-escalation-run.js — impure orchestration for ③a.
 // Injected `gh` (returns stdout string) + `dispatchAnalyst` ({issueNumber,prompt}→{done,text}).
 // Read-only gh (api user, issue list/view, pr view/diff) + the single mutation gh issue comment.
-import { MARKER, planResearch, buildResearchPrompt } from './research-escalation.js';
+import { MARKER, planResearch, buildResearchPrompt, parseStuckPr } from './research-escalation.js';
 
 const authoredByBot = (comments, botLogin) =>
   (Array.isArray(comments) ? comments : []).some(
@@ -24,6 +24,44 @@ export async function collectContext(gh, repo, f, log = () => {}) {
     ctx.diff = String(await gh(['pr', 'diff', String(f.prNum), '--repo', repo]));
   } catch (e) { log(`pr diff #${f.prNum} failed: ${e?.message || e}`); }
   return ctx;
+}
+
+/**
+ * Cleanup: close needs-human issues whose referenced PR is already MERGED or CLOSED.
+ * These backstops are stale once the PR resolves — further research/fix attempts would
+ * target a gone problem. Runs best-effort: a failed label/comment never blocks the close.
+ */
+export async function runMergedPrCleanup({ gh, repo, log = () => {} }) {
+  let issues = [];
+  try {
+    issues = JSON.parse(await gh(['issue', 'list', '--repo', repo, '--state', 'open',
+      '--label', 'needs-human', '--search', 'sort:created-asc', '--limit', '200',
+      '--json', 'number,body']));
+  } catch (e) { return { status: 'fail', error: 'needs-human list failed: ' + (e?.message || e) }; }
+  if (!Array.isArray(issues)) issues = [];
+
+  let closed = 0;
+  for (const iss of issues) {
+    const prNum = parseStuckPr(iss.body);
+    if (prNum == null) continue;
+    let prState;
+    try {
+      const pr = JSON.parse(await gh(['pr', 'view', String(prNum), '--repo', repo, '--json', 'state']));
+      prState = pr?.state;
+    } catch (e) { log(`pr state #${prNum} failed: ${e?.message || e}`); continue; }
+    if (prState !== 'MERGED' && prState !== 'CLOSED') continue;
+    try { await gh(['issue', 'edit', String(iss.number), '--repo', repo, '--add-label', 'done']); } catch (_) {}
+    try {
+      await gh(['issue', 'comment', String(iss.number), '--repo', repo, '--body',
+        `Referenced PR #${prNum} is ${prState.toLowerCase()} — this needs-human backstop is stale. Auto-closing.`]);
+    } catch (_) {}
+    try {
+      await gh(['issue', 'close', String(iss.number), '--repo', repo, '--reason', 'completed']);
+      closed += 1;
+      log(`closed #${iss.number} (PR #${prNum} is ${prState})`);
+    } catch (e) { log(`close #${iss.number} failed: ${e?.message || e}`); }
+  }
+  return { status: 'ok', output: `closed ${closed} stale needs-human issues` };
 }
 
 export async function runResearchEscalation({ gh, dispatchAnalyst, repo, cfg = {}, log = () => {} }) {
