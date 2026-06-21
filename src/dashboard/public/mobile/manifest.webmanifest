@@ -1,0 +1,14 @@
+{
+  "name": "Mesh Concierge",
+  "short_name": "Mesh",
+  "description": "Private phone front-door to your self-evolving agent mesh",
+  "start_url": "/m",
+  "scope": "/m",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
+  "icons": [
+    { "src": "/mobile/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

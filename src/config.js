@@ -49,6 +49,20 @@ export const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
 export const WEB_TOOLS = ['WebSearch', 'WebFetch'];
 export const READ_TOOLS = ['Read', 'Glob', 'Grep', 'LS'];
 
+// Dashboard host allowlist (spec 2026-06-21 mesh-mobile-concierge). The dashboard
+// stays bound to 127.0.0.1; Tailscale `serve` proxies the tailnet to localhost, so
+// proxied requests arrive with a MagicDNS Host header. The same-origin gate accepts
+// *.ts.net hosts automatically (tailnet membership + the dashboard token are the
+// real gate) plus any hostnames explicitly listed here. Never a wildcard; the token
+// is still required on every gated route.
+export function readDashboardAllowedHosts(value) {
+  if (!value || typeof value !== 'string') return [];
+  return value
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 export function readPositiveInt(value, fallback) {
   if (value === undefined || value === '') return fallback;
   const parsed = Number.parseInt(value, 10);

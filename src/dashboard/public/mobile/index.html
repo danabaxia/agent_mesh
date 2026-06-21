@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0f17" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Mesh Concierge</title>
+  <link rel="manifest" href="/mobile/manifest.webmanifest" />
+  <link rel="stylesheet" href="/mobile/app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">▣ Mesh Concierge</span>
+    <button id="refresh" class="ghost" title="Refresh status">⟳</button>
+  </header>
+
+  <!-- Chat view -->
+  <section id="view-chat" class="view active">
+    <div id="thread" class="thread" aria-live="polite"></div>
+    <form id="composer" class="composer">
+      <textarea id="input" rows="1" placeholder="Discuss an idea, give an instruction, or ask for status…" autocomplete="off"></textarea>
+      <button id="send" type="submit">Send</button>
+    </form>
+  </section>
+
+  <!-- Status view -->
+  <section id="view-status" class="view">
+    <div id="status" class="status"></div>
+  </section>
+
+  <nav class="tabbar">
+    <button class="tab active" data-view="chat">💬 Chat</button>
+    <button class="tab" data-view="status">📊 Status</button>
+  </nav>
+
+  <script type="module" src="/mobile/app.js"></script>
+</body>
+</html>

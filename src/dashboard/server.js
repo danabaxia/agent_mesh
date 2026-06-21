@@ -33,6 +33,7 @@ import {
 } from './data.js';
 import { extractSkillSummary, listLocalSkills } from '../agent-context.js';
 import { createConsoleBroker, ConsoleError } from './console.js';
+import { createConcierge, ConciergeError } from './concierge.js';
 import { createMeshWatcher } from './watcher.js';
 import { buildActivity } from './activity.js';
 import { buildActivityStats, rangeBounds } from './activity-stats.js';
@@ -45,7 +46,7 @@ import { parseTranscriptLine, redactSessionEvent } from './session-events.js';
 import { readSessionId, writeSessionId } from './session-store.js';
 import { readRunLogRecords, dedupeRunRecords } from '../log.js';
 import { aggregateRange } from '../report/tokens-range.js';
-import { MAX_TASK_CHARS, DEFAULT_AUTOSYNC_DEBOUNCE_MS, readPositiveInt } from '../config.js';
+import { MAX_TASK_CHARS, DEFAULT_AUTOSYNC_DEBOUNCE_MS, readPositiveInt, readDashboardAllowedHosts } from '../config.js';
 import { createAutoSync } from './auto-sync.js';
 import { doctor } from '../builder/doctor.js';
 import { fetchRemoteImage, defaultPinnedFetch } from './img-proxy.js';
@@ -88,7 +89,8 @@ const STATIC_MIME = {
   '.ico':  'image/x-icon',
   '.png':  'image/png',
   '.svg':  'image/svg+xml',
-  '.txt':  'text/plain; charset=utf-8'
+  '.txt':  'text/plain; charset=utf-8',
+  '.webmanifest': 'application/manifest+json; charset=utf-8'
 };
 
 // MIME map for deliverable previews (/api/agent/:name/deliverable). HTML gets
@@ -321,7 +323,18 @@ function parseCookies(cookieHeader) {
  * @param {number} listenerPort
  * @returns {boolean}
  */
-function passesSameOriginGate(req, listenerPort) {
+/**
+ * Is `hostName` an accepted remote (proxied) host? Either a *.ts.net MagicDNS name
+ * (Tailscale serve — tailnet membership + token are the gate) or an explicitly
+ * allowlisted hostname. Never a wildcard; localhost/127.0.0.1 are handled separately.
+ */
+function isAllowedRemoteHost(hostName, allowedHosts) {
+  const h = hostName.toLowerCase();
+  if (h.endsWith('.ts.net')) return true;
+  return allowedHosts.includes(h);
+}
+
+function passesSameOriginGate(req, listenerPort, allowedHosts = []) {
   const hostHeader = req.headers['host'] ?? '';
   const portStr = String(listenerPort);
 
@@ -337,10 +350,21 @@ function passesSameOriginGate(req, listenerPort) {
     hostPort = parts[1] ?? portStr;
   }
 
-  // Hostname must be 127.0.0.1 or localhost
-  if (hostName !== '127.0.0.1' && hostName !== 'localhost') return false;
-  // Port must match listener
-  if (hostPort !== portStr) return false;
+  const isLocal = hostName === '127.0.0.1' || hostName === 'localhost';
+  const isRemote = !isLocal && isAllowedRemoteHost(hostName, allowedHosts);
+
+  // Hostname must be a known local host or an allowlisted remote (proxied) host.
+  if (!isLocal && !isRemote) return false;
+
+  // Local hosts must match the listener port exactly. Allowlisted remote hosts are
+  // reached through a TLS proxy (Tailscale serve on 443), so the Host carries no
+  // port or :443 — accept that, but still reject a mismatched explicit port.
+  if (isLocal) {
+    if (hostPort !== portStr) return false;
+  } else {
+    const noColon = !hostHeader.includes(':') || bracketMatch && !bracketMatch[2];
+    if (!(noColon || hostPort === '443' || hostPort === portStr)) return false;
+  }
 
   // Check Sec-Fetch-Site
   const sfs = req.headers['sec-fetch-site'];
@@ -349,6 +373,11 @@ function passesSameOriginGate(req, listenerPort) {
   // Check Origin header as fallback (for browsers that don't send Sec-Fetch-Site)
   const origin = req.headers['origin'];
   if (origin) {
+    if (isRemote) {
+      // Same-origin under the proxy: https on the MagicDNS/allowlisted host.
+      if (origin === `https://${hostName}` || origin === `https://${hostName}:${hostPort}`) return true;
+      return false;
+    }
     const expectedOrigin = `http://127.0.0.1:${listenerPort}`;
     const expectedOriginLocal = `http://localhost:${listenerPort}`;
     if (origin === expectedOrigin || origin === expectedOriginLocal) return true;
@@ -673,27 +702,30 @@ function consoleErrorStatus(code) {
 // Route handling
 // ---------------------------------------------------------------------------
 
-async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dailyRefresh, dashboardOwnsScheduler }) {
+async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedHosts = [], concierge, consoleBroker, chatEnabled, sse, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, sessionLogEnabled, fetchImage, mirrorStreams, rotationManager, spawnLocate, scheduler, dailyReportPath, dailyReportDir, dailyRefresh, dashboardOwnsScheduler }) {
   applySecurityHeaders(res);
 
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${listenerPort}`);
   const pathname = url.pathname;
 
   // -----------------------------------------------------------------------
-  // Bootstrap route: GET /?t=<token>
+  // Bootstrap route: GET /?t=<token>  (and /m?t=<token> for the mobile PWA)
   // -----------------------------------------------------------------------
-  if (pathname === '/' && req.method === 'GET' && url.searchParams.has('t')) {
+  if ((pathname === '/' || pathname === '/m') && req.method === 'GET' && url.searchParams.has('t')) {
     const candidate = url.searchParams.get('t');
     if (!tokenEquals(candidate, token)) {
       send403(res, 'Invalid token');
       return;
     }
-    // Set cookie and redirect to clean URL
+    // When reached through an HTTPS proxy (Tailscale serve sets X-Forwarded-Proto),
+    // mark the cookie Secure so it is only ever returned over TLS.
+    const secure = req.headers['x-forwarded-proto'] === 'https' ? ' Secure;' : '';
+    // Set cookie and redirect to the clean URL (preserving the requested page).
     res.setHeader(
       'Set-Cookie',
-      `${COOKIE_NAME}=${token}; SameSite=Strict; HttpOnly; Path=/`
+      `${COOKIE_NAME}=${token}; SameSite=Strict; HttpOnly;${secure} Path=/`
     );
-    res.writeHead(302, { Location: '/' });
+    res.writeHead(302, { Location: pathname });
     res.end();
     return;
   }
@@ -703,7 +735,7 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
   // -----------------------------------------------------------------------
 
   // Same-origin gate
-  if (!passesSameOriginGate(req, listenerPort)) {
+  if (!passesSameOriginGate(req, listenerPort, allowedHosts)) {
     send403(res, 'Cross-origin request denied');
     return;
   }
@@ -2564,6 +2596,41 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
   }
 
   // -----------------------------------------------------------------------
+  // Concierge (mobile phone front-door, spec 2026-06-21).
+  //   POST /api/concierge/message  → one ask-only chat turn; never writes.
+  //   POST /api/concierge/confirm  → the SINGLE write surface (gh issue create),
+  //                                  fired only on the owner's explicit tap.
+  // Both sit behind the same-origin gate + cookie already enforced above.
+  // -----------------------------------------------------------------------
+  if (pathname === '/api/concierge/message' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse((await readBodyCapped(req, 64 * 1024)) || '{}'); }
+    catch (err) { sendJson(res, err.tooLarge ? 413 : 400, { ok: false, error: { code: 'bad_input' } }); return; }
+    try {
+      const out = await concierge.message({ history: payload.history, text: payload.text });
+      sendJson(res, 200, { ok: true, ...out });
+    } catch (err) {
+      if (err instanceof ConciergeError) sendJson(res, err.status, { ok: false, error: { code: 'concierge', message: err.message, detail: err.detail } });
+      else sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
+    }
+    return;
+  }
+
+  if (pathname === '/api/concierge/confirm' && req.method === 'POST') {
+    let payload;
+    try { payload = JSON.parse((await readBodyCapped(req, 64 * 1024)) || '{}'); }
+    catch (err) { sendJson(res, err.tooLarge ? 413 : 400, { ok: false, error: { code: 'bad_input' } }); return; }
+    try {
+      const out = await concierge.confirm({ title: payload.title, body: payload.body, labels: payload.labels });
+      sendJson(res, 200, { ok: true, ...out });
+    } catch (err) {
+      if (err instanceof ConciergeError) sendJson(res, err.status, { ok: false, error: { code: 'concierge', message: err.message, detail: err.detail } });
+      else sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
+    }
+    return;
+  }
+
+  // -----------------------------------------------------------------------
   // Static asset serving: GET / → index.html; GET /app.js, /app.css, etc.
   // Served ONLY behind the auth cookie (already checked above).
   // Path must be within PUBLIC_DIR (no traversal).
@@ -2571,7 +2638,11 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
 
   if (req.method === 'GET') {
     // Map / to board2.html (the dashboard; the legacy index.html/app.js was removed).
-    const assetPath = pathname === '/' ? '/board2.html' : pathname;
+    // Map /m to the mobile concierge PWA (spec 2026-06-21). Its assets live under
+    // /mobile/* and are referenced absolutely so they resolve from the /m page.
+    const assetPath = pathname === '/' ? '/board2.html'
+      : pathname === '/m' ? '/mobile/index.html'
+      : pathname;
 
     // Reject traversal attempts (%2e, double-dot, etc.)
     if (assetPath.includes('..') || assetPath.includes('\0')) {
@@ -2770,7 +2841,13 @@ function loadOrCreatePersistedToken(meshRoot) {
   return fresh;
 }
 
-export function createDashboardServer({ meshRoot, port = 7077, token, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir, regenerateDaily }) {
+export function createDashboardServer({ meshRoot, port = 7077, token, allowedHosts, concierge, consoleBroker, watchPollMs = 1000, allowShell = false, chat = false, shellLauncher, sessionRunner, sessionIndex, sessionMirror, sessionLive, imgFetcher, spawnLocate, scheduler, rotation, runSync, dailyReportPath, dailyReportDir, regenerateDaily }) {
+  // Host allowlist for the same-origin gate. Defaults from env; *.ts.net is always
+  // accepted (Tailscale serve). Injectable for tests.
+  const resolvedAllowedHosts = allowedHosts ?? readDashboardAllowedHosts(process.env.AGENT_MESH_DASHBOARD_ALLOWED_HOSTS);
+  // Concierge (mobile phone front-door): ask-only chat + tap-gated issue creation.
+  // Injectable for tests; defaults to a real concierge bound to this mesh root.
+  const conciergeApi = concierge ?? createConcierge({ meshRoot });
   // Shared in-flight guard so concurrent POST /api/daily/refresh coalesce onto one run.
   const dailyRefresh = { fn: regenerateDaily ?? defaultRegenerateDaily, inflight: null };
   // Resolve auth token. Precedence:
@@ -2884,6 +2961,8 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
       meshRoot,
       token: authToken,
       listenerPort: resolvedPort,
+      allowedHosts: resolvedAllowedHosts,
+      concierge: conciergeApi,
       consoleBroker: broker,
       chatEnabled,
       sse,
