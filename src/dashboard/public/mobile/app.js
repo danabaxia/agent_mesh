@@ -43,11 +43,27 @@ export function summarizeStatus({ health, daily } = {}) {
   if (daily && typeof daily === 'object') {
     const s = daily.summary ?? daily.report ?? daily;
     const rows = [];
-    const pick = (k, label) => { if (s && s[k] != null) rows.push({ label, value: String(s[k]) }); };
-    pick('openPrs', 'Open PRs'); pick('open_prs', 'Open PRs');
-    pick('mergedToday', 'Merged today'); pick('merged_today', 'Merged today');
-    pick('openIssues', 'Open issues'); pick('open_issues', 'Open issues');
-    pick('tokens', 'Tokens'); pick('totalTokens', 'Tokens');
+    const num = (n) => typeof n === 'number' ? n.toLocaleString() : null;
+    const add = (label, val) => { if (val != null && val !== '') rows.push({ label, value: String(val) }); };
+    // Real daily-report shape: prs/issues are {opened[],merged[],closed[],openNow},
+    // tokens is {total:{input,output,costUsd,...}} — render scalars, never an object
+    // (the old code String()'d the tokens object → "[object Object]").
+    if (s.prs && typeof s.prs === 'object') {
+      add('PRs merged', Array.isArray(s.prs.merged) ? s.prs.merged.length : num(s.prs.merged));
+      add('PRs open', num(s.prs.openNow));
+    }
+    if (s.issues && typeof s.issues === 'object') add('Issues open', num(s.issues.openNow));
+    const tot = s.tokens && typeof s.tokens === 'object' ? (s.tokens.total ?? s.tokens) : null;
+    if (tot && typeof tot === 'object') {
+      if (typeof tot.costUsd === 'number') add('Cost (24h)', '$' + tot.costUsd.toFixed(2));
+      const io = (typeof tot.input === 'number' || typeof tot.output === 'number') ? (tot.input || 0) + (tot.output || 0) : null;
+      add('Tokens in+out', num(io));
+    }
+    // Tolerate simpler/flat report shapes (scalars only — never stringify an object).
+    if (!rows.length) {
+      const flat = (k, label) => { if (typeof s[k] === 'number' || typeof s[k] === 'string') add(label, s[k]); };
+      flat('openPrs', 'Open PRs'); flat('mergedToday', 'Merged today'); flat('openIssues', 'Open issues');
+    }
     if (rows.length) cards.push({ title: 'Daily report', rows });
   }
 

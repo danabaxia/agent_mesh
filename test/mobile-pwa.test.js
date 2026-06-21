@@ -36,6 +36,22 @@ test('summarizeStatus tolerates missing data and classifies health', () => {
   assert.ok(bad[0].rows[0].cls === 'bad');
 });
 
+test('summarizeStatus renders the real daily-report shape (no [object Object])', () => {
+  const cards = summarizeStatus({ daily: {
+    prs: { merged: [{}, {}], openNow: 2 },
+    issues: { openNow: 17 },
+    tokens: { total: { input: 20577, output: 22855, costUsd: 2.0809 } }
+  }});
+  const daily = cards.find((c) => c.title === 'Daily report');
+  const flat = JSON.stringify(daily.rows);
+  assert.ok(!flat.includes('[object Object]'), 'never stringifies an object');
+  assert.ok(daily.rows.some((r) => r.label === 'PRs merged' && r.value === '2'));
+  assert.ok(daily.rows.some((r) => r.label === 'PRs open' && r.value === '2'));
+  assert.ok(daily.rows.some((r) => r.label === 'Issues open' && r.value === '17'));
+  assert.ok(daily.rows.some((r) => r.label === 'Cost (24h)' && r.value === '$2.08'));
+  assert.ok(daily.rows.some((r) => r.label === 'Tokens in+out' && r.value === (20577 + 22855).toLocaleString()));
+});
+
 test('relTime renders compact relative ages', () => {
   const now = Date.parse('2026-06-21T12:00:00Z');
   assert.equal(relTime('2026-06-21T11:59:30Z', now), '30s');
