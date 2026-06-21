@@ -162,3 +162,35 @@ test('buildAgentCard exposes the v1.0 A2A card fields and x-agentmesh extension'
   assert.equal(card.skills[0].tags.includes('tests'), true);
   assert.deepEqual(card['x-agentmesh'].modes, ['ask', 'do']);
 });
+
+test('buildTaskFromDelegateResult: cost_usd+downstream_cost_usd in metrics produces subtree_cost_usd', () => {
+  const task = buildTaskFromDelegateResult({
+    id: 't-cost',
+    message: { messageId: 'm-cost' },
+    metrics: { total_ms: 50, cost_usd: 0.002, downstream_cost_usd: 0.005 },
+    result: { status: 'done', summary: 'done', files_changed: [], log_path: '/tmp/l.json' }
+  });
+  const m = task.metadata['agentmesh/metrics'];
+  assert.equal(m.cost_usd, 0.002);
+  assert.ok(Math.abs(m.subtree_cost_usd - 0.007) < 1e-9);
+});
+
+test('buildTaskFromDelegateResult: subtree_cost_usd absent in metrics is absent from Task (not zeroed)', () => {
+  const task = buildTaskFromDelegateResult({
+    id: 't-nocost',
+    message: { messageId: 'm-nocost' },
+    metrics: { total_ms: 50 },
+    result: { status: 'done', summary: 'done', files_changed: [], log_path: '/tmp/l.json' }
+  });
+  assert.equal('subtree_cost_usd' in task.metadata['agentmesh/metrics'], false);
+});
+
+test('buildTaskFromDelegateResult: subtree_cost_usd=null in metrics is absent from Task', () => {
+  const task = buildTaskFromDelegateResult({
+    id: 't-nullcost',
+    message: { messageId: 'm-nullcost' },
+    metrics: { total_ms: 50, subtree_cost_usd: null },
+    result: { status: 'done', summary: 'done', files_changed: [], log_path: '/tmp/l.json' }
+  });
+  assert.equal('subtree_cost_usd' in task.metadata['agentmesh/metrics'], false);
+});

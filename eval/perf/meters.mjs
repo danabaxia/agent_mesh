@@ -104,7 +104,6 @@ export function efficiency() {
     const sum = (pick) => all.reduce((n, r) => n + (pick(r) ?? 0), 0);
     const tokens_in = sum((r) => numOrNull(r.usage?.input_tokens));
     const tokens_out = sum((r) => numOrNull(r.usage?.output_tokens));
-    const cost_usd = all.reduce((n, r) => n + (numOrNull(r.usage?.total_cost_usd) ?? 0), 0);
     const worker_ms = sum((r) => durationMs(r));
 
     const rm = rootMetrics(ctx.result);
@@ -112,6 +111,13 @@ export function efficiency() {
     const overhead_ms = rm && numOrNull(rm.total_ms) != null && numOrNull(rm.worker_run_ms) != null
       ? Math.max(0, rm.total_ms - rm.worker_run_ms)
       : null;
+    // Prefer subtree_cost_usd from the root Task metrics when present (single
+    // accurate field, no run-log correlation needed). Fall back to summing
+    // usage.total_cost_usd across all run records for older agents or errors.
+    const rmSubtree = rm ? numOrNull(rm.subtree_cost_usd) : null;
+    const cost_usd = rmSubtree !== null
+      ? rmSubtree
+      : all.reduce((n, r) => n + (numOrNull(r.usage?.total_cost_usd) ?? 0), 0);
 
     return {
       latency_ms,

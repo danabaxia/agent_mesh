@@ -960,3 +960,78 @@ test('delegateTask do mode: aggregateDownstreamChanges reads a2a log records by 
     { peer: 'lib-peer', files_changed: ['src/foo.ts', 'src/bar.ts'], best_effort: false }
   ]);
 });
+
+test('delegateTask: downstream_cost_usd is null when no peer bridge calls', async () => {
+  // A hop with a parseable cost envelope and NO peer bridge calls:
+  // downstream_cost_usd stays null; subtree_cost_usd will be computed by normalizeMetrics.
+  const root = await createGitRepo();
+  const fakeClaude = await createFakeClaude(`
+    process.stdout.write(JSON.stringify({ result: 'done', total_cost_usd: 0.001 }));
+  `);
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_CLAUDE: fakeClaude, AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'simple ask' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.usage.total_cost_usd, 0.001);
+  assert.equal(result.downstream_cost_usd, undefined, 'no downstream when no peer bridge calls');
+});
+
+test('delegateTask: downstream_cost_usd rolls up 3-hop chain (A=0.001, B-subtree=0.002 → downstream=0.002)', async () => {
+  // Simulates A → B → C where:
+  //   A's own cost: 0.001 (from the result envelope)
+  //   B's subtree_cost_usd logged in the a2a record: 0.002 (B 0.001 + C 0.001)
+  // Expected: A.downstream_cost_usd = 0.002 (B's subtree_cost_usd)
+  // normalizeMetrics then computes A.subtree_cost_usd = 0.001 + 0.002 = 0.003
+  const root = await createGitRepo();
+  const fakeClaude = await createFakeClaude(`
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const date = new Date().toISOString().slice(0, 10);
+    const logDir = path.join(process.cwd(), '.agent-mesh', 'logs');
+    await fs.mkdir(logDir, { recursive: true });
+    const logFile = path.join(logDir, 'a2a-' + date + '.jsonl');
+    // Simulate B's done record: B's subtree included C (0.001+0.001=0.002)
+    const record = JSON.stringify({
+      kind: 'a2a', to: 'b-agent', state: 'done',
+      parent_run_id: process.env.AGENT_MESH_RUN_ID,
+      subtree_cost_usd: 0.002
+    });
+    await fs.appendFile(logFile, record + '\\n', 'utf8');
+    // A's own cost = 0.001
+    process.stdout.write(JSON.stringify({ result: 'done', total_cost_usd: 0.001 }));
+  `);
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_CLAUDE: fakeClaude, AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'multi-hop chain' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.usage.total_cost_usd, 0.001, 'own hop cost unchanged');
+  assert.ok(Math.abs(result.downstream_cost_usd - 0.002) < 1e-9,
+    `downstream_cost_usd should be 0.002, got ${result.downstream_cost_usd}`);
+});
+
+test('delegateTask: downstream_cost_usd absent when result envelope has no cost', async () => {
+  // When the worker output is not a parseable cost envelope (e.g. bare text),
+  // downstream_cost_usd must be absent so callers can distinguish "zero" from "unknown".
+  const root = await createGitRepo();
+  const fakeClaude = await createFakeClaude(`
+    console.log('done without a JSON envelope');
+  `);
+
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_CLAUDE: fakeClaude, AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'unparseable output' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.usage, undefined, 'no usage when output is bare text');
+  assert.equal(result.downstream_cost_usd, undefined, 'downstream_cost_usd absent when no bridge calls with costs');
+});
