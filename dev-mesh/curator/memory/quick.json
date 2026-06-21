@@ -903,6 +903,17 @@
       "ts": "2026-06-20"
     }
   },
+  "permissions-floor-command-group-match": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "In permissions floor lints, match the full command GROUP (`/\\bgh pr\\s/`) not a single subcommand like `/gh pr list/`.",
+    "l1": "PR #262 / Issue #248: the `pull-requests` scope floor lint in `dev-mesh-workflow.test.js` only triggered on `/gh pr list/`, leaving `gh pr comment`, `gh pr view`, `gh pr checkout`, `gh pr merge`, `gh pr review`, and `gh pr create` uncovered. A workflow using `gh pr view` without `pull-requests: read` would silently pass CI. Fix: `/\\bgh pr\\s/` catches the whole subcommand family. General rule: permissions floor assertions must match command families, not individual subcommands.",
+    "value": "Pattern: scope permissions floor assertions to command families, not individual subcommands.\n\nSymptom: `/gh pr list/` in the floor lint condition (test/dev-mesh-workflow.test.js) only catches workflows that run `gh pr list`. Workflows using `gh pr comment`, `gh pr view`, `gh pr checkout`, `gh pr merge`, `gh pr review`, or `gh pr create` pass lint without asserting `pull-requests: read/write` — a silent gap that survives until a runtime 403.\n\nRoot cause: the floor auto-discovery work (see test-dynamic-discovery-over-lists) enumerated subjects dynamically, but the condition guarding whether a workflow \"needs pull-requests scope\" was a single-subcommand match. Every new `gh pr <sub>` operation outside the literal `list` expanded the uncovered surface with no CI signal.\n\nFix: replace the literal with the command-group anchor:\n  // WRONG — single subcommand\n  if (/gh pr list/.test(content)) assertHas('pull-requests');\n  // CORRECT — full gh-pr family\n  if (/\\bgh pr\\s/.test(content)) assertHas('pull-requests');\n\nGeneralised rule: for any CLI tool with a subcommand namespace (gh pr, gh issue, gh release, gh workflow), the floor condition must match the namespace prefix. This is especially load-bearing for `pull-requests` and `issues` — both map to a family of subcommands a reviewer may not enumerate when adding a new step.\n\nChecklist when adding or reviewing a new floor condition:\n(1) Identify the scope needed.\n(2) Find ALL subcommands that need it (`gh pr *` → pull-requests; `gh issue *` → issues).\n(3) Write the condition as `/\\bgh pr\\s/` (word-boundary + space prevents `gh prsomething` false-positive).\n(4) Verify the guard is not vacuous: assert found.length > 0 after collecting matching workflows.\n\nProvenance: PR #262 / Issue #248 (2026-06-21), completing the permissions floor auto-discovery hardening.",
+    "provenance": {
+      "source": "PR #262 (2026-06-21): test(dev-mesh): broaden PERMISSIONS FLOOR gh-pr check to all subcommands",
+      "ts": "2026-06-21"
+    }
+  },
   "state-after-mutation": {
     "status": "active",
     "valid_to": null,
