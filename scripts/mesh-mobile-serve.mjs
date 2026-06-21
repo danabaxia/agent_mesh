@@ -26,14 +26,23 @@ export function resolveMagicHost(statusJson) {
   return dns.replace(/\.$/, '');
 }
 
-/** The link to open once on the phone: HTTPS MagicDNS host + the mobile page + token. */
+/** The link to open once on the phone: the MagicDNS host + the mobile page + token. */
 export function bootstrapUrl(host, token) {
-  return `https://${host}/m?t=${token}`;
+  return `http://${host}/m?t=${token}`;
 }
 
-/** `tailscale serve` args that proxy tailnet :443 to the local dashboard. */
+/**
+ * `tailscale serve` args that proxy the tailnet to the local dashboard.
+ *
+ * Serves over HTTP on tailnet port 80 (`--http=80 <port>`). Tailscale's WireGuard
+ * layer already encrypts all tailnet traffic, so this is private + encrypted in
+ * transit without needing the tailnet's "HTTPS Certificates" feature — which is OFF
+ * by default and would make an `--https=443` serve fail with "does not support
+ * getting TLS certs". The target is the bare local port, NOT `127.0.0.1:<port>`,
+ * which this CLI rejects.
+ */
 export function serveArgs(port) {
-  return ['serve', '--bg', '--https=443', `127.0.0.1:${port}`];
+  return ['serve', '--bg', '--http=80', String(port)];
 }
 
 function readToken(meshRoot) {
