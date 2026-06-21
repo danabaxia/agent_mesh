@@ -2640,6 +2640,17 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     return;
   }
 
+  if (pathname === '/api/concierge/history' && req.method === 'GET') {
+    const limit = Math.max(1, Math.min(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 200));
+    try {
+      const history = await concierge.getHistory({ limit });
+      sendJson(res, 200, { ok: true, history });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
+    }
+    return;
+  }
+
   if (pathname === '/api/concierge/confirm' && req.method === 'POST') {
     let payload;
     try { payload = JSON.parse((await readBodyCapped(req, 64 * 1024)) || '{}'); }

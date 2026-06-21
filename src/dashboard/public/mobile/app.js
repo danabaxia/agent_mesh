@@ -216,6 +216,25 @@ function mount() {
 
   $('refresh').onclick = loadStatus;
 
+  // Re-hydrate thread from server-side conversation log (cross-session continuity).
+  (async () => {
+    try {
+      const r = await fetch('/api/concierge/history?limit=20', { headers: authHeaders() });
+      if (!r.ok) return;
+      const data = await r.json().catch(() => null);
+      if (!Array.isArray(data?.history) || !data.history.length) return;
+      for (const turn of data.history) {
+        if (turn.role === 'user') {
+          addBubble('owner', turn.text || '');
+          history.push({ role: 'user', text: turn.text || '' });
+        } else {
+          addBubble('assistant', turn.reply || turn.text || '');
+          history.push({ role: 'assistant', text: turn.reply || turn.text || '' });
+        }
+      }
+    } catch { /* no history yet — first session */ }
+  })();
+
   addBubble('assistant', 'Hi — I\'m your mesh concierge. Tell me an idea to discuss, an instruction to relay, or ask what the mesh is up to. I\'ll only file something when you tap Confirm.');
 }
 

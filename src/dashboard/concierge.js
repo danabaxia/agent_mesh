@@ -26,7 +26,70 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { spawnFile } from '../process.js';
-import { READ_TOOLS } from '../config.js';
+import { READ_TOOLS, DEFAULT_CONCIERGE_HISTORY_MAX, DEFAULT_CONCIERGE_CONTEXT_TURNS } from '../config.js';
+import { atomicWriteFile } from '../atomic-write.js';
+
+// Path of the server-side conversation log (relative to mesh root).
+const HISTORY_FILE = 'mesh/concierge/history.jsonl';
+
+// ── Pure history helpers (exported for tests) ─────────────────────────────
+
+/**
+ * Parse a JSONL string into an array of history entry objects.
+ * Malformed lines are skipped (tolerant).
+ */
+export function parseHistoryLines(text) {
+  if (!text || typeof text !== 'string') return [];
+  return text.split('\n').flatMap((line) => {
+    const l = line.trim();
+    if (!l) return [];
+    try { return [JSON.parse(l)]; } catch { return []; }
+  });
+}
+
+/**
+ * Serialize history entries to JSONL text.
+ */
+export function serializeHistoryLines(entries) {
+  return entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : '');
+}
+
+/**
+ * Trim an entries array to at most `max` entries (oldest removed first).
+ */
+export function trimEntries(entries, max) {
+  return entries.length <= max ? entries : entries.slice(entries.length - max);
+}
+
+/**
+ * Normalize a history entry to the shape buildPrompt expects: { role, text, ts? }.
+ * Assistant entries use `reply`; normalize to `text` so one access works for both.
+ */
+export function normalizeEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const text = entry.role === 'assistant'
+    ? (entry.reply ?? entry.text ?? '')
+    : (entry.text ?? '');
+  return { role: entry.role, text: String(text), ts: entry.ts ?? null };
+}
+
+// ── Impure history I/O (injectable for tests) ─────────────────────────────
+
+async function defaultAppendHistory(meshRoot, entries, max) {
+  const path = join(meshRoot, HISTORY_FILE);
+  let existing = [];
+  try { existing = parseHistoryLines(await readFile(path, 'utf8')); } catch { /* first write */ }
+  const all = trimEntries([...existing, ...entries], max);
+  await atomicWriteFile(path, serializeHistoryLines(all));
+}
+
+async function defaultLoadHistory(meshRoot, limit) {
+  try {
+    const raw = await readFile(join(meshRoot, HISTORY_FILE), 'utf8');
+    const entries = parseHistoryLines(raw);
+    return entries.slice(-limit).map(normalizeEntry).filter(Boolean);
+  } catch { return []; }
+}
 
 export class ConciergeError extends Error {
   constructor(message, { status = 500, detail } = {}) {
@@ -178,28 +241,64 @@ async function defaultRunGh({ title, body, labels, meshRoot }) {
  * Create a concierge bound to one mesh root.
  * @param {object} opts
  * @param {string} opts.meshRoot
- * @param {Function} [opts.runAsk]   injectable ask runner (tests)
- * @param {Function} [opts.runGh]    injectable gh runner (tests)
+ * @param {Function} [opts.runAsk]         injectable ask runner (tests)
+ * @param {Function} [opts.runGh]          injectable gh runner (tests)
+ * @param {Function} [opts.appendHistory]  injectable history appender (tests)
+ * @param {Function} [opts.loadHistory]    injectable history loader (tests)
  * @param {string}   [opts.persona]
+ * @param {number}   [opts.historyMax]     max persisted turns (default: env or 200)
+ * @param {number}   [opts.contextTurns]   turns injected into each prompt (default: env or 10)
  */
-export function createConcierge({ meshRoot, runAsk = defaultRunAsk, runGh = defaultRunGh, persona = PERSONA } = {}) {
+export function createConcierge({
+  meshRoot,
+  runAsk = defaultRunAsk,
+  runGh = defaultRunGh,
+  appendHistory = defaultAppendHistory,
+  loadHistory = defaultLoadHistory,
+  persona = PERSONA,
+  historyMax = Number(process.env.AGENT_MESH_CONCIERGE_HISTORY_MAX) || DEFAULT_CONCIERGE_HISTORY_MAX,
+  contextTurns = Number(process.env.AGENT_MESH_CONCIERGE_CONTEXT_TURNS) || DEFAULT_CONCIERGE_CONTEXT_TURNS,
+} = {}) {
   return {
     /**
      * One conversational turn. Read-only — never files anything.
+     * Uses server-side persisted history for model context; appends the turn to the log.
      * @returns {Promise<{reply:string, proposal:object|null}>}
      */
-    async message({ history = [], text, signal } = {}) {
+    async message({ text, signal } = {}) {
       if (typeof text !== 'string' || !text.trim()) {
         throw new ConciergeError('Empty message', { status: 400 });
       }
       if (text.length > MAX_TEXT_CHARS) {
         throw new ConciergeError('Message too long', { status: 400 });
       }
+      const userTs = new Date().toISOString();
       const statusDigest = await readStatusDigest(meshRoot);
-      const prompt = buildPrompt({ persona, statusDigest, history, text: text.trim() });
+      // Load server-side history for continuity — the model sees the last contextTurns
+      // turns regardless of whether the client kept them in memory.
+      const serverHistory = await loadHistory(meshRoot, contextTurns).catch(() => []);
+      const prompt = buildPrompt({ persona, statusDigest, history: serverHistory, text: text.trim() });
       const replyRaw = await runAsk({ prompt, meshRoot, signal });
       const proposal = parseProposal(replyRaw);
-      return { reply: stripProposalFence(replyRaw) || replyRaw, proposal };
+      const reply = stripProposalFence(replyRaw) || replyRaw;
+      // Persist this turn (best-effort: never fail the response on a log write error).
+      await appendHistory(meshRoot, [
+        { role: 'user', text: text.trim(), ts: userTs },
+        { role: 'assistant', reply, ts: new Date().toISOString() },
+      ], historyMax).catch(() => {});
+      return { reply, proposal };
+    },
+
+    /**
+     * Return the last `limit` persisted conversation turns (oldest-first).
+     * @returns {Promise<Array<{role:string, text?:string, reply?:string, ts:string}>>}
+     */
+    async getHistory({ limit = 20 } = {}) {
+      try {
+        const raw = await readFile(join(meshRoot, HISTORY_FILE), 'utf8');
+        const entries = parseHistoryLines(raw);
+        return entries.slice(-Math.max(1, Math.min(limit, 200)));
+      } catch { return []; }
     },
 
     /**

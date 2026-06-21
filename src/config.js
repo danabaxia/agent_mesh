@@ -69,6 +69,11 @@ export function readPositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+// Mobile Concierge history persistence (issue #362). AGENT_MESH_CONCIERGE_HISTORY_MAX turns
+// are kept on disk; AGENT_MESH_CONCIERGE_CONTEXT_TURNS are injected into each model prompt.
+export const DEFAULT_CONCIERGE_HISTORY_MAX = 200;
+export const DEFAULT_CONCIERGE_CONTEXT_TURNS = 10;
+
 // Mesh Improvement Report (MIR) — spec 2026-06-19. All optional; see CLAUDE.md Config.
 export const DEFAULT_MIR_DIR = '.dev-society/mir';
 export const DEFAULT_MIR_NOISE_BAND_PCT = 10;   // soft-finding regression threshold (%)
