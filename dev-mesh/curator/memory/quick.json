@@ -1201,5 +1201,16 @@
       "source": "PR #317: spec: idea: signed AgentCard verification for HTTP peers — anti-spoof for cross-machine meshes (#314)",
       "ts": "2026-06-21"
     }
+  },
+  "subtree-cost-rollup-a2a-tasks": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Thread subtree_cost_usd through A2A Task chain: own + Σ peer subtrees gives single-read full-chain cost.",
+    "l1": "In a multi-hop A→B→C chain, B's Task `agentmesh/metrics` carried only B's own cost — C's cost (incurred via delegate_to_peer) was invisible to A. Computing full-chain cost required correlating N separate run-log directories. PR #328 adds `subtree_cost_usd` = own `cost_usd` + Σ `subtree_cost_usd` of downstream peer Tasks. The peer bridge reads `subtree_cost_usd` (falling back to `cost_usd` for older peers) and logs it so the parent aggregates correctly. The L4 perf benchmark reads `subtree_cost_usd` from the root Task directly.",
+    "value": "Pattern for cross-hop cost rollup in A2A Task chains:\n\n1. Each Task's `agentmesh/metrics` carries two cost fields: `cost_usd` (own hop only) and `subtree_cost_usd` (own + Σ all downstream peer subtrees).\n\n2. The peer bridge accumulates downstream `subtree_cost_usd` (falling back to `cost_usd` for older peers) from each downstream Task before building the parent Task metrics block. Never treat absent as 0 without explicit fallback — silent undercounting corrupts budget math.\n\n3. Perf benchmarks and callers read the root Task's `subtree_cost_usd` directly — no need to correlate N run-log directories.\n\n4. Token/turn counts ride the run record (not Task metrics) — only cost fields are threaded through the Task chain. Whitelist `subtree_cost_usd` in `normalizeMetrics` (`src/a2a/protocol.js`).\n\n5. Budget enforcement (refuse delegation when subtree cost would exceed a cap) is a follow-on; v1 is observability only — the field enables it without blocking.\n\nProvenance: PR #328 (2026-06-21), closes Issue #315.",
+    "provenance": {
+      "source": "PR #328: feat: cross-hop delegation cost rollup — subtree_cost_usd in Task metadata",
+      "ts": "2026-06-21"
+    }
   }
 }
