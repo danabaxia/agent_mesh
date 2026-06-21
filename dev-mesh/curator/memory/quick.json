@@ -1191,6 +1191,17 @@
       "ts": "2026-06-21"
     }
   },
+  "cron-throttle-backstop-false-escalation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GHA cron throttle cascades: backstop sweep sees slow-cron stage as 'broken' → false needs-human escalations.",
+    "l1": "PR #327: review-respond cron fired every 3-5h. The merge-sweep backstop treated unprocessed CHANGES_REQUESTED PRs as 'automators could not clear it' → PR #323 falsely escalated PR #321 as needs-human. Items weren't broken — they were waiting for a throttled upstream stage. Fix: review-respond-sweep daemon builtin (10min, maintainer schedule.json) dispatches the workflow only when CHANGES_REQUESTED non-draft PRs exist — final of four mesh pipeline drains on daemon cadence.",
+    "value": "When a pipelined system has a backstop sweep that escalates 'stuck' items, every upstream stage's actual cycle time must be shorter than the backstop staleMs. A throttled GHA cron (*/15 → 3-5h observed) creates items that sit past the stale threshold BEFORE they're ever processed — generating false needs-human escalations that hide real failures.\n\nFix: move all pipeline stages to daemon builtins at ≤10min cadence (see gh-actions-cron-throttled-daemon-dispatch). PR #327 (2026-06-21) completed the pattern: all four mesh pipeline drains (code-automerge, memory-automerge, issue-sweep, review-respond) are now daemon-driven.\n\nDiagnostic signal: needs-human escalations for items that are otherwise CLEAN (no conflict, no failing CI, no blocking label) → check for a cron-driven upstream stage whose observed fire interval exceeds backstop staleMs. The gate logic is not at fault; the cadence mismatch is.\n\nGate before dispatch: check open CHANGES_REQUESTED non-draft PRs exist before calling gh workflow run — avoids burning Actions minutes when queue is empty.",
+    "provenance": {
+      "source": "PR #327: feat(daemon): daemon-driven review-respond drain (beats throttled GitHub cron)",
+      "ts": "2026-06-21"
+    }
+  },
   "http-peer-agentcard-signing": {
     "status": "active",
     "valid_to": null,
