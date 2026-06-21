@@ -10,7 +10,7 @@ import {
 
 const env = (k, d) => (process.env[k] ?? d);
 
-export async function runMir({ repoRoot, ref, dryRun, runSuites, gh, now }) {
+export async function runMir({ repoRoot, ref, dryRun, runSuites, gh, now, repo }) {
   try {
     const at = now().toISOString();
     const mirDir = join(repoRoot, env('AGENT_MESH_MIR_DIR', DEFAULT_MIR_DIR));
@@ -37,7 +37,7 @@ export async function runMir({ repoRoot, ref, dryRun, runSuites, gh, now }) {
       trendN: Number(env('AGENT_MESH_MIR_TREND_N', DEFAULT_MIR_TREND_N)),
     });
     const { plan, mutations } = await syncReport({
-      mir, mirDir, dryRun, gh, writeFile: (p, c) => writeFileSync(p, c),
+      mir, mirDir, dryRun, gh, repo, writeFile: (p, c) => writeFileSync(p, c),
       recoverRuns: Number(env('AGENT_MESH_MIR_RECOVER_RUNS', DEFAULT_MIR_RECOVER_RUNS)),
       scanLabel: env('MESH_SCAN_LABEL', DEFAULT_MESH_SCAN_LABEL),
     });
@@ -55,7 +55,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const gh = async (args) => spawnSync('gh', args, { encoding: 'utf8' }).stdout || '';
   const res = await runMir({ repoRoot: process.cwd(),
     ref: { commit: process.env.GITHUB_SHA || 'local', branch: 'main' },
-    dryRun, runSuites, gh, now: () => new Date() });
+    dryRun, runSuites, gh, now: () => new Date(), repo: process.env.DEV_SOCIETY_REPO || '' });
   console.log(JSON.stringify(res));
   process.exit(res.status === 'ok' ? 0 : 1);
 }
