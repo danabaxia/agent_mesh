@@ -22,6 +22,13 @@ node_modules/
 /.dashboard-restart.log
 /.dashboard-restart.err.log
 
+# Playwright e2e/visual tier output (Plan 3, nightly) — transient run artifacts.
+# Committed visual baselines (test/e2e/*-snapshots/) are NOT ignored; these are.
+test-results/
+playwright-report/
+blob-report/
+/playwright/.cache/
+
 # A2A behavior eval output (scripts/eval-a2a.mjs)
 eval-results/
 # Perf benchmark output (scripts/eval-perf.mjs)

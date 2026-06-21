@@ -5,6 +5,11 @@ import { agentColor, buildKpis, buildCards, buildLane, buildTimeline } from '/bo
 import { openWorkspace, closeWorkspace, selectTab, setWorkspaceMesh, launchTerminal } from '/workspace.js';
 import { createNetGraph } from '/net-graph.js';
 import { renderGraphView } from '/graph-view.js';
+import { seedRng, markRenderSettled } from '/e2e-mode.js';
+
+// e2e/visual determinism (Plan 3): no-op unless ?e2e=1. Seed Math.random BEFORE
+// any consumer (net-graph node placement) runs, so the rendered layout is stable.
+seedRng();
 
 // ── top-level Graph view (live mesh activity + tokens + issues/PRs) ──────────
 function openGraphView() {
@@ -367,9 +372,16 @@ refresh().then(() => {
     const name = decodeURIComponent(location.hash.slice('#/agent/'.length));
     if (name) openWorkspace(name);
   }
+  // e2e/visual determinism (Plan 3): once the initial data render has settled,
+  // stamp <body data-render-state="settled"> — the single signal the Playwright
+  // spec awaits (no arbitrary sleeps). No-op cosmetic attribute off e2e.
+  markRenderSettled();
 }).catch((err) => {
   document.body.insertAdjacentHTML('beforeend', `<pre class="fatal"></pre>`);
   document.querySelector('.fatal').textContent = String(err);
+  // Still stamp a settled signal so the e2e harness fails fast on the rendered
+  // error state rather than timing out waiting for the attribute.
+  markRenderSettled();
 });
 
 function showSyncToast(msg) {
