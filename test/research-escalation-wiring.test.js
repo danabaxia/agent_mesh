@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { a2aMessage, advisoryRegistry, routeFor } from '../src/dev-society/core.js';
+import { buildClaudeInvocation } from '../src/delegate-invocation.js';
+import { mkdtemp, mkdir, writeFile, realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 test('a2aMessage: string 3rd arg is still treated as messageId (back-compat)', () => {
@@ -52,4 +55,27 @@ test('routeFor: an unlabeled issue still falls through to triage (skip is scoped
   const r = routeFor(iss([]));
   assert.equal(r.target, 'triager');
   assert.equal(r.reason, 'triage');
+});
+
+// Spec round-2 MAJOR-3 closure: prove the advisoryRegistry env stamp actually grants
+// the analyst web tools through the real buildClaudeInvocation path (not just that the
+// env keys are set). Composes Task-2's env stamp with the web-tools grant.
+test('advisoryRegistry env grants the analyst WebSearch/WebFetch via buildClaudeInvocation', async () => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'mesh-adv-')));
+  const agentRoot = join(root, 'analyst');
+  await mkdir(agentRoot, { recursive: true });
+  await writeFile(join(root, 'mesh.json'), JSON.stringify({
+    meshVersion: 1,
+    agents: [{ name: 'analyst', root: './analyst', served: true, enabledModes: ['ask'], webTools: true, peers: [] }],
+  }), 'utf8');
+  // meshRoot = the dir holding mesh.json; advisoryRegistry sets the analyst peer root to <root>/analyst.
+  const reg = advisoryRegistry({ binPath: '/x/bin/agent-mesh.js', meshRoot: root });
+  const env = reg.peers.analyst.env;
+  const { args } = await buildClaudeInvocation({
+    root: agentRoot, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: {},
+    route: 'scheduled:research-escalation',
+  });
+  const i = args.indexOf('--tools');
+  const tools = i === -1 ? [] : args[i + 1].split(',');
+  assert.ok(tools.includes('WebSearch') && tools.includes('WebFetch'), `got ${tools}`);
 });
