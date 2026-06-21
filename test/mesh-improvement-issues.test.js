@@ -18,7 +18,7 @@ test('fileable + no issueNumber → create with scan label + marker', () => {
   const plan = planIssues(base, { recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
   assert.equal(plan.length, 1);
   assert.equal(plan[0].action, 'create');
-  assert.ok(plan[0].labels.includes('idea'));
+  assert.ok(plan[0].labels.includes('bug'));
   assert.ok(plan[0].labels.includes('generated:mesh-scan'));
   assert.equal(plan[0].marker, '<!-- mesh-scan:perf:6x-confusable:precision -->');
   assert.match(plan[0].body, /-33\.3/);
@@ -39,6 +39,26 @@ test('absent id with cleanRuns >= N and an issue → close; below N → no-op', 
   } };
   const plan = planIssues(mir, { recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
   assert.deepEqual(plan.map((p) => [p.action, p.issueNumber]), [['close', 50]]);
+});
+
+test('routing: EVERY report finding is filed as `bug` → auto-routes to the Coder', () => {
+  const findings = [
+    { tier: 'hard', cluster: 'test-failure', id: 'test:foo-test-js:red', descLabel: 'regression' },
+    { tier: 'hard', cluster: 'security-invariant', id: 'sec:i3-single-root:break', descLabel: 'security' },
+    { tier: 'soft', cluster: 'perf-regression', id: 'perf:6x:cost_usd', descLabel: 'perf',
+      metric: { name: 'cost_usd', value: 2, baseline: 1, deltaPct: 100 } },
+  ];
+  for (const f of findings) {
+    const mir = {
+      at: base.at,
+      findings: [{ ...f, severity: null, fileable: true, evidence: { trace: 't' } }],
+      ledger: { [f.id]: { occurrences: 1, cleanRuns: 0, issueNumber: null } },
+    };
+    const plan = planIssues(mir, { recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
+    assert.ok(plan[0].labels.includes('bug'), `${f.cluster} must carry bug → Coder auto-fix`);
+    assert.ok(!plan[0].labels.includes('idea'), `${f.cluster} is no longer human-gated`);
+    assert.ok(plan[0].labels.includes(f.descLabel), `${f.cluster} keeps its descriptive ${f.descLabel} label`);
+  }
 });
 
 test('invalid finding.id is rejected before becoming a label/marker', () => {

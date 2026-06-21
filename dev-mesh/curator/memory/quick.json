@@ -1056,5 +1056,49 @@
       "source": "PR #293: chore(schedules): lead every job name with its id (fix dashboard id/name mismatch)",
       "ts": "2026-06-21"
     }
+  },
+  "monitor-path-silent-vacuous-clean": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Monitor reads wrong path -> silently clean: empty file = 0 matches = 0 issues. Verify paths read real data on start.",
+    "l1": "PR #288: soft-launch monitor had 3 wrong paths — daemonOutLog/daemonErrLog -> deployRoot/daemon.{out,err}.log (real: .dev-society/daemon.*); scheduleStatePath -> deployRoot/.agent-mesh/schedule-state.json (real: deployRoot/dev-mesh/AGENT/.agent-mesh/). All 3 silently read non-existent files, returning 0 matches = clean. The 24h watch was effectively only the gh stranded-issue check; every clean result was a false read confirmed healthy by luck. Fixed + live-verified reading real 614-line daemon log.",
+    "value": "Pattern: monitor path correctness — a scan reading a wrong path silently returns 0 issues (empty input = 0 matches = clean), not an error. This looks exactly like a healthy system.\n\n(1) Wire a path-sanity log at scan init: log the path + file size/line count BEFORE scanning. A 0-byte read from an expected-non-empty file on a live deploy is a path bug, not genuine silence.\n\n(2) On deploy/setup, run a live smoke: confirm each monitor path exists and returns non-empty content. Assert file size > 0 or line count > 0. Fail fast if any monitor path is dead — a blind monitor is worse than no monitor.\n\n(3) Three path categories that can drift separately (all embed absolute paths at config time):\n   - Daemon log files: live under deployRoot/.dev-society/, NOT deployRoot/.\n   - Schedule state: live under deployRoot/dev-mesh/AGENT/.agent-mesh/, NOT deployRoot/.agent-mesh/.\n   - GitHub API queries: stateless, no drift risk.\n   Always resolve monitor paths relative to their correct sub-root, not a shared top-level root.\n\n(4) Test monitor paths explicitly. Hermetic unit tests over empty/non-empty inputs verify detection logic but cannot catch wrong path configs. Add a smoke assertion that the monitor actually read >0 bytes from each path it scanned.\n\n(5) When extending a monitor to cover new features (e.g. adding research-fix coverage in PR #288), verify new paths exist before shipping — a new scan over a wrong path starts silent from day 1.\n\nGeneral rule: if the scan framework silently handles missing files (empty input = 0 results), add an explicit existence check before scanning so a misconfigured path is an explicit error, not a vacuous pass.\n\nProvenance: PR #288 (2026-06-21).",
+    "provenance": {
+      "source": "PR #288: fix(monitor): correct wrong file paths (watch was vacuous) + extend coverage to #3b",
+      "ts": "2026-06-21"
+    }
+  },
+  "automerge-post-push-unknown-retry": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Post-push mergeability is transiently UNKNOWN — retry squash-merge (6x6s) in the same sweep; deferred = starvation loop.",
+    "l1": "PR #290: after union-resolving a conflicting memory PR and pushing, the immediate squash-merge fails 'not mergeable yet' — GitHub lazily recomputes mergeability (UNKNOWN state). Deferred to next sweep, a newer clean PR merges first, re-conflicting the stale branch: permanent starvation. PR #259 sat 3.7h across 5+ sweeps. Fix: retry squash-merge 6 times/6s apart in the same sweep; break early on genuine CONFLICTING (defer to mergefix), spin on UNKNOWN (transient). All 5 stalled PRs drained in one sweep post-fix.",
+    "value": "Pattern for any sweep that pushes a resolution to a PR branch then immediately squash-merges:\n\n**The UNKNOWN gap**: GitHub computes PR mergeability lazily. Right after `git push`, mergeability is UNKNOWN. `gh pr merge --squash` during UNKNOWN fails 'Pull Request is not mergeable' — even on a clean branch.\n\n**The starvation trap**: if the sweep defers to next run, newer clean PRs merge and advance main, re-conflicting the just-resolved branch. Older PRs starve permanently.\n\n**Fix**: retry squash-merge in the same sweep:\n```\nfor attempt in 1 2 3 4 5 6; do\n  state=$(gh pr view $PR --json mergeable --jq .mergeable)\n  [[ $state == CONFLICTING ]] && break   # real conflict → defer to mergefix\n  if [[ $state == MERGEABLE ]]; then\n    gh pr merge $PR --squash --delete-branch && break\n  fi\n  sleep 6   # UNKNOWN → wait and retry\ndone\n```\n\n**Break early on CONFLICTING**: a genuine conflict won't resolve on retry — break immediately, let mergefix handle it.\n\n**Do NOT break early on UNKNOWN**: UNKNOWN is GitHub's transient recomputation state; spin through it.\n\n**Evidence (PR #290)**: 5 stalled memory PRs (including PR #259 at 3.7h/5+ sweeps) all drained in one sweep run after this fix.\n\n**General rule**: push + merge is always a two-step with an async gap. Never assume MERGEABLE immediately after push. Retry-with-backoff or poll-then-merge. Provenance: PR #290 (2026-06-21).",
+    "provenance": {
+      "source": "PR #290: fix(memory-automerge): retry squash-merge to drain union-resolved PRs (fix memory PR starvation)",
+      "ts": "2026-06-21"
+    }
+  },
+  "regression-label-as-routing-key": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR hard regressions must use `bug` label — `idea` is human-gated and blocks auto-handoff to the Coder.",
+    "l1": "PR #295: routingLabel() filed ALL MIR findings as `idea`. A hard regression (green→red test/eval) at `idea` waits for human `approved` before Coder acts — bug-autofix never fires. Fix: hard regressions → `bug` (auto-routes to Coder, no approval); security-invariant failures + soft improvements stay `idea` (human judgment required). Full chain: Tester detects red → `bug` issue filed → issue-sweep → Coder do-mode → PR → review → merge.",
+    "value": "Apply when wiring an automated tester/evaluator to the issue pipeline.\n\nThe routing key is the issue label:\n- `bug`: auto-routes to the Coder via bug-autofix (no human approval step). Use for hard regressions — tests or evals that were previously passing and are now failing. These are defects, not proposals.\n- `idea`: lands in `idea-needs-approval` state — waits for a human to apply `approved` before the Coder claims it. Use for security-invariant failures (scope/impact need human review), soft improvement signals (within noise band), and enhancement proposals.\n\nThree signal classes from MIR:\n1. Hard regression (green→red): file as `bug`. Defect with a clear pre/post. Automated fix is appropriate.\n2. Security invariant failure: file as `idea`. Scope and remediation must be human-reviewed.\n3. Soft/improvement signal: file as `idea`. Not confirmed a defect; improvement only.\n\nAnti-pattern: filing ALL signals as `idea` means regressions are human-gated and the Coder→PR→merge auto-chain never fires. The mesh can detect regressions but never self-heals them.\n\nImplementation sketch (src/mesh-improvement/issues.js):\n  function routingLabel(finding) {\n    if (finding.isHardRegression) return 'bug';\n    return 'idea';  // soft signals + security invariants\n  }\n\nTest matrix: hard regression → `bug` (not `idea`); security break → `idea` (not `bug`); soft signal → `idea` (not `bug`).\n\nProvenance: PR #295 (2026-06-21).",
+    "provenance": {
+      "source": "PR #295: fix(mesh-improvement): file hard regressions as `bug` so they auto-hand-off to the Coder",
+      "ts": "2026-06-21"
+    }
+  },
+  "mir-all-findings-as-bug": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR triage: file ALL findings as `bug` — autofix loop handles them; safety lives at the merge gate, not the label.",
+    "l1": "PR #297: soft perf/quality MIR findings were previously `idea`-labeled, requiring human `approved` before the Coder picked them up. Routing ALL findings as `bug` sends them to bug-autofix (do-mode) with no approval bottleneck. Safety: the Coder opens a PR requiring CI + human `approved` to merge — auto-attempt is broad but auto-merge stays gated. Decouple 'who tries to fix' (automated) from 'who approves the fix' (human gate at merge, not filing).",
+    "value": "When designing MIR/scanner triage for a self-evolving agent society:\n\n(1) File EVERY actionable finding as `bug` — hard regression, security-invariant break, soft perf/quality finding alike. The bug label routes issues via `routeFor` → bug-autofix (do-mode Coder) with no human `approved` prerequisite.\n\n(2) The safety boundary is the MERGE gate, not the filing label:\n- Coder's fix always opens a PR.\n- PR requires CI to pass + human `approved` label before auto-merge triggers.\n- Security findings don't need weaker treatment — the PR review IS the control.\n\n(3) Anti-pattern: filing soft findings as `idea` adds a human bottleneck that defeats the self-evolve goal. Ideas need an owner to approve them first; bugs get attempted automatically.\n\n(4) If a finding must NOT be auto-attempted (e.g. needs operator policy decision), don't file it as a standard issue at all — or use a distinct label/scheme outside the autofix loop.\n\n(5) Concretely in agent-mesh: `src/mesh-improvement/issues.js` `buildIssue` returns `labels: ['bug', descriptiveLabel]` for all findings. The descriptive label (`regression`, `security`, `perf`) preserves signal for human reviewers; `bug` is the autofix routing key.\n\nProvenance: PR #297 (2026-06-21) — fix(mesh-improvement): file ALL report findings as `bug` so the Coder auto-fixes everything.",
+    "provenance": {
+      "source": "PR #297: fix(mesh-improvement): file ALL report findings as `bug` so the Coder auto-fixes everything",
+      "ts": "2026-06-21"
+    }
   }
 }
