@@ -51,6 +51,7 @@ import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { mergeSweepReportPath } from '../src/merge-sweep/report.js';
 import { runRemediation, remediationPath } from '../src/merge-sweep/remediation-run.js';
+import { runResearchEscalation } from '../src/dev-society/research-escalation-run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
 
@@ -167,6 +168,24 @@ if (!once && !selftest) {
       now: new Date(), cfg: { escalateAfter: 4, hysteresisK: 3, capPerRun: 5, backoffBaseMs: 1_800_000 },
       log: (...a) => log('remediate:', ...a),
     }),
+    // ③a: read-only. Analyst researches each open needs-human escalation (web + host-collected
+    // PR/issue context) and posts a deduped diagnosis comment. Ask-only — no code, no PRs.
+    'research-escalation': async () => runResearchEscalation({
+      gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      dispatchAnalyst: async ({ issueNumber, prompt }) => {
+        const reg = core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT });
+        let client = null;
+        try {
+          client = await createA2AClient(reg, { requestTimeoutMs: cfg.timeoutMs });
+          const task = await client.send('analyst',
+            core.a2aMessage('ask', prompt, { caller: `research-escalation:issue-${issueNumber}` }));
+          return { done: core.taskSucceeded(task), text: core.taskText(task) };
+        } finally { await client?.close().catch(() => {}); }
+      },
+      cfg: { capPerRun: 2 },
+      log: (...a) => log('research-escalation:', ...a),
+    }).catch((e) => { log('research-escalation error:', e.message); return { status: 'fail', error: e.message }; }),
     // Daemon-driven prompt drain: merge CLEAN+APPROVED PRs on the daemon's reliable ~10min
     // cadence instead of waiting on GitHub Actions' throttled cron (which leaves ready PRs
     // idle ~1-2h). Reuses the gated, tested runSweep (AUTOMERGE_ENABLED + isAutoMergeable);
