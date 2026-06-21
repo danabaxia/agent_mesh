@@ -1,7 +1,7 @@
 // test/ci-schedules.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCronWorkflows, normalizeCiStatus, latestCiRuns, listCiSchedules } from '../src/dev-society/ci-schedules.js';
+import { parseCronWorkflows, normalizeCiStatus, latestCiRuns, listCiSchedules, headerComment } from '../src/dev-society/ci-schedules.js';
 
 const integ = { name: 'integration.yml', text:
 `name: Integration (nightly)
@@ -42,6 +42,33 @@ test('parseCronWorkflows: top-level name only, multi-cron, inline + full-line co
   assert.deepEqual(by['cm.yml'].crons, ['15 * * * *']);                     // commented cron excluded
   assert.equal(by['anon.yml'].workflow, 'anon');                            // basename fallback
   assert.equal(by['ci.yml'], undefined);                                    // push-only excluded
+});
+
+test('headerComment: extracts the leading purpose comment (above OR below name), stops at the body', () => {
+  // comment BELOW name (like ci.yml/integration.yml)
+  assert.equal(
+    headerComment(['name: CI', '# The per-PR L0 hermetic gate.', '# Zero-dep, stubs claude.', 'on:', '  push: {}'].join('\n').split('\n')),
+    'The per-PR L0 hermetic gate. Zero-dep, stubs claude.');
+  // comment ABOVE name (like ui-e2e.yml), blank lines skipped
+  assert.equal(
+    headerComment(['# Dedicated frontend-QA gate.', '', 'name: ui-e2e', 'on: {}'].join('\n').split('\n')),
+    'Dedicated frontend-QA gate.');
+  // no header comment → empty
+  assert.equal(headerComment(['name: bare', 'on: {}'].join('\n').split('\n')), '');
+});
+
+test('parseCronWorkflows + listCiSchedules carry the workflow description (for the dashboard hover)', () => {
+  const withDesc = { name: 'integration.yml', text:
+`# SEPARATE from ci.yml — the nightly integration tier against a real claude.
+name: Integration (nightly)
+on:
+  schedule:
+    - cron: '0 7 * * *'
+` };
+  const got = parseCronWorkflows([withDesc]);
+  assert.equal(got[0].description, 'SEPARATE from ci.yml — the nightly integration tier against a real claude.');
+  const listed = listCiSchedules({ files: [withDesc], ghActivity: [] });
+  assert.equal(listed[0].description, 'SEPARATE from ci.yml — the nightly integration tier against a real claude.');
 });
 
 test('normalizeCiStatus maps GitHub conclusions', () => {
