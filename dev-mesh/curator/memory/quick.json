@@ -1333,5 +1333,16 @@
       "source": "PR #352: spec: idea: MIR slow-drift trend gate — rolling-window median masks gradual metric deterioration (#349)",
       "ts": "2026-06-21"
     }
+  },
+  "mobile-tailscale-askonly-concierge": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Mobile front-door: 127.0.0.1 bind + Tailscale (*.ts.net auto-allow) + token enforced + ask-only AI + human-tap write.",
+    "l1": "PR #355: bind to 127.0.0.1; proxy tailnet→localhost via tailscale serve (device-identity transport, no shared creds). Host-gate (server.js) auto-accepts *.ts.net MagicDNS + AGENT_MESH_DASHBOARD_ALLOWED_HOSTS — zero Tailscale config needed. Auth token STILL required on every gated route — Host allowlist widens which Host is accepted, never removes auth. Concierge ask-only (read tools only); proposes a fenced concierge-proposal; only write is gh issue create on explicit human Confirm tap with a fixed label allowlist (idea/approved/route:a2a).",
+    "value": "Apply when exposing a locally-running AI service to a phone or remote device without public internet exposure.\n\n(1) TRANSPORT: bind the HTTP server to 127.0.0.1 (not 0.0.0.0). Run `tailscale serve https / http://127.0.0.1:<port>` to proxy the Tailscale tailnet → localhost. Device-identity transport means no shared credentials in transit.\n\n(2) HOST-GATE: extend the same-origin check to accept remote host headers:\n  - Auto-accept *.ts.net (Tailscale MagicDNS suffix — zero owner config for Tailscale deployments).\n  - Accept AGENT_MESH_DASHBOARD_ALLOWED_HOSTS (comma-separated extra hostnames for non-Tailscale tunnels).\n  - Keep defaults: 127.0.0.1, localhost, ::1.\n  - Parse via readDashboardAllowedHosts(env) — testable in isolation.\n\n(3) AUTH INVARIANT: widening the Host allowlist NEVER removes auth. The token check and the Host check are separate layers. Passing one does not imply the other. Test explicitly: allowlisted Host without token → 401.\n\n(4) ASK-ONLY CONCIERGE PATTERN: when exposing AI chat via mobile:\n  - Spawn claude -p with read tools only (ask mode). Cannot write the repo.\n  - Parse AI output as a fenced concierge-proposal block (structured intent, not raw commands).\n  - The only write path is gh issue create — framework-side, not AI-side.\n  - That write fires ONLY on explicit human Confirm tap (POST /api/concierge/confirm).\n  - Label allowlist is fixed at the framework level — AI cannot inject arbitrary labels.\n  - Test: gh must NOT fire on /api/concierge/message, ONLY on /api/concierge/confirm.\n\n(5) ONE-TIME MOBILE SETUP: a helper script (mesh-mobile-serve.mjs) runs tailscale serve and prints the one-time https://<magicdns>/m?t=<token> link. User opens on phone → Add to Home Screen → installed as PWA.\n\n(6) SECURITY INVARIANTS PRESERVED:\n  - Ask-only concierge: read tools only, cannot write the repo.\n  - Issue creation: framework-side + human-tap-gated + label-allowlisted.\n  - No public exposure: 127.0.0.1 bind + Tailscale device identity.\n  - Auth token enforced everywhere: Host allowlist ≠ auth bypass.\n  - Path-guard, recursion guard, single-writable-root, anti-spoof surface untouched.\n\nProvenance: PR #355 (2026-06-21).",
+    "provenance": {
+      "source": "PR #355: feat(dashboard): Mesh Mobile Concierge — private phone front-door",
+      "ts": "2026-06-21"
+    }
   }
 }
