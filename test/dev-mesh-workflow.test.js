@@ -382,17 +382,18 @@ test('PERMISSIONS FLOOR: every dev-mesh-*.yml grants at least contents: read (ch
   }
 });
 
-test('PERMISSIONS FLOOR: workflows using gh pr list or pull_request trigger must grant pull-requests', () => {
-  // A workflow that queries pull requests (gh pr list) or fires on pull_request events
-  // needs pull-requests: read at minimum; without it the gh call 403s.
+test('PERMISSIONS FLOOR: workflows using any gh pr subcommand or pull_request trigger must grant pull-requests', () => {
+  // Any `gh pr *` call (list, comment, view, checkout, merge, review, create…) needs
+  // pull-requests: read at minimum; without it the gh call 403s.  A pull_request trigger
+  // also needs the scope to read PR metadata.
   for (const n of ALL_NAMES) {
     const body = allWf[n];
-    const needsPR = /gh pr list/.test(body) || /^\s*pull_request:/m.test(body);
+    const needsPR = /\bgh pr\s/.test(body) || /^\s*pull_request:/m.test(body);
     if (needsPR) {
       assert.match(
         body,
         /pull-requests:\s*(read|write)/,
-        `dev-mesh-${n}.yml: uses gh pr list or pull_request trigger but missing pull-requests: read/write`,
+        `dev-mesh-${n}.yml: uses gh pr or pull_request trigger but missing pull-requests: read/write`,
       );
     }
   }
