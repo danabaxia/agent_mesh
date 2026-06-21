@@ -16,17 +16,18 @@ const ISO_PREFIX_RE = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)/;
  * Each match → { severity:'error', signal:'daemon-log', ts, line: line.trim() }
  * Lines without an ISO prefix are ignored. Returns issues[].
  */
-export function scanDaemonLog(logText, { sinceIso, feature = 'research-escalation' } = {}) {
+export function scanDaemonLog(logText, { sinceIso, feature = 'research-escalation', features } = {}) {
   const issues = [];
   const sinceMs = sinceIso ? Date.parse(sinceIso) : -Infinity;
-  const featureLower = (feature || 'research-escalation').toLowerCase();
-
-  // Build regexes (case-insensitive) based on feature name
-  // Pattern 1: `<feature> error:` → direct error label
-  const featureErrorRe = new RegExp(`${escapeRe(featureLower)}\\s+error:`, 'i');
-  // Pattern 2: `<feature>:` followed by text containing 'error' or 'fail'
-  const featureColonRe = new RegExp(`${escapeRe(featureLower)}:`, 'i');
-  // Pattern 3: advisory failed
+  // Accept one feature (back-compat) or a list (e.g. ['research-escalation','research-fix']).
+  const featList = (Array.isArray(features) && features.length ? features : [feature])
+    .map((f) => (f || 'research-escalation').toLowerCase());
+  // Per-feature regexes built once: `<feature> error:` and `<feature>:`(+error/fail in rest).
+  const featureRes = featList.map((fl) => ({
+    errorRe: new RegExp(`${escapeRe(fl)}\\s+error:`, 'i'),
+    colonRe: new RegExp(`${escapeRe(fl)}:`, 'i'),
+  }));
+  // advisory-route failure — checked ONCE per line (shared across features, no double count).
   const advisoryRe = /advisory #\d+ \((analyst|triager)\) failed/i;
 
   for (const rawLine of logText.split('\n')) {
@@ -38,20 +39,38 @@ export function scanDaemonLog(logText, { sinceIso, feature = 'research-escalatio
     if (tsMs < sinceMs) continue;
 
     const rest = rawLine.slice(m[0].length).toLowerCase();
+    const hasErrWord = rest.includes('error') || rest.includes('fail');
 
-    let matched = false;
-    if (featureErrorRe.test(rawLine)) {
-      // direct `<feature> error:` pattern
-      matched = true;
-    } else if (featureColonRe.test(rawLine) && (rest.includes('error') || rest.includes('fail'))) {
-      // `<feature>: ... error/fail ...`
-      matched = true;
-    } else if (advisoryRe.test(rawLine)) {
-      matched = true;
-    }
+    const matched = advisoryRe.test(rawLine) ||
+      featureRes.some((re) => re.errorRe.test(rawLine) || (re.colonRe.test(rawLine) && hasErrWord));
 
     if (matched) {
       issues.push({ severity: 'error', signal: 'daemon-log', ts, line: rawLine.trim() });
+    }
+  }
+  return issues;
+}
+
+/**
+ * checkDraftInvariant(prs, opts) → issues[]
+ *
+ * ③b's never-auto-merged invariant: every PR ③b opens (head branch starts with
+ * `branchPrefix`) MUST be a draft AND carry the `requiredLabel` hold label. A
+ * violation (non-draft, or missing the label) is CRITICAL — it means a ③b fix PR
+ * could be auto-merged. PRs from other branches are ignored.
+ *   prs: [{ number, isDraft, headRefName, labels:[{name}]|[string] }]
+ */
+export function checkDraftInvariant(prs, { branchPrefix = 'dev-society/research-fix-', requiredLabel = 'do-not-merge' } = {}) {
+  const issues = [];
+  const labelNames = (pr) => (Array.isArray(pr.labels) ? pr.labels : [])
+    .map((l) => (typeof l === 'string' ? l : l && l.name)).filter(Boolean);
+  for (const pr of Array.isArray(prs) ? prs : []) {
+    if (!pr || typeof pr.headRefName !== 'string' || !pr.headRefName.startsWith(branchPrefix)) continue;
+    if (pr.isDraft !== true) {
+      issues.push({ severity: 'critical', signal: 'draft-invariant', detail: `③b PR #${pr.number} is NOT a draft — never-auto-merged invariant breached` });
+    }
+    if (!labelNames(pr).includes(requiredLabel)) {
+      issues.push({ severity: 'critical', signal: 'draft-invariant', detail: `③b PR #${pr.number} is missing the \`${requiredLabel}\` hold label` });
     }
   }
   return issues;

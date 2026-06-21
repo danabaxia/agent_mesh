@@ -14,6 +14,7 @@ import {
   scanErrLog,
   scanScheduleState,
   findStrandedEscalations,
+  checkDraftInvariant,
   advanceClock,
   summarize,
 } from '../src/soft-launch-monitor/core.js';
@@ -27,9 +28,14 @@ const deployRoot = process.env.DEV_SOCIETY_DEPLOY_ROOT || join(homedir(), '.agen
 const statePath = process.env.SOFT_LAUNCH_MONITOR_STATE || join(homedir(), '.agent-mesh', 'soft-launch-monitor-state.json');
 let repo = process.env.DEV_SOCIETY_REPO || '';
 
-const daemonOutLog = join(deployRoot, 'daemon.out.log');
-const daemonErrLog = join(deployRoot, 'daemon.err.log');
-const scheduleStatePath = join(deployRoot, '.agent-mesh', 'schedule-state.json');
+// The 24/7 daemon writes its logs under <deployRoot>/.dev-society/ and each agent's
+// scheduler state under <deployRoot>/dev-mesh/<agent>/.agent-mesh/. (Earlier these paths
+// were wrong — deployRoot/daemon.out.log etc. don't exist — so the scans silently read
+// empty files and never fired. Fixed here.)
+const daemonOutLog = join(deployRoot, '.dev-society', 'daemon.out.log');
+const daemonErrLog = join(deployRoot, '.dev-society', 'daemon.err.log');
+const analystScheduleStatePath = join(deployRoot, 'dev-mesh', 'analyst', '.agent-mesh', 'schedule-state.json');
+const coderScheduleStatePath = join(deployRoot, 'dev-mesh', 'coder', '.agent-mesh', 'schedule-state.json');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -96,9 +102,10 @@ async function main() {
   // Collect signals
   // -------------------------------------------------------------------------
 
-  // 1. Daemon stdout log
+  // 1. Daemon stdout log — both ③a (research-escalation) and ③b (research-fix) error lines
+  //    + advisory-route failures (the advisoryRegistry-env/routeFor blast radius).
   const daemonLogText = readText(daemonOutLog);
-  const daemonLogIssues = scanDaemonLog(daemonLogText, { sinceIso });
+  const daemonLogIssues = scanDaemonLog(daemonLogText, { sinceIso, features: ['research-escalation', 'research-fix'] });
 
   // 2. Daemon stderr log growth
   const currErrBytes = fileBytes(daemonErrLog);
@@ -106,19 +113,24 @@ async function main() {
   const effectivePrevErrBytes = prevErrBytes !== null ? prevErrBytes : currErrBytes;
   const errLogIssues = scanErrLog(effectivePrevErrBytes, currErrBytes);
 
-  // 3. Schedule state
-  const scheduleState = (() => {
-    try { return JSON.parse(readFileSync(scheduleStatePath, 'utf8')); } catch { return {}; }
-  })();
-  const scheduleIssues = scanScheduleState(scheduleState, 'research-escalation');
+  // 3. Schedule state — ③a's research-escalation (analyst) + ③b's research-fix (coder)
+  const analystState = readJson(analystScheduleStatePath) || {};
+  const coderState = readJson(coderScheduleStatePath) || {};
+  const scheduleIssues = [
+    ...scanScheduleState(analystState, 'research-escalation'),
+    ...scanScheduleState(coderState, 'research-fix'),
+  ];
 
   // 4. Stranded escalations via GitHub
   const strandedIssues = await collectStrandedEscalations(repo, nowIso);
 
+  // 5. ③b never-auto-merged invariant: every open research-fix draft PR must be a draft + do-not-merge
+  const draftInvariantIssues = await collectDraftInvariant(repo);
+
   // -------------------------------------------------------------------------
   // Advance clock
   // -------------------------------------------------------------------------
-  const foundIssues = [...daemonLogIssues, ...errLogIssues, ...scheduleIssues, ...strandedIssues];
+  const foundIssues = [...daemonLogIssues, ...errLogIssues, ...scheduleIssues, ...strandedIssues, ...draftInvariantIssues];
   const nextState = advanceClock(prevState, foundIssues, nowIso, DEFAULT_WINDOW_MS);
 
   // Persist errLogBytes alongside state
@@ -167,6 +179,21 @@ async function collectStrandedEscalations(repo, nowIso) {
     }));
 
     return findStrandedEscalations(enriched, nowMs);
+  } catch {
+    return [];
+  }
+}
+
+// ③b never-auto-merged invariant: list open PRs and flag any research-fix branch PR that
+// is not a draft or lacks the do-not-merge hold label (a breach = a ③b fix PR could merge).
+async function collectDraftInvariant(repo) {
+  if (!repo) return [];
+  try {
+    const out = await gh(['pr', 'list', '--repo', repo, '--state', 'open', '--json', 'number,isDraft,headRefName,labels', '--limit', '100']);
+    if (!out.trim()) return [];
+    let prs;
+    try { prs = JSON.parse(out); } catch { return []; }
+    return checkDraftInvariant(prs);
   } catch {
     return [];
   }
