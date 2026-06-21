@@ -256,7 +256,20 @@ function normalizeMetrics(metrics) {
   // server read a usage signal from the transcript tail;
   // omitted otherwise, so single-shot response payloads are unchanged.
   if (metrics.headroom !== undefined) out.headroom = numberOrZero(metrics.headroom);
+  // Cross-hop cost rollup (issue #315): expose own hop cost and the full subtree
+  // cost so callers can read the delegation chain total from the root Task without
+  // correlating N run-log directories. Omitted when no usage data was parsed.
+  if (metrics.cost_usd != null) out.cost_usd = numberOrNull(metrics.cost_usd);
+  const ownCost = metrics.cost_usd != null ? numberOrNull(metrics.cost_usd) : null;
+  const downstreamCost = metrics.downstream_cost_usd != null ? numberOrNull(metrics.downstream_cost_usd) : null;
+  if (ownCost !== null || downstreamCost !== null) {
+    out.subtree_cost_usd = (ownCost ?? 0) + (downstreamCost ?? 0);
+  }
   return out;
+}
+
+function numberOrNull(value) {
+  return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
 function numberOrZero(value) {

@@ -85,6 +85,44 @@ test('buildTaskFromDelegateResult maps delegate outcomes onto A2A v1.0 Task obje
   assert.equal(task.metadata['agentmesh/metrics'].total_ms, 12);
 });
 
+test('normalizeMetrics: cost_usd and subtree_cost_usd — own hop only, no downstream', () => {
+  const task = buildTaskFromDelegateResult({
+    id: 't1',
+    message: { messageId: 'm1' },
+    metrics: { total_ms: 50, cost_usd: 0.01 },
+    result: { status: 'done', summary: 'done', files_changed: [], log_path: '' }
+  });
+  const m = task.metadata['agentmesh/metrics'];
+  assert.equal(m.cost_usd, 0.01);
+  assert.equal(m.subtree_cost_usd, 0.01);   // own cost, no downstream
+});
+
+test('normalizeMetrics: subtree_cost_usd = own + downstream (3-hop chain rollup)', () => {
+  // Simulates: A → B ($0.02) → C ($0.05). B's Task has subtree_cost_usd=$0.07.
+  // A's metrics object carries B's downstream cost from the bridge log aggregation.
+  const task = buildTaskFromDelegateResult({
+    id: 't-a',
+    message: { messageId: 'm-a' },
+    metrics: { total_ms: 200, cost_usd: 0.01, downstream_cost_usd: 0.07 },
+    result: { status: 'done', summary: 'done', files_changed: [], log_path: '' }
+  });
+  const m = task.metadata['agentmesh/metrics'];
+  assert.equal(m.cost_usd, 0.01);
+  assert.equal(m.subtree_cost_usd, 0.08);   // 0.01 + 0.07
+});
+
+test('normalizeMetrics: subtree_cost_usd absent when no cost data', () => {
+  const task = buildTaskFromDelegateResult({
+    id: 't1',
+    message: { messageId: 'm1' },
+    metrics: { total_ms: 50 },   // no cost_usd
+    result: { status: 'done', summary: 'done', files_changed: [], log_path: '' }
+  });
+  const m = task.metadata['agentmesh/metrics'];
+  assert.equal('cost_usd' in m, false);
+  assert.equal('subtree_cost_usd' in m, false);
+});
+
 test('buildRejectedTask returns rejection as Task data with namespaced error metadata', () => {
   const task = buildRejectedTask({
     id: 'r1',

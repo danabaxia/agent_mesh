@@ -190,7 +190,8 @@ export function createBridge({ root, env = process.env, createClient = createA2A
         child_run_id: (taskResult?.metadata || {})['agentmesh/run_id'] || null,
         summary_preview: previewOf(mapped.summary),
         peer_changes: mapped.peer_changes ?? null,
-        best_effort: mapped.best_effort || false
+        best_effort: mapped.best_effort || false,
+        subtree_cost_usd: mapped.subtree_cost_usd ?? null
       });
       return mapped;
     } catch (err) {
@@ -427,6 +428,13 @@ function mapTask(peer, task) {
     .filter((p) => p && typeof p.text === 'string')
     .map((p) => p.text)
     .join('\n');
+  // Cross-hop cost rollup (issue #315): read the peer's full subtree cost from its
+  // agentmesh/metrics block (present when the peer also runs this framework version).
+  // Fall back to cost_usd (its own hop only) for peers without subtree_cost_usd.
+  const peerMetrics = md['agentmesh/metrics'] ?? {};
+  const subtree_cost_usd = peerMetrics.subtree_cost_usd != null
+    ? peerMetrics.subtree_cost_usd
+    : (peerMetrics.cost_usd != null ? peerMetrics.cost_usd : null);
   return {
     ok: rawState === 'TASK_STATE_COMPLETED',
     peer,
@@ -438,7 +446,8 @@ function mapTask(peer, task) {
     peer_changes: md['agentmesh/files_changed'] ?? null,
     best_effort: md['agentmesh/best_effort'] ?? false,
     log_path: md['agentmesh/log_path'] ?? '',
-    summary: artifactText || statusText || ''
+    summary: artifactText || statusText || '',
+    subtree_cost_usd
   };
 }
 

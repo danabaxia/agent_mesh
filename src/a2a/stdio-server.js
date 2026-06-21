@@ -433,6 +433,7 @@ async function runWithMetrics({ run, started, queueWaitMs }) {
       tokens_cache_read: u?.cache_read_input_tokens ?? null,
       tokens_cache_creation: u?.cache_creation_input_tokens ?? null,
       cost_usd: u?.total_cost_usd ?? null,
+      downstream_cost_usd: result?.downstream_cost_usd ?? null,
       num_turns: u?.num_turns ?? null,
       api_ms: u?.duration_api_ms ?? null
     }
