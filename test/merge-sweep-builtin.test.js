@@ -41,3 +41,22 @@ test('gate read failure → automerge fails closed (no would-merge)', async () =
   const am = written.checkpoints.find((c) => c.name === 'automerge');
   assert.ok(!am.items.some((i) => i.state === 'would-merge'), 'no false would-merge when gate unknown');
 });
+
+test('memory:promote PRs are excluded from the automerge checkpoint (issue #274)', async () => {
+  // memory:promote PRs are always UNSTABLE (GITHUB_TOKEN recursion guard prevents CI).
+  // They must NOT appear in the automerge checkpoint — the memory-automerge checkpoint
+  // owns them — otherwise they accumulate as blocked:not-clean:UNSTABLE and trigger
+  // spurious needs-human escalations after 4+ sweeps.
+  const memoryPr = { number: 99, isDraft: false, isCrossRepository: false, mergeStateStatus: 'UNSTABLE', reviewDecision: 'REVIEW_REQUIRED', labels: [{ name: 'memory:promote' }], title: 'memory: distill PR #98' };
+  const { gh } = recordingGh((args) => {
+    const a = args.join(' ');
+    if (a.includes('pr list') && a.includes('memory:promote')) return JSON.stringify([memoryPr]);
+    if (a.includes('pr list')) return JSON.stringify([memoryPr]);
+    if (a.includes('pr view')) return JSON.stringify({ closingIssuesReferences: [] });
+    return '[]';
+  });
+  let written = null;
+  await runMergeSweep({ gh, repo: 'o/r', meshRoot: '/m/dev-mesh', readReport: () => ({}), writeReport: (_p, rep) => { written = rep; }, now: new Date('2026-06-20T12:00:00Z') });
+  const am = written.checkpoints.find((c) => c.name === 'automerge');
+  assert.ok(!am.items.some((i) => i.number === 99), 'memory:promote PR must not appear in automerge checkpoint');
+});
