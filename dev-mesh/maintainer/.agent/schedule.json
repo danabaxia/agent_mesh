@@ -25,6 +25,15 @@
       "enabled": true
     },
     {
+      "id": "memory-automerge-sweep",
+      "name": "memory-automerge-sweep — Drain memory:promote PRs (beats throttled GH cron)",
+      "kind": "builtin",
+      "builtin": "memory-automerge-sweep",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true,
+      "description": "Daemon-driven trigger: dispatch dev-mesh-memory-automerge.yml when open memory:promote PRs exist, on the reliable ~10min cadence (GH cron is throttled to ~2.6h+)."
+    },
+    {
       "id": "merge-sweep",
       "name": "merge-sweep — Report-only: inspect the merge-gate state",
       "kind": "builtin",

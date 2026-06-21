@@ -38,6 +38,20 @@ test('maintainer schedule runs automerge-sweep every ~10min (reliable cadence, n
   assert.ok(job.cadence.minutes <= 10, 'cadence must be <=10min to beat GitHub cron throttling');
 });
 
+test('daemon registers the memory-automerge-sweep builtin (daemon-driven memory drain)', () => {
+  assert.match(src, /'memory-automerge-sweep'\s*:/);
+  assert.match(src, /dispatchMemoryAutomerge/);
+});
+
+test('maintainer schedule runs memory-automerge-sweep every ~10min (beats throttled GH cron)', () => {
+  const job = maintainerSchedule.jobs.find((j) => j.builtin === 'memory-automerge-sweep');
+  assert.ok(job, 'memory-automerge-sweep job must be scheduled on the maintainer');
+  assert.equal(job.kind, 'builtin');
+  assert.equal(job.enabled, true);
+  assert.equal(job.cadence.kind, 'every');
+  assert.ok(job.cadence.minutes <= 10, 'cadence must be <=10min to beat GitHub cron throttling');
+});
+
 test('daemon registers the post-merge-reconcile builtin (closes merged-but-open issues)', () => {
   assert.match(src, /'post-merge-reconcile'\s*:/);
   assert.match(src, /planPostMergeReconcile/);
