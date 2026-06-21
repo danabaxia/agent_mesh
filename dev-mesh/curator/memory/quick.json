@@ -1367,6 +1367,17 @@
       "ts": "2026-06-21"
     }
   },
+  "es-module-cors-http-origin": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "ES module scripts always send Origin (CORS mode); stylesheets don't — https-only gate 403s module fetches silently.",
+    "l1": "PR #368: app.js (<script type='module'>) was 403ing over Tailscale --http=80 while app.css returned 200. ES modules are fetched in CORS mode — browsers always send an Origin header. Stylesheets and classic scripts don't trigger CORS mode and never send Origin. The same-origin gate (passesSameOriginGate) accepted only `https://` for tailnet hosts; over plain-HTTP the Origin was `http://<host>` → 403 → module never executed → shell rendered without JS. Tests passed because curl and headless render never send a module Origin header; only a real browser over the tailnet does.",
+    "value": "Apply when implementing or auditing a same-origin gate for a dashboard or web server that may be accessed via HTTP (not just HTTPS) — Tailscale --http=80, local dev, internal proxies.\n\n(1) ES modules fetch in CORS mode unconditionally: any `<script type='module'>` is fetched in CORS mode regardless of how it's requested. CORS mode means the browser ALWAYS attaches an `Origin` header. Classic scripts, stylesheets, and images do NOT trigger CORS mode and send no Origin — they pass origin gates that ES modules fail.\n\n(2) The trap: a same-origin gate that accepts only `https://` for external/trusted hosts will silently 403 ES module fetches on any HTTP transport (`http://` Origin). The page renders a partial shell (CSS loads, no JS) with no console error surfaced to the user unless they open DevTools and look at network failures.\n\n(3) Fix: in passesSameOriginGate (or equivalent), accept BOTH `http://` and `https://` when the host matches a trusted pattern:\n  - For *.ts.net hosts: `origin === 'https://' + host || origin === 'http://' + host`\n  - For AGENT_MESH_DASHBOARD_ALLOWED_HOSTS entries: same dual-scheme check.\n  - Foreign origins (different host, any scheme): still rejected.\n\n(4) Why 'tests passed' until real-browser-over-tailnet: curl never sends Origin. Localhost headless rendering (same-origin, no CORS) never sends Origin. Node-based integration tests send no Origin. Only a real browser fetching a cross-origin ES module emits the Origin header — and only when the transport is different enough to classify as 'not same-origin'. Test coverage gap: add explicit test cases `tailnet-module-Origin (http)` and `foreign-Origin (rejected)` to exercise both branches. PR #368 ships both.\n\n(5) Defensive coding: log or annotate any same-origin gate that enforces scheme-matching with a comment naming the ES-module CORS exception. Future readers must not 'simplify' http-or-https to https-only — add a comment like `// ES module fetches send Origin even over http://; accept both schemes for trusted hosts`.\n\nProvenance: PR #368 (2026-06-21): fix(dashboard): accept http Origin from tailnet hosts (fixes iPhone partial-load via Tailscale).",
+    "provenance": {
+      "source": "PR #368: fix(dashboard): accept http Origin from tailnet hosts (module 403 → phone partial-load)",
+      "ts": "2026-06-21"
+    }
+  },
   "ios-cookie-redirect-drop": {
     "status": "active",
     "valid_to": null,
