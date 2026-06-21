@@ -30,3 +30,20 @@ test('daemon registers the research-escalation builtin', () => {
   assert.match(daemon, /'research-escalation':\s*async/);
   assert.match(daemon, /runResearchEscalation/);
 });
+
+test('daemon registers the needs-human-cleanup builtin', () => {
+  const daemon = readFileSync(join(repoRoot, 'scripts', 'dev-society-daemon.mjs'), 'utf8');
+  assert.match(daemon, /'needs-human-cleanup':/);
+  assert.match(daemon, /runMergedPrCleanup/);
+});
+
+test('maintainer schedule has the needs-human-cleanup builtin job (every 30 min)', () => {
+  const sched = JSON.parse(readFileSync(join(repoRoot, 'dev-mesh', 'maintainer', '.agent', 'schedule.json'), 'utf8'));
+  const job = sched.jobs.find((j) => j.id === 'needs-human-cleanup');
+  assert.ok(job, 'needs-human-cleanup job must exist');
+  assert.equal(job.kind, 'builtin');
+  assert.equal(job.builtin, 'needs-human-cleanup');
+  assert.equal(job.enabled, true);
+  assert.equal(job.cadence.kind, 'every');
+  assert.equal(job.cadence.minutes, 30);
+});

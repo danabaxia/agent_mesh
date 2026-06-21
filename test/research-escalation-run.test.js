@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { runResearchEscalation } from '../src/dev-society/research-escalation-run.js';
+import { runResearchEscalation, runMergedPrCleanup } from '../src/dev-society/research-escalation-run.js';
 
 const BOT = 'mesh-bot';
 
@@ -102,4 +102,90 @@ test('issue list with explicit oldest-first + limit', async () => {
   const list = record.find((r) => r.includes('issue list') && r.includes('needs-human'));
   assert.match(list, /--limit 200/);
   assert.match(list, /sort:created-asc/);
+});
+
+// ── runMergedPrCleanup ──────────────────────────────────────────────────────
+
+function makeCleanupGh({ issues = [], prStates = {}, record } = {}) {
+  return async (args) => {
+    record?.push(args.join(' '));
+    const a = args.join(' ');
+    if (a.includes('issue list') && a.includes('needs-human')) return JSON.stringify(issues);
+    if (a.includes('pr view') && a.includes('--json state')) {
+      const n = Number(args[args.indexOf('view') + 1]);
+      const state = prStates[n];
+      if (state === undefined) throw new Error(`pr #${n} not found`);
+      return JSON.stringify({ state });
+    }
+    if (a.includes('issue edit')) return '';
+    if (a.includes('issue comment')) return '';
+    if (a.includes('issue close')) return '';
+    return '[]';
+  };
+}
+
+test('runMergedPrCleanup: closes issue whose referenced PR is MERGED', async () => {
+  const record = [];
+  const gh = makeCleanupGh({ issues: [ISSUE(274, 264)], prStates: { 264: 'MERGED' }, record });
+  const res = await runMergedPrCleanup({ gh, repo: 'o/r' });
+  assert.equal(res.status, 'ok');
+  assert.match(res.output, /closed 1/);
+  assert.ok(record.some((r) => r.includes('issue close') && r.includes('274')));
+  assert.ok(record.some((r) => r.includes('issue edit') && r.includes('done')));
+});
+
+test('runMergedPrCleanup: closes issue whose referenced PR is CLOSED', async () => {
+  const record = [];
+  const gh = makeCleanupGh({ issues: [ISSUE(10, 5)], prStates: { 5: 'CLOSED' }, record });
+  const res = await runMergedPrCleanup({ gh, repo: 'o/r' });
+  assert.equal(res.status, 'ok');
+  assert.ok(record.some((r) => r.includes('issue close') && r.includes('10')));
+});
+
+test('runMergedPrCleanup: does NOT close issue whose referenced PR is OPEN', async () => {
+  const record = [];
+  const gh = makeCleanupGh({ issues: [ISSUE(10, 5)], prStates: { 5: 'OPEN' }, record });
+  const res = await runMergedPrCleanup({ gh, repo: 'o/r' });
+  assert.equal(res.status, 'ok');
+  assert.match(res.output, /closed 0/);
+  assert.ok(!record.some((r) => r.includes('issue close')));
+});
+
+test('runMergedPrCleanup: skips issues without a PR marker', async () => {
+  const record = [];
+  const noMarker = { number: 10, body: 'no marker here' };
+  const gh = makeCleanupGh({ issues: [noMarker], record });
+  await runMergedPrCleanup({ gh, repo: 'o/r' });
+  assert.ok(!record.some((r) => r.includes('pr view')));
+  assert.ok(!record.some((r) => r.includes('issue close')));
+});
+
+test('runMergedPrCleanup: pr view failure skips that issue, continues to next', async () => {
+  const record = [];
+  const issues = [ISSUE(10, 5), ISSUE(20, 6)];
+  const prStates = { 6: 'MERGED' };
+  const gh = makeCleanupGh({ issues, prStates, record });
+  const res = await runMergedPrCleanup({ gh, repo: 'o/r' });
+  assert.equal(res.status, 'ok');
+  assert.match(res.output, /closed 1/);
+  assert.ok(!record.some((r) => r.includes('issue close') && r.includes(' 10 ')));
+  assert.ok(record.some((r) => r.includes('issue close') && r.includes('20')));
+});
+
+test('runMergedPrCleanup: issue edit failure is best-effort (close still attempted)', async () => {
+  const record = [];
+  const gh = async (args) => {
+    record.push(args.join(' '));
+    const a = args.join(' ');
+    if (a.includes('issue list')) return JSON.stringify([ISSUE(10, 5)]);
+    if (a.includes('pr view')) return JSON.stringify({ state: 'MERGED' });
+    if (a.includes('issue edit')) throw new Error('label forbidden');
+    if (a.includes('issue comment')) return '';
+    if (a.includes('issue close')) return '';
+    return '[]';
+  };
+  const res = await runMergedPrCleanup({ gh, repo: 'o/r' });
+  assert.equal(res.status, 'ok');
+  assert.match(res.output, /closed 1/);
+  assert.ok(record.some((r) => r.includes('issue close')));
 });
