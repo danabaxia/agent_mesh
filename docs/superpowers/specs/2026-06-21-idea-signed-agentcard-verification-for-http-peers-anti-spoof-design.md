@@ -1,4 +1,38 @@
-ry.
+# Signed AgentCard Verification for HTTP Peers — Anti-Spoof Design
+
+## 1. Goal
+
+Extend agent_mesh's anti-spoof invariant to cover **HTTP peer identity**: when an HTTP peer's AgentCard is received during `initialize`, the framework can cryptographically verify that the card's content (`name`, `capabilities`, `skills`) was produced by the operator-approved server — not just that a response arrived from the registered URL.
+
+## 2. Motivation
+
+The existing anti-spoof invariant (PROJECT.md §1.5) covers call-path and depth through process env (invisible to the model). HTTP peers present a residual gap: `HttpClientSession` currently accepts any AgentCard served at the registered URL with no cryptographic check. A misconfigured URL or MitM could return a spoofed card — wrong name, widened capabilities — and the framework would accept it silently.
+
+The stdio binding is unaffected: locally-spawned processes are already under operator control.
+
+A2A v1.0 (April 2026 update, Linux Foundation) added **Signed Agent Cards** as the protocol's answer to this problem; the feature is live in Google ADK, LangGraph, CrewAI, and others across 150+ production organizations.
+
+## 3. Goals / Non-goals
+
+### Goals (v1)
+
+- HTTP peer entries in `registry.json` gain an optional `publicKey` (base64url DER) field for Ed25519 key pinning.
+- `serve-a2a-http` signs its AgentCard on `initialize` when `AGENT_MESH_SIGNING_KEY_FILE` (path to PEM private key) is set.
+- `HttpClientSession` verifies the signature when a public key is pinned; missing or invalid signature → `peer_identity_unverified` Task error (failure-as-data). No key pinned → accepted unverified (backwards-compatible).
+- New CLI verb `agent-mesh gen-signing-key` generates an Ed25519 key pair to lower operator friction.
+- Attested fields: `name`, `capabilities`, and `skills` — the fields that determine identity and authority surface.
+
+### Non-goals
+
+See §Out of scope at the end of this document.
+
+## 4. Components
+
+- **`publicKey` field in `registry.json`** — optional per-HTTP-peer base64url-encoded DER of the peer's Ed25519 public key. Absent → unverified-accept (backwards-compatible). Malformed → surfaced as a structured data error at registry load, not a startup crash.
+- **`AGENT_MESH_SIGNING_KEY_FILE` env var** — path to the server's Ed25519 private key PEM. When set, `serve-a2a-http` produces a signed AgentCard on every `initialize` response. Unset → unsigned card (backwards-compatible; existing deployments are unaffected).
+- **`serve-a2a-http` signing** — on `initialize`: canonicalize the attested fields, produce an Ed25519 signature over the canonical bytes, attach the signature (and optional key id) to the card before responding.
+- **`HttpClientSession` verification** — on receiving an AgentCard from an HTTP peer: look up `publicKey` in the registry; if absent, accept; if present, canonicalize the received card's attested fields and verify the Ed25519 signature against the pinned key.
+- **`gen-signing-key` CLI verb** — generates a fresh Ed25519 key pair; emits the private key as a PEM file (for `AGENT_MESH_SIGNING_KEY_FILE`) and the public key as a base64url DER string (for pasting into `registry.json`). Thin wrapper over the Node.js built-in `crypto` library.
 - **Ed25519 primitive wrapper** — thin wrapper over the runtime's crypto for keygen / sign / verify, isolating the algorithm choice.
 - **`peer_identity_unverified` Task error** — a structured failure shape carried back through the existing A2A error channel.
 
