@@ -968,5 +968,16 @@
       "source": "PR #279: fix: post-merge reconcile misses approved-state issues and never applies done label (#257)",
       "ts": "2026-06-21"
     }
+  },
+  "dashboard-per-source-refresh-cadence": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Dashboard: each data source needs its own refresh timer — cheap on-disk reads (60s) vs expensive gh calls (20min).",
+    "l1": "PR #286: loadSchedules() ran once on view entry; autoRefreshTimer (20min, daily-report regen) never re-fetched it. A newly-registered cron job was invisible until page reload. Fix: dedicated schedTimer = setInterval(loadSchedules, 60_000), gated on !document.hidden. The schedules list is a cheap on-disk read (no gh); the 20-min timer is too slow for live-state data. Root pattern: when one slow timer drives ALL data fetches, any source with a faster change rate goes stale on the same cadence as the slowest source.",
+    "value": "Separate dashboard refresh timers by data-source cost and change rate.\n\n(1) Expensive external-API sources (e.g. daily-report regen: calls gh, heavy): one timer per 15–20 min; coalesce concurrent calls (see dashboard-cached-panel-refresh). Manual ↻ button for on-demand refresh.\n\n(2) Cheap live-state sources (e.g. schedules list: on-disk JSON read, no gh): separate timer at 60s. Gate on !document.hidden (visibility-change listener pauses/resumes) so background tabs skip the calls.\n\n(3) Never share one slow timer across both categories. A 20-min shared timer makes cheap live-state data just as stale as the expensive source — staleness is invisible until a user adds a job and it fails to appear.\n\n(4) Name timers explicitly by purpose (autoRefreshTimer for daily reports, schedTimer for schedules) and document the cadence in a comment adjacent to the interval constant.\n\n(5) Call cheap-source loaders BOTH on view entry AND on the timer. Loading once on entry then relying on the timer means the first view is correct but the display goes stale after the tab is hidden and re-focused.\n\nImplementation sketch:\n  const SCHED_REFRESH_MS = 60 * 1000;\n  let schedTimer = setInterval(() => { if (!document.hidden) loadSchedules(); }, SCHED_REFRESH_MS);\n  document.addEventListener(\"visibilitychange\", () => { if (!document.hidden) loadSchedules(); });\n\nDistinction from dashboard-cached-panel-refresh: that pattern covers expensive POST-regenerate cycles (120s timeout, coalescing). This covers lightweight live-state reads with no generation step.\n\nProvenance: PR #286 (2026-06-21).",
+    "provenance": {
+      "source": "PR #286: fix(dashboard): auto-refresh the SCHEDULES list (newly-added jobs appear without a manual reload)",
+      "ts": "2026-06-21"
+    }
   }
 }
