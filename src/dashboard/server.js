@@ -2664,10 +2664,13 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
   if (pathname === '/api/concierge/history' && req.method === 'GET') {
     const limit = Math.min(200, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '20', 10) || 20));
     try {
-      const turns = typeof concierge.history === 'function'
-        ? await concierge.history({ limit })
-        : [];
-      sendJson(res, 200, { ok: true, turns });
+      // Support both getHistory() (raw entries, `reply` field) and history() (normalized, `text` field).
+      // Return both `history` and `turns` keys so callers using either API shape work correctly.
+      const raw = typeof concierge.getHistory === 'function' ? await concierge.getHistory({ limit }) : null;
+      const normalized = typeof concierge.history === 'function' ? await concierge.history({ limit }) : null;
+      const result = raw ?? normalized ?? [];
+      const turns = normalized ?? raw ?? [];
+      sendJson(res, 200, { ok: true, history: result, turns });
     } catch (err) {
       sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
     }

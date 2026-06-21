@@ -26,7 +26,34 @@ import { readFile, appendFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
 import { spawnFile } from '../process.js';
-import { READ_TOOLS, DEFAULT_CONCIERGE_HISTORY_MAX } from '../config.js';
+import { READ_TOOLS, DEFAULT_CONCIERGE_HISTORY_MAX, DEFAULT_CONCIERGE_CONTEXT_TURNS } from '../config.js';
+
+// ── Pure history helpers (exported for tests) ─────────────────────────────
+
+export function parseHistoryLines(text) {
+  if (!text || typeof text !== 'string') return [];
+  return text.split('\n').flatMap((line) => {
+    const l = line.trim();
+    if (!l) return [];
+    try { return [JSON.parse(l)]; } catch { return []; }
+  });
+}
+
+export function serializeHistoryLines(entries) {
+  return entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : '');
+}
+
+export function trimEntries(entries, max) {
+  return entries.length <= max ? entries : entries.slice(entries.length - max);
+}
+
+export function normalizeEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const text = entry.role === 'assistant'
+    ? (entry.reply ?? entry.text ?? '')
+    : (entry.text ?? '');
+  return { role: entry.role, text: String(text), ts: entry.ts ?? null };
+}
 
 export class ConciergeError extends Error {
   constructor(message, { status = 500, detail } = {}) {
@@ -205,55 +232,86 @@ async function defaultRunGh({ title, body, labels, meshRoot }) {
 /**
  * Create a concierge bound to one mesh root.
  * @param {object} opts
- * @param {string} opts.meshRoot
- * @param {Function} [opts.runAsk]    injectable ask runner (tests)
- * @param {Function} [opts.runGh]     injectable gh runner (tests)
+ * @param {string}   opts.meshRoot
+ * @param {Function} [opts.runAsk]          injectable ask runner (tests)
+ * @param {Function} [opts.runGh]           injectable gh runner (tests)
  * @param {string}   [opts.persona]
- * @param {string}   [opts.historyPath]  override the JSONL path (tests)
- * @param {number}   [opts.historyMax]   override entry cap (tests)
+ * @param {string}   [opts.historyPath]     override the JSONL path (tests)
+ * @param {number}   [opts.historyMax]      override entry cap (tests)
+ * @param {Function} [opts.appendHistory]   injectable appender (root, entries, max) — tests
+ * @param {Function} [opts.loadHistory]     injectable loader (root, limit) → entries — tests
+ * @param {number}   [opts.contextTurns]    turns injected into each prompt (tests)
  */
-export function createConcierge({ meshRoot, runAsk = defaultRunAsk, runGh = defaultRunGh, persona = PERSONA, historyPath, historyMax } = {}) {
+export function createConcierge({
+  meshRoot,
+  runAsk = defaultRunAsk,
+  runGh = defaultRunGh,
+  persona = PERSONA,
+  historyPath,
+  historyMax,
+  appendHistory: _appendHistoryFn,
+  loadHistory: _loadHistoryFn,
+  contextTurns,
+} = {}) {
   const _historyPath = historyPath ?? join(meshRoot, 'mesh', 'concierge', 'history.jsonl');
-  const _historyMax = historyMax ?? DEFAULT_CONCIERGE_HISTORY_MAX;
+  const _historyMax = historyMax ?? (Number(process.env.AGENT_MESH_CONCIERGE_HISTORY_MAX) || DEFAULT_CONCIERGE_HISTORY_MAX);
+  const _contextTurns = contextTurns ?? (Number(process.env.AGENT_MESH_CONCIERGE_CONTEXT_TURNS) || DEFAULT_CONCIERGE_CONTEXT_TURNS);
+
+  // Dispatch: use injectable I/O when provided (unit tests), else file-based (integration).
+  const _doAppend = _appendHistoryFn
+    ? (entries) => _appendHistoryFn(meshRoot, entries, _historyMax)
+    : (entries) => appendHistory(_historyPath, entries, { max: _historyMax });
+  const _doLoad = _loadHistoryFn
+    ? (limit) => _loadHistoryFn(meshRoot, limit)
+    : (limit) => readHistory(_historyPath, { limit });
 
   return {
     /**
      * One conversational turn. Read-only — never files anything.
-     * Loads the last MAX_HISTORY_CONTEXT turns from server-side storage into the
+     * Loads the last `_contextTurns` turns from server-side storage into the
      * prompt for cross-session continuity, and appends the new exchange after reply.
      * @returns {Promise<{reply:string, proposal:object|null}>}
      */
-    async message({ history = [], text, signal } = {}) {
+    async message({ text, signal } = {}) {
       if (typeof text !== 'string' || !text.trim()) {
         throw new ConciergeError('Empty message', { status: 400 });
       }
       if (text.length > MAX_TEXT_CHARS) {
         throw new ConciergeError('Message too long', { status: 400 });
       }
-      // Server-owned history provides continuity across sessions; fall back to
-      // client-sent history only when the log is empty (e.g. first ever turn).
-      const stored = await readHistory(_historyPath, { limit: MAX_HISTORY_CONTEXT });
-      const promptHistory = stored.length > 0 ? stored : history;
+      const userTs = new Date().toISOString();
       const statusDigest = await readStatusDigest(meshRoot);
-      const prompt = buildPrompt({ persona, statusDigest, history: promptHistory, text: text.trim() });
+      // Load server-side history for continuity — the model sees the last _contextTurns
+      // turns regardless of whether the client kept them in memory.
+      const serverHistory = await _doLoad(_contextTurns).catch(() => []);
+      const prompt = buildPrompt({ persona, statusDigest, history: serverHistory, text: text.trim() });
       const replyRaw = await runAsk({ prompt, meshRoot, signal });
       const proposal = parseProposal(replyRaw);
       const reply = stripProposalFence(replyRaw) || replyRaw;
-      // Append user + assistant entries to the history log (best-effort; never breaks the reply).
-      const ts = new Date().toISOString();
-      appendHistory(_historyPath, [
-        { role: 'user', text: text.trim(), ts },
-        { role: 'assistant', text: reply, ts },
-      ], { max: _historyMax }).catch(() => {});
+      // Persist this turn (best-effort: never fail the response on a log write error).
+      // Store assistant entries with both `text` and `reply` for cross-API compatibility.
+      // Awaited so callers can read getHistory() immediately after message() completes.
+      await _doAppend([
+        { role: 'user', text: text.trim(), ts: userTs },
+        { role: 'assistant', text: reply, reply, ts: new Date().toISOString() },
+      ]).catch(() => {});
       return { reply, proposal };
     },
 
     /**
-     * Return the last `limit` history entries from the server-side log.
+     * Return the last `limit` history entries from the server-side log (raw entries).
+     * @returns {Promise<Array<{role:string,text:string,reply?:string,ts:string}>>}
+     */
+    async getHistory({ limit = 20 } = {}) {
+      return readHistory(_historyPath, { limit: Math.max(1, Math.min(limit, 200)) });
+    },
+
+    /**
+     * Return the last `limit` history entries from the server-side log (normalized).
      * @returns {Promise<Array<{role:string,text:string,ts:string}>>}
      */
     async history({ limit = 20 } = {}) {
-      return readHistory(_historyPath, { limit });
+      return readHistory(_historyPath, { limit: Math.max(1, Math.min(limit, 200)) });
     },
 
     /**
