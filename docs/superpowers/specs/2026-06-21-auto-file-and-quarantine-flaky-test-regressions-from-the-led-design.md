@@ -1,4 +1,22 @@
-n.
+# Auto-file and Quarantine Flaky-Test Regressions from the Ledger — Design
+
+## Goal
+
+Extend the MIR `tester-suite-run` builtin so that tests which recur as failures
+across distinct calendar days above a configurable threshold are automatically filed
+as quarantine-labelled GitHub issues and excluded from the merge gate's blocking set
+— replacing silent repeated failures with tracked, owned work items.
+
+The existing MIR ledger already accumulates `occurrences` / `cleanRuns` /
+`firstSeen` / `lastSeen` per test entry (spec
+`2026-06-19-mesh-improvement-report-design.md` §10). This spec layers a
+**flake-policy classifier** and **plan builder** on top of those existing fields,
+having the host apply the plan via `gh` CLI and ledger write-back — the same
+host-applies-pure-plan pattern as `issues.js` for metric-regression findings.
+
+## Components
+
+The design adds three pure-logic components to the existing `tester-suite-run` builtin.
 - **Quarantine-aware gate consumer** — wherever the merge gate evaluates test results, it consults the ledger/issue state and **excludes** entries that are quarantined (have `issueNumber` set + quarantine label) from the blocking set, while still surfacing them as known-flaky.
 - **Pure plan builder** — given the full ledger + config, emits the list of actions `{ entryKey, action: 'file' | 'update' | 'quarantine-exit' | 'noop' }`. The unit-test seam; no I/O inside.
 - **Config resolver** — reads the `AGENT_MESH_FLAKE_*` env vars with the documented defaults.
