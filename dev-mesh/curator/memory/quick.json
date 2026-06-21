@@ -1134,5 +1134,16 @@
       "source": "PR #303: test(dashboard): Front-End QA Plan 1 — zero-dep L0 unit + static tests",
       "ts": "2026-06-21"
     }
+  },
+  "stale-base-silent-revert": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Stale-base + quick.json edit = silent revert of merged entries — reviewer cross-checks git log for missing keys.",
+    "l1": "PR #289: Coder branch cut pre-#281/#286 — editing quick.json for a bug fix made those PRs' entries appear as deletions in the diff against origin/main. The Coder's git status showed only the intended files as modified (quick.json was NOT a working-tree edit); deletions only appeared in the diff. Reviewer caught it by cross-referencing the recent commit log. Fix: rebase on origin/main before opening any PR that touches quick.json.",
+    "value": "Root cause: when a branch is cut from a stale base, any file in the shared repo that was modified by merged-but-not-yet-baselined PRs will appear as a deletion in the new PR's diff. The agent never edited those lines — the deletions come from the stale base, not the agent's work. This is invisible to the agent (git status is clean for those lines) and easy to miss in review.\n\nReviewer check for any PR touching quick.json:\n1. Note the PR's base SHA (or the branch-cut date).\n2. Run: git log --oneline origin/main -20 | grep -i 'memory\\|promote'\n3. For each recently-merged memory PR: verify those entries are PRESENT in the PR's quick.json diff. If they're listed as deletions → stale-base artifact, not intentional.\n4. Request: git fetch origin && git rebase origin/main (NOT git merge — rebase produces a clean single-commit diff).\n\nCoder prevention: always start a new fix branch from origin/main:\n  git fetch origin && git checkout -b fix/X origin/main\nNever from a cached local HEAD unless you have just run git fetch.\n\nSignal: the PR diff shows deletion of keys whose names match recently-merged memory PRs, AND git status on the branch shows those keys as unmodified. Both conditions together confirm stale-base, not intentional rollback.\n\nRelated: automerge-validate-merge-not-head (automerge sweep also validates the merged tree, not the branch HEAD); multi-bot-shared-file-conflicts (mergefix handles genuine concurrent conflicts — distinct from stale-base silent reverts).\n\nProvenance: PR #289 (2026-06-21) — Reviewer blocking finding: stale-base revert of PRs #281/#286 quick.json entries.",
+    "provenance": {
+      "source": "PR #289 (2026-06-21): Reviewer blocking finding — stale-base silent revert of PRs #281/#286 quick.json entries",
+      "ts": "2026-06-21"
+    }
   }
 }
