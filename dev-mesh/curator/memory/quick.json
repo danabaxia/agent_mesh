@@ -1001,5 +1001,27 @@
       "source": "PR #286: fix(dashboard): auto-refresh the SCHEDULES list (newly-added jobs appear without a manual reload)",
       "ts": "2026-06-21"
     }
+  },
+  "merge-sweep-checkpoint-label-exclusion": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Each PR type has exactly one checkpoint handler — all others must exclude it via label filter.",
+    "l1": "PR #275: memory:promote PRs had a dedicated memory checkpoint (3) but automerge checkpoint had no label filter. GITHUB_TOKEN-created PRs are always UNSTABLE (CI never runs on them), so automerge saw not-clean:UNSTABLE → remediation.ACTIONABLE('automerge') escalated to needs-human. Fix: exclude memory:promote from automerge in run.js — mirrors the exclusion already in automerge/escalation.js.",
+    "value": "Pattern for multi-checkpoint sweep systems (merge-sweep or any work-queue consumer with labelled PR types):\n\n(1) Assign exclusive ownership: each PR label/type belongs to exactly one checkpoint. Document this mapping.\n(2) Propagate exclusions consistently: if escalation.js already skips label X, run.js must too — both files form one logical checkpoint and must have matching guards.\n(3) Apply the filter BEFORE classification, not only in the remediation path. A missing pre-classification filter means the wrong checkpoint still scores the PR and can generate erroneous remediation.\n(4) GITHUB_TOKEN-created PRs are structurally UNSTABLE (GitHub never runs CI on them) — any checkpoint that classifies on check-suite status must exclude bot-created label classes that are UNSTABLE by nature.\n(5) Regression: assert that an UNSTABLE PR with the excluded label does NOT appear in the automerge checkpoint results and STILL appears in its dedicated checkpoint. Test is red before the fix, green after.\n\nProvenance: PR #275 (2026-06-21).",
+    "provenance": {
+      "source": "PR #275: fix(merge-sweep): exclude memory:promote PRs from automerge checkpoint",
+      "ts": "2026-06-21"
+    }
+  },
+  "async-drain-on-close": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Async drain on close: stop() must await in-flight work — sync stop races teardown and causes ENOTEMPTY/lock flakes.",
+    "l1": "PR #278: ci-schedules-route.test.js failed on windows-node20 (ENOTEMPTY: rmdir dev-mesh). Root cause: autoSync.stop() was synchronous — set stopped + cleared the timer but did NOT await an activeRun in progress. A startup doctor write landed AFTER close() returned, racing the test's rmSync(repo). Fix: (1) track in-flight execute() as activeRun; (2) async stop(): set stopped=true first (bounds the drain), clear timer, await activeRun; (3) server.close() must await stop() before teardown. Recurred in autonomous-merge cycles #258 + #275.",
+    "value": "Pattern: any background service with fire-and-forget work needs:\n(1) activeRun tracker — capture the in-flight Promise so it can be awaited.\n(2) async stop(): set stopped=true FIRST (prevents further reruns, bounding the drain), clear debounce timer, then await activeRun.\n(3) close()/teardown: await stop() before rmSync / process.exit / SIGTERM resolve.\n\nOrdering matters: stopped=true before await activeRun — otherwise a rerun could be triggered during the drain.\n\nTDD gate: write a test that starts a slow runSync, calls stop() concurrently, and asserts stop() does not resolve until runSync completes. Red before fix, green after.\n\nSymptom of missing drain: ENOTEMPTY/EBUSY on Windows (concurrent rmdir + background write). May be silent on Linux (ext4 allows unlink-while-open). Provenance: PR #278 (2026-06-21).",
+    "provenance": {
+      "source": "PR #278: fix(dashboard): drain in-flight auto-sync on close() — fixes recurring Windows ENOTEMPTY CI flake",
+      "ts": "2026-06-21"
+    }
   }
 }
