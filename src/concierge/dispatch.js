@@ -26,8 +26,12 @@ export async function dispatchAction({ action, payload = {}, meshRoot, deps }) {
   if (action === 'file_issue') {
     const title = String(payload.title ?? '').trim();
     if (!title) throw new DispatchError('title required', { status: 400 });
-    const labels = (Array.isArray(payload.labels) ? payload.labels : []).filter((l) => LABELS.has(l));
-    const { url } = await runGh({ title, body: String(payload.body ?? title), labels: labels.length ? labels : ['idea'], meshRoot });
+    const raw = Array.isArray(payload.labels) ? payload.labels : [];
+    for (const l of raw) {                       // reject (don't silently strip) — matches validateLabels
+      if (typeof l !== 'string' || !LABELS.has(l)) throw new DispatchError(`Disallowed label: ${JSON.stringify(l)}`, { status: 400 });
+    }
+    const labels = raw.length ? [...new Set(raw)] : ['idea'];
+    const { url } = await runGh({ title, body: String(payload.body ?? title), labels, meshRoot });
     return { ok: true, kind: 'file_issue', url };
   }
 

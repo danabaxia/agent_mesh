@@ -12,13 +12,22 @@ test('unknown action rejected before any side effect', async () => {
   assert.equal(touched, false);
 });
 
-test('file_issue runs gh with allowlisted labels only', async () => {
+test('file_issue rejects a disallowed label before any gh spawn', async () => {
+  let touched = false;
+  await assert.rejects(() => dispatchAction({ action: 'file_issue',
+    payload: { title: 'T', body: 'b', labels: ['idea', 'evil'] }, meshRoot: '/x',
+    deps: { runGh: async () => { touched = true; return { url: 'u' }; }, broker: { send: async () => {} },
+      createTask: async () => {}, peers } }), (e) => e instanceof DispatchError && e.status === 400);
+  assert.equal(touched, false, 'gh never spawned on a bad label');
+});
+
+test('file_issue runs gh with the allowlisted labels', async () => {
   let args = null;
   const out = await dispatchAction({ action: 'file_issue',
-    payload: { title: 'T', body: 'b', labels: ['idea', 'evil'] }, meshRoot: '/x',
+    payload: { title: 'T', body: 'b', labels: ['idea'] }, meshRoot: '/x',
     deps: { runGh: async (a) => { args = a; return { url: 'u' }; }, broker: { send: async () => {} },
       createTask: async () => {}, peers } });
-  assert.deepEqual(args.labels, ['idea'], 'evil label stripped');
+  assert.deepEqual(args.labels, ['idea']);
   assert.equal(out.url, 'u');
 });
 
