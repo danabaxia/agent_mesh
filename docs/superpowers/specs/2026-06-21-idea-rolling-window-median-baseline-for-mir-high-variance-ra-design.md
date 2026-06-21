@@ -1,4 +1,28 @@
- amendment** to `docs/superpowers/specs/2026-06-19-mesh-improvement-report-design.md` §10 and §11 — the authorizing artifact. **Required before any Lever-B code merges.**
+# Rolling-Window / Median Baseline for MIR High-Variance Ratio Metrics — Design
+
+## Goal
+
+Eliminate false-positive MIR soft-findings caused by single-run noise in high-variance ratio metrics (specifically `quality_per_1k_tokens`). Two levers are evaluated against Phase 0 empirical evidence before any code ships:
+
+- **Lever A (noise-band widening):** Increase `AGENT_MESH_MIR_NOISE_BAND_PCT` to absorb single-run variance. Simple, no algorithm change.
+- **Lever B (rolling-window median):** Replace the §10 single-previous-value baseline with a trailing-median computation over the last *W* runs. More principled; requires a per-finding history store carried forward across runs.
+
+Phase 0 evidence gates both levers — no algorithm or band change ships without it.
+
+## Background
+
+PR #321 reverted a rolling-window baseline implementation. The Reviewer blocked merge on two grounds: (1) the change shipped Lever B without the §10/§11 spec amendment that would have authorised it, and (2) no empirical evidence confirmed the -31.6% `quality_per_1k_tokens` drop in PR #318 was run noise rather than a regression.
+
+The Coder (danabaxia) recorded the correct path:
+1. Gather variance/CV data for `quality_per_1k_tokens` across ≥3 runs as evidence for the noise premise.
+2. Amend §10/§11 of the MIR design spec to promote rolling-window baselines to v1 with rationale.
+3. Re-open as a separate PR with evidence and spec amendment included.
+
+This spec is the §10/§11 amendment that step 2 requires. The Phase 0 evidence collection infrastructure (`computeStats` / `median` utilities and the per-finding `history` carry-forward in `baseline.js`) is the Lever B implementation that step 3 enables.
+
+## Components
+
+- **Spec amendment** to `docs/superpowers/specs/2026-06-19-mesh-improvement-report-design.md` §10 and §11 — the authorizing artifact. **Required before any Lever-B code merges.**
 - **MIR baseline comparator** (existing, in the MIR report generator) — for Lever A: no logic change, only the configured band value. For Lever B: replaces the single-previous-value lookup with a trailing-median computation plus cold-start fallback.
 - **`AGENT_MESH_MIR_NOISE_BAND_PCT`** (existing config) — for Lever A, its default/recommended value changes. For Lever B it is retained and applied around the new median baseline.
 - **Run-history reader** (Lever B only) — supplies the trailing *W* run values for the metric to the comparator.
