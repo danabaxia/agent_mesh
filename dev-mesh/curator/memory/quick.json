@@ -1046,6 +1046,17 @@
       "ts": "2026-06-21"
     }
   },
+  "schedule-name-leads-id": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "schedule.json job name must lead with its id — dashboard renders name but operators search by id.",
+    "l1": "PR #293: 11 of 14 dev-mesh jobs had diverged names (e.g. 'Draft-fix stuck escalations (do)' for id 'research-fix') — searching the SCHEDULES list by id returned nothing. Fix: rename each job name to '<id> — <readable description>'. Purely cosmetic: id/builtin/cadence/enabled/description unchanged. Pattern: any UI that renders a human label while operators reference a machine id requires name = 'id — label' so search matches the canonical reference term.",
+    "value": "Convention: in dev-mesh/*/.agent/schedule.json (and any equivalent job registry), set:\n  \"name\": \"<id> — <short readable description>\"\n\nThis ensures the dashboard SCHEDULES list is searchable by the exact term used in docs, logs, and error messages. The description half aids readability for humans scanning the raw JSON; the id prefix is the searchable anchor.\n\nRules:\n(1) name MUST begin with the exact id string verbatim, followed by ' — ' (space-em-dash-space).\n(2) The id/builtin/cadence/enabled/description fields are the authoritative identifiers and must not change to fix a name mismatch — only name changes.\n(3) Drift detection: compare id vs. the name prefix on every schedule.json read. A mismatch is a cosmetic bug with a real UX cost (searchable identifiers become invisible).\n(4) When adding a new job: set name = id + ' — ' + what it does in one clause.\n\nSelf-test: after any schedule.json edit, verify that running 'grep -A1 \\\"name\\\"' on the file shows the id string at the start of every name value. In the dashboard: Cmd+F the job id → it must be visible.\n\nProvenance: PR #293 (2026-06-21): chore(schedules): lead every job name with its id (fix dashboard id/name mismatch); 5 files updated (analyst, coder, maintainer, orchestrator, tester schedule.json).",
+    "provenance": {
+      "source": "PR #293: chore(schedules): lead every job name with its id (fix dashboard id/name mismatch)",
+      "ts": "2026-06-21"
+    }
+  },
   "monitor-path-silent-vacuous-clean": {
     "status": "active",
     "valid_to": null,
