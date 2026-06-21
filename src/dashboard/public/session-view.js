@@ -37,6 +37,7 @@
  * and pulling result-canvas.js — both benign, and board2.html already loads it).
  */
 import { groupTurns, extractImageRefs } from '/session-model.js';
+import { circ, preview, capUtf8, rawFromRecords } from '/session-view-model.js';
 import { mdToHtml } from '/md-lite.js';
 import { transcriptWindowUrl, streamUrl } from '/session-log.js';
 import { followTarget, isUserOrigin } from '/follow-policy.js';
@@ -55,8 +56,8 @@ const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#x27;');
 
-/** ①…⑳ then #N — port of the reference generator's circ(). */
-function circ(n) { return n >= 1 && n <= 20 ? String.fromCodePoint(0x2460 + n - 1) : '#' + n; }
+// circ/preview/capUtf8/rawFromRecords now live in /session-view-model.js (pure,
+// unit-tested); imported above. Date/locale formatters stay here (non-pure).
 
 function fmtFull(ts) {  // 'Jun 11, 3:27 PM'
   if (!ts) return '—';
@@ -73,43 +74,9 @@ function dur(qts, ats) {
   if (!Number.isFinite(s) || s < 0) return '?';
   return s < 90 ? `${s}s` : `${Math.floor(s / 60)}m`;
 }
-function preview(s, n) { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + ' …' : s; }
-
-/** Cap a string at `max` UTF-8 bytes (artifact embed limit). */
-function capUtf8(s, max) {
-  const enc = new TextEncoder();
-  if (enc.encode(s).length <= max) return s;
-  let lo = 0, hi = s.length;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (enc.encode(s.slice(0, mid)).length <= max) lo = mid; else hi = mid - 1;
-  }
-  return s.slice(0, lo);
-}
-
-/**
- * Rebuild minimal raw-shaped JSONL records from the server's redacted envelope
- * events, in seq order, so groupTurns() (which expects raw record shapes)
- * applies unchanged. Sidechain events are skipped here (out of Phase-7 scope);
- * tool_result / raw events are not part of turn grouping.
- */
-export function rawFromRecords(records) {
-  const raw = [];
-  for (const rec of records || []) {
-    for (const ev of rec.events || []) {
-      if (!ev || ev.sidechain === true) continue;
-      const ts = typeof ev.ts === 'string' ? ev.ts : '';
-      if (ev.type === 'user_text') {
-        raw.push({ type: 'user', timestamp: ts, message: { content: [{ type: 'text', text: ev.text }] } });
-      } else if (ev.type === 'text') {
-        raw.push({ type: 'assistant', timestamp: ts, message: { content: [{ type: 'text', text: ev.text }] } });
-      } else if (ev.type === 'tool_use') {
-        raw.push({ type: 'assistant', timestamp: ts, message: { content: [{ type: 'tool_use', name: ev.name, input: ev.input }] } });
-      }
-    }
-  }
-  return raw;
-}
+// rawFromRecords is re-exported (was a public export of this module before the
+// extraction; nothing imports it externally today, but the surface is kept).
+export { rawFromRecords };
 
 // ── view ────────────────────────────────────────────────────────────────────
 
