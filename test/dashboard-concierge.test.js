@@ -185,6 +185,32 @@ test('host-gate: allowlisted tailnet host STILL requires the token (no auth bypa
   } finally { await srv.close(); }
 });
 
+test('host-gate: tailnet module request (http Origin, no Sec-Fetch-Site) is accepted', async () => {
+  // ES module scripts are fetched in CORS mode and send an Origin header even when
+  // same-origin; over `tailscale serve --http=80` that Origin is http://. The gate
+  // must accept it, else /mobile/app.js 403s and the PWA shell loads without JS.
+  const { srv, port, cookie } = await startServer();
+  try {
+    const res = await rawRequest({
+      port, path: '/mobile/app.js',
+      headers: { Host: 'my-mac.tailnet-abc.ts.net', Origin: 'http://my-mac.tailnet-abc.ts.net', Cookie: cookie }
+      // no Sec-Fetch-Site → falls through to the Origin check
+    });
+    assert.equal(res.status, 200, 'http:// Origin from the same tailnet host must pass');
+  } finally { await srv.close(); }
+});
+
+test('host-gate: a foreign Origin on a tailnet host is still rejected', async () => {
+  const { srv, port, cookie } = await startServer();
+  try {
+    const res = await rawRequest({
+      port, path: '/api/health',
+      headers: { Host: 'my-mac.tailnet-abc.ts.net', Origin: 'http://evil.example.com', Cookie: cookie }
+    });
+    assert.equal(res.status, 403, 'a foreign Origin must not pass even on an allowlisted host');
+  } finally { await srv.close(); }
+});
+
 test('host-gate: explicit env-listed host accepted', async () => {
   const { srv, port, cookie } = await startServer({ allowedHosts: ['mybox.local'] });
   try {

@@ -13,16 +13,22 @@
   --radius: 14px;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; }
+html, body { margin: 0; height: 100%; max-width: 100%; overflow-x: hidden; }
 body {
   background: var(--bg);
   color: var(--txt);
   font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100dvh;
   overflow: hidden;
 }
+/* Flex children default to min-width:auto, which refuses to shrink below their
+   content (e.g. the composer textarea's long placeholder) and pushes the whole
+   page wider than the viewport → content cut off at the right edge on phones.
+   Force every flex child to be allowed to shrink. */
+.view, .thread, .status, .composer, .composer textarea, .tabbar, .tab { min-width: 0; }
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
