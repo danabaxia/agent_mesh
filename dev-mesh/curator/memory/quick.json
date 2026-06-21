@@ -1101,6 +1101,17 @@
       "ts": "2026-06-21"
     }
   },
+  "gh-explicit-repo-worktree": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "`gh` mutations in daemons/worktrees: always pass `--repo` — cwd git auto-detect silently fails in worktrees.",
+    "l1": "PR #299: MIR's `gh issue create/comment/close` omitted `--repo`, relying on cwd git auto-detect. The daemon runs from a git worktree where the gitdir can be broken/missing, causing detection to fail. The wrapper `spawnSync(...).stdout || ''` silently swallows errors — `gh` returns `''`, the caller sees success, and nothing is filed. MIR reported `ok` while actually filing nothing. Fix: thread `repo` through `runMir` → `syncReport`; pass `--repo` on every issue mutation.",
+    "value": "When any automation uses `gh` for issue mutations (create/comment/close/edit) in a context that may not have a clean git root — daemons, worktrees, CI runners:\n\n(1) Always pass `--repo owner/repo` explicitly. `gh` resolves the repo from cwd git config; in a worktree the gitdir link may be broken/missing, causing a silent no-op.\n\n(2) The silent failure pattern: `spawnSync(cmd, args, opts).stdout || ''` returns `''` on any error AND on genuine empty output — indistinguishable at the call site. For side-effectful `gh` calls, check `.status` or `.stderr` explicitly, or throw on non-zero exit.\n\n(3) Thread `repo` as an explicit parameter from call site → wrapper → every `gh` invocation. Falsy `repo` → omit `--repo` (back-compat). Makes the cwd-dependency explicit and testable.\n\n(4) Test coverage pattern: assert `--repo owner/repo` appears in every mutation call when `repo` is set; assert it is absent when not set (pure argument-inspection, no real GitHub needed).\n\n(5) Heuristic: if a function calling `gh` can ever run from a non-repo cwd (daemon, scheduled job, worktree), treat `--repo` as required. Only safe to omit when all callers are interactive CLI with guaranteed cwd-git.\n\nProvenance: PR #299 (2026-06-21).",
+    "provenance": {
+      "source": "PR #299: fix(mesh-improvement): MIR files issues against an explicit --repo (not cwd git auto-detect)",
+      "ts": "2026-06-21"
+    }
+  },
   "gitignored-generated-file-absent-test": {
     "status": "active",
     "valid_to": null,
