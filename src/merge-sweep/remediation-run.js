@@ -43,10 +43,21 @@ export async function runRemediation({ gh, repo, meshRoot, readReport, readState
         if (pv && String(pv.state).toUpperCase() !== 'OPEN') { state[f.key] = prev[f.key] || { state: 'watching' }; continue; }
       }
       if (!ensured) { try { await gh(['label', 'create', 'needs-human', '--repo', repo, '--color', 'B60205']); } catch { /* exists */ } ensured = true; }
-      const title = f.checkpoint === 'automerge'
-        ? `needs-human: ${f.ref} stuck (${f.detail}) — auto-fix exhausted`
-        : `needs-human: ${f.ref} (${f.detail || 'memory review'})`;
-      const body = `${markerFor(f.key)}\n\n🤖 dev-mesh ② backstop: this item has been flagged for ≥${cfg.escalateAfter} sweeps and the automatic fixers could not clear it. A human review is needed.\n\n- item: \`${f.key}\`\n- detail: ${f.detail || ''}`;
+      // UNSTABLE is structurally outside the content fixers' reach: GitHub deems the PR
+      // technically mergeable, so there is no DIRTY conflict for mergefix and no failing
+      // *required* check for ci-sweep — only a non-required (or pending/skipped/unreported)
+      // check is unmet. Escalating it as "auto-fix exhausted" misleads the human; tell them
+      // it's a CI/branch-protection state to resolve, not a code fix the bots skipped.
+      const unstable = f.checkpoint === 'automerge' && f.detail === 'not-clean:UNSTABLE';
+      const title = f.checkpoint !== 'automerge'
+        ? `needs-human: ${f.ref} (${f.detail || 'memory review'})`
+        : unstable
+          ? `needs-human: ${f.ref} stuck (${f.detail}) — non-required check unmet`
+          : `needs-human: ${f.ref} stuck (${f.detail}) — auto-fix exhausted`;
+      const reason = unstable
+        ? `🤖 dev-mesh ② backstop: ${f.ref} is \`UNSTABLE\` — GitHub considers it technically mergeable, but a non-required (or pending/skipped/unreported) status check is unmet. The content fixers have no handle on this: there is no merge conflict for \`dev-mesh-mergefix\` to resolve and no failing *required* check for \`dev-mesh-ci-sweep\` to repair. A human needs to resolve the CI/branch-protection state — fix or re-run the offending check, or drop it from the required set — then merge.`
+        : `🤖 dev-mesh ② backstop: this item has been flagged for ≥${cfg.escalateAfter} sweeps and the automatic fixers could not clear it. A human review is needed.`;
+      const body = `${markerFor(f.key)}\n\n${reason}\n\n- item: \`${f.key}\`\n- detail: ${f.detail || ''}`;
       const url = await gh(['issue', 'create', '--repo', repo, '--label', 'needs-human', '--title', title, '--body', body]);
       const n = Number.parseInt(String(url).trim().split('/').pop(), 10);
       state[f.key] = { ...state[f.key], state: 'escalated', issueNumber: Number.isFinite(n) ? n : null };
