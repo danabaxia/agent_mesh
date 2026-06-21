@@ -12,6 +12,7 @@
 // an agent-agent link = pair-analytics callback · hover = highlight neighbors.
 
 import { nodeRadius } from './net-graph-layout.js';
+import { netGraphSettleIterations } from './e2e-mode.js';
 
 const REPULSE = 2600;        // Coulomb constant
 const SPRING = 0.06;         // spring stiffness
@@ -162,6 +163,15 @@ export function createNetGraph(svg, cb = {}) {
 
   function wake(a) {
     alpha = Math.max(alpha, a);
+    // e2e/visual determinism (Plan 3): collapse the physics to a settled layout
+    // synchronously instead of animating, so the rendered graph is pixel-stable.
+    // No-op (0 iterations) off e2e → the live animated rAF path is untouched.
+    const settleN = netGraphSettleIterations();
+    if (settleN > 0) {
+      for (let i = 0; i < settleN && alpha > ALPHA_MIN; i++) tick();
+      render();
+      return;
+    }
     if (!raf) loop();
   }
 
