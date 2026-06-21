@@ -99,6 +99,18 @@ export function summarizeActivity(events, { max = 12, now = Date.now() } = {}) {
   return { title: 'Recent activity', rows };
 }
 
+/**
+ * Build the over-the-loop Alerts card from /api/concierge/alerts, ranked by severity.
+ * @returns {{title:string, rows:Array<{label:string,value:string,cls?:string}>}}
+ */
+export function summarizeAlerts(alerts) {
+  const rank = { critical: 2, warn: 1, info: 0 };
+  const sev = { critical: 'bad', warn: 'warn', info: '' };
+  const list = Array.isArray(alerts) ? alerts.slice().sort((a, b) => (rank[b.severity] || 0) - (rank[a.severity] || 0)) : [];
+  if (!list.length) return { title: 'Alerts', rows: [{ label: 'No alerts', value: '—', cls: 'muted' }] };
+  return { title: 'Alerts', rows: list.map((a) => ({ label: a.summary || a.kind || a.id, value: a.severity, cls: sev[a.severity] || '' })) };
+}
+
 // --------------------------------------------------------------------------
 // DOM wiring (browser only)
 // --------------------------------------------------------------------------
@@ -228,6 +240,14 @@ function mount() {
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + 'px'; });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) submit(e); });
 
+  const get = async (p) => { try { const r = await fetch(p, { headers: authHeaders() }); return r.ok ? await r.json() : null; } catch { return null; } };
+  const renderCards = (box, cards) => {
+    box.innerHTML = cards.map((c) => `
+      <div class="card"><h3>${escapeHtml(c.title)}</h3>
+        ${c.rows.map((r) => `<div class="metric"><span>${escapeHtml(r.label)}</span><span class="v ${r.cls || ''}">${escapeHtml(r.value)}</span></div>`).join('')}
+      </div>`).join('');
+  };
+
   // Tabs
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.onclick = () => {
@@ -235,24 +255,29 @@ function mount() {
       const view = tab.dataset.view;
       $('view-chat').classList.toggle('active', view === 'chat');
       $('view-status').classList.toggle('active', view === 'status');
+      $('view-alerts').classList.toggle('active', view === 'alerts');
       if (view === 'status') loadStatus();
+      if (view === 'alerts') loadAlerts();
     };
   });
 
   const loadStatus = async () => {
     const box = $('status');
     box.innerHTML = '<div class="card muted">Loading…</div>';
-    const get = async (p) => { try { const r = await fetch(p, { headers: authHeaders() }); return r.ok ? await r.json() : null; } catch { return null; } };
     const [health, daily, activity] = await Promise.all([get('/api/health'), get('/api/daily'), get('/api/activity-log?limit=20')]);
     const cards = summarizeStatus({ health, daily: daily?.report ?? daily });
     cards.push(summarizeActivity(activity?.events));
-    box.innerHTML = cards.map((c) => `
-      <div class="card"><h3>${escapeHtml(c.title)}</h3>
-        ${c.rows.map((r) => `<div class="metric"><span>${escapeHtml(r.label)}</span><span class="v ${r.cls || ''}">${escapeHtml(r.value)}</span></div>`).join('')}
-      </div>`).join('');
+    renderCards(box, cards);
   };
 
-  $('refresh').onclick = loadStatus;
+  const loadAlerts = async () => {
+    const box = $('alerts');
+    box.innerHTML = '<div class="card muted">Loading…</div>';
+    const data = await get('/api/concierge/alerts');
+    renderCards(box, [summarizeAlerts(data?.alerts)]);
+  };
+
+  $('refresh').onclick = () => { loadStatus(); loadAlerts(); };
 
   // Pre-hydrate from server-side history; show greeting only when starting fresh.
   loadThreadHistory(thread, addBubble, { limit: 40 }).then((loaded) => {
