@@ -507,7 +507,7 @@ async function runHealthAlertSweep() {
       if (num) { nextState.open[item.key] = num; opened++; }
       log(`health-alert-sweep: opened #${num} for key=${item.key}`);
       rec({ source: 'health-alert', type: 'health.alert.opened', level: 'error', summary: `health alert: ${item.key} → #${num}`, ref: `#${num}` });
-    } catch (e) { log(`health-alert-sweep: open failed key=${item.key}:`, e.message); }
+    } catch (e) { log(`health-alert-sweep: open failed key=${item.key}:`, e.message); delete nextState.open[item.key]; }
   }
   for (const item of toClose) {
     if (!item.number) continue;

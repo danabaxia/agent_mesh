@@ -205,6 +205,17 @@ test('computeAlertActions: partial recovery — one organ recovers, another stay
   assert.equal(nextState.open['organ:jobs:critical'], null);
 });
 
+test('computeAlertActions: null-in-prior (persisted failed-open) → key is retried, not silently deduped', () => {
+  // Simulates the state after a gh issue create threw and the null was persisted.
+  // The next sweep must still open the issue, not treat null as "already open".
+  const report = criticalReport();
+  const prior = { open: { 'overall:critical': null } };
+  const { toOpen, toClose, nextState } = computeAlertActions(report, prior);
+  assert.ok(toOpen.some((o) => o.key === 'overall:critical'), 'overall:critical must be re-emitted to toOpen for retry');
+  assert.deepEqual(toClose, []);
+  assert.equal(nextState.open['overall:critical'], null); // still pending until shell fills in number
+});
+
 test('computeAlertActions: empty/corrupt priorState is tolerated', () => {
   for (const bad of [null, undefined, {}, { open: null }, { open: 'garbage' }]) {
     const { toOpen, toClose } = computeAlertActions(nominalReport(), bad);

@@ -98,14 +98,14 @@ export function computeAlertActions(report, priorState) {
   const toClose = [];
   const nextOpen = { ...prior };
 
-  // Keys that are now critical but not yet open → open.
+  // Keys that are now critical but not yet open (or prior open failed, leaving null) → open.
   for (const key of activeKeys) {
-    if (!(key in nextOpen)) {
+    if (!(key in nextOpen) || nextOpen[key] === null) {
       toOpen.push({ key, title: alertTitle(key), body: alertBody(key, report) });
       // Shell fills in the issue number after creating; mark pending with null.
       nextOpen[key] = null;
     }
-    // else: already open, nothing to do (dedup).
+    // else: already open with a real issue number, nothing to do (dedup).
   }
 
   // Keys that were open but are no longer critical → close.
