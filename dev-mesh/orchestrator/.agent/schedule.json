@@ -2,7 +2,7 @@
   "jobs": [
     {
       "id": "gh-activity-poll",
-      "name": "GitHub activity poll",
+      "name": "gh-activity-poll — Poll GitHub activity for the dashboard",
       "description": "Poll GitHub Actions runs into live mesh activity",
       "kind": "builtin",
       "builtin": "gh-activity-poll",
@@ -11,7 +11,7 @@
     },
     {
       "id": "daily-report-refresh",
-      "name": "Daily report refresh",
+      "name": "daily-report-refresh — Refresh the daily report cache",
       "description": "Refresh the daily PR / issue / token report cache",
       "kind": "builtin",
       "builtin": "daily-report-refresh",

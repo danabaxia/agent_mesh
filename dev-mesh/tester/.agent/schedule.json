@@ -2,7 +2,7 @@
   "jobs": [
     {
       "id": "tester-suite-run",
-      "name": "Suite + improvement report",
+      "name": "tester-suite-run — Run the test suite + emit the improvement report",
       "kind": "builtin",
       "builtin": "tester-suite-run",
       "cadence": { "kind": "daily", "at": "06:30" },

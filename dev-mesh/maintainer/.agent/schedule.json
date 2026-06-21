@@ -2,7 +2,7 @@
   "jobs": [
     {
       "id": "label-repair-sweep",
-      "name": "Label repair sweep",
+      "name": "label-repair-sweep — Repair mislabeled issues",
       "kind": "builtin",
       "builtin": "label-repair-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
@@ -10,7 +10,7 @@
     },
     {
       "id": "issue-sweep",
-      "name": "Label-aware issue sweep",
+      "name": "issue-sweep — Route open issues to the right agent (label-aware)",
       "kind": "builtin",
       "builtin": "issue-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
@@ -18,7 +18,7 @@
     },
     {
       "id": "automerge-sweep",
-      "name": "Prompt drain — merge CLEAN+APPROVED PRs",
+      "name": "automerge-sweep — Merge CLEAN+APPROVED PRs (prompt drain)",
       "kind": "builtin",
       "builtin": "automerge-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
@@ -26,7 +26,7 @@
     },
     {
       "id": "merge-sweep",
-      "name": "Merge sweep (report-only)",
+      "name": "merge-sweep — Report-only: inspect the merge-gate state",
       "kind": "builtin",
       "builtin": "merge-sweep",
       "cadence": { "kind": "every", "minutes": 15 },
@@ -35,7 +35,7 @@
     },
     {
       "id": "merge-sweep-remediate",
-      "name": "Merge-sweep remediation (backstop)",
+      "name": "merge-sweep-remediate — ②: escalate items the fixers couldn't clear",
       "kind": "builtin",
       "builtin": "merge-sweep-remediate",
       "cadence": { "kind": "every", "minutes": 30 },
@@ -44,7 +44,7 @@
     },
     {
       "id": "post-merge-reconcile",
-      "name": "Close issues whose closing PR merged (clear stale pr:in-review)",
+      "name": "post-merge-reconcile — Close issues whose closing PR merged",
       "kind": "builtin",
       "builtin": "post-merge-reconcile",
       "cadence": { "kind": "every", "minutes": 10 },
@@ -52,7 +52,7 @@
     },
     {
       "id": "autofix-pr-sweep",
-      "name": "Escalate bug-autofix PRs closed without merging (pr:in-review → blocked)",
+      "name": "autofix-pr-sweep — Escalate bug-autofix PRs closed without merging",
       "kind": "builtin",
       "builtin": "autofix-pr-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
@@ -60,7 +60,7 @@
     },
     {
       "id": "needs-human-cleanup",
-      "name": "Close stale needs-human issues whose referenced PR is merged/closed",
+      "name": "needs-human-cleanup — Close stale needs-human issues whose PR merged/closed",
       "kind": "builtin",
       "builtin": "needs-human-cleanup",
       "cadence": { "kind": "every", "minutes": 30 },

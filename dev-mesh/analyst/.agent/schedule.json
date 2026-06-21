@@ -2,7 +2,7 @@
   "jobs": [
     {
       "id": "analyst-daily-review",
-      "name": "Daily performance review",
+      "name": "analyst-daily-review — Daily performance review → idea issues",
       "kind": "builtin",
       "builtin": "analyst-daily-review",
       "cadence": { "kind": "daily", "at": "09:30" },
@@ -11,7 +11,7 @@
     },
     {
       "id": "research-escalation",
-      "name": "Research stuck escalations (diagnosis)",
+      "name": "research-escalation — ③a: research a stuck needs-human PR, post a diagnosis (read-only)",
       "kind": "builtin",
       "builtin": "research-escalation",
       "cadence": { "kind": "every", "minutes": 120 },
