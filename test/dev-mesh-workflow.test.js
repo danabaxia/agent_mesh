@@ -230,6 +230,24 @@ test('TOOL GRANTS: least privilege — only do-workers can push/build; all can c
   }
 });
 
+test('WEB TOOLS (#266): the Analyst research workflows grant WebSearch/WebFetch', () => {
+  // research-landscape is a deep-research skill (fan-out search → fetch → verify). The
+  // Analyst drives it from both intake (scheduled poll) and research. Without WebSearch
+  // and WebFetch in --allowedTools, that path is denied its core tools and accumulates
+  // permission denials until the postrun honesty gate fails (#266). Only the Analyst's
+  // research-capable workflows need them; do-workers and other ask-roles must NOT.
+  const WEB_AGENTS = new Set(['intake', 'research']);
+  for (const n of NAMES) {
+    if (WEB_AGENTS.has(n)) {
+      assert.match(wf[n], /--allowedTools "[^"]*\bWebSearch\b/, `${n}: research path needs WebSearch`);
+      assert.match(wf[n], /--allowedTools "[^"]*\bWebFetch\b/, `${n}: research path needs WebFetch`);
+    } else {
+      assert.doesNotMatch(wf[n], /--allowedTools "[^"]*\bWebSearch\b/, `${n}: must not grant web tools`);
+      assert.doesNotMatch(wf[n], /--allowedTools "[^"]*\bWebFetch\b/, `${n}: must not grant web tools`);
+    }
+  }
+});
+
 test('CURATOR GATE: curate validates quick.json caps (belt-and-suspenders backstop after claude-code-action)', () => {
   // memory-cap-validate-at-write (quick.json): over-cap l0s deadlock the pipeline.
   // The primary gate is the promote-to-memory SKILL.md step 2b (validate before push

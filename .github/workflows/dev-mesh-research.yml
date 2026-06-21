@@ -47,9 +47,11 @@ jobs:
           # Model via repo variable (vars.DEV_MESH_MODEL) with a Sonnet fallback. The
           # action otherwise forces Opus 4.8, which THIS key cannot access (instant
           # is_error/$0). Change the model by setting the DEV_MESH_MODEL repo variable.
+          # WebSearch,WebFetch: research-landscape is a deep-research path (fan-out search →
+          # fetch → verify); without these the Analyst is denied its core tools (#266).
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
-            --allowedTools "Read,Grep,Glob,Edit,Write,Bash(gh:*)"
+            --allowedTools "Read,Grep,Glob,Edit,Write,WebSearch,WebFetch,Bash(gh:*)"
           prompt: |
             You are the **Analyst** of the agent_mesh Dev-mesh. First read your role
             definition at `dev-mesh/analyst/AGENT.md` and your skills under
