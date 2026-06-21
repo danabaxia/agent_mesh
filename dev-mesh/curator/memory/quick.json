@@ -1190,5 +1190,16 @@
       "source": "PR #312: feat(daemon): daemon-driven memory:promote drain (beats throttled GitHub cron)",
       "ts": "2026-06-21"
     }
+  },
+  "http-peer-agentcard-signing": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "HTTP anti-spoof: pin Ed25519 publicKey per peer; no pin = unverified-accept; mismatch = peer_identity_unverified (data).",
+    "l1": "A2A v1.0 Signed Agent Cards closes HTTP peer identity gap. serve-a2a-http signs AgentCard on initialize when AGENT_MESH_SIGNING_KEY_FILE is set; HttpClientSession verifies when publicKey is pinned in registry.json. No pin = accept unverified (backwards-compat). Key pinned + bad sig = peer_identity_unverified Task error (failure-as-data, not exception). Attested: name/capabilities/skills. gen-signing-key CLI lowers friction. Stdio peers unaffected (locally-spawned = operator-controlled). PR #317 spec; adopted: Google ADK, LangGraph, CrewAI.",
+    "value": "Pattern for extending an anti-spoof invariant from local (stdio) to network (HTTP) transports.\n\nThe problem: stdio peers are locally-spawned — operator-controlled by definition. HTTP peers receive their AgentCard at connect time with no cryptographic check. A misconfigured URL or MitM can return a spoofed card (wrong name, widened capabilities) and the framework accepts it silently.\n\nThe solution (A2A v1.0 Signed Agent Cards, PR #317 spec):\n\n(1) Server-side: set AGENT_MESH_SIGNING_KEY_FILE to an Ed25519 private key PEM. serve-a2a-http canonicalizes the attested fields (name, capabilities, skills), signs, and attaches the signature to every initialize response.\n\n(2) Client-side: add publicKey (Ed25519 base64url DER) per HTTP peer entry in registry.json. HttpClientSession verifies on connect. No publicKey = accept unverified (backwards-compat, zero migration cost). publicKey present + bad/missing sig = peer_identity_unverified Task error (failure-as-data, not thrown).\n\n(3) gen-signing-key CLI: generates a fresh Ed25519 keypair — private key PEM for the server, base64url DER for registry.json. Reduces operator friction to a one-time setup.\n\n(4) Canonicalization: deterministic byte-stable serialization of attested fields so field-insertion-order differences do not break verification.\n\nInvariants upheld: anti-spoof (AgentCard content cryptographically attested for HTTP peers); failure-as-data (peer_identity_unverified is a Task error, never an exception). Stdio path is completely unaffected. No PKI chain, no mandatory enforcement — pure operator-pinned trust. Provenance: PR #317 (2026-06-21).",
+    "provenance": {
+      "source": "PR #317: spec: idea: signed AgentCard verification for HTTP peers — anti-spoof for cross-machine meshes (#314)",
+      "ts": "2026-06-21"
+    }
   }
 }
