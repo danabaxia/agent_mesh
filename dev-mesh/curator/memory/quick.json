@@ -1068,6 +1068,17 @@
       "ts": "2026-06-21"
     }
   },
+  "regression-label-as-routing-key": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR hard regressions must use `bug` label — `idea` is human-gated and blocks auto-handoff to the Coder.",
+    "l1": "PR #295: routingLabel() filed ALL MIR findings as `idea`. A hard regression (green→red test/eval) at `idea` waits for human `approved` before Coder acts — bug-autofix never fires. Fix: hard regressions → `bug` (auto-routes to Coder, no approval); security-invariant failures + soft improvements stay `idea` (human judgment required). Full chain: Tester detects red → `bug` issue filed → issue-sweep → Coder do-mode → PR → review → merge.",
+    "value": "Apply when wiring an automated tester/evaluator to the issue pipeline.\n\nThe routing key is the issue label:\n- `bug`: auto-routes to the Coder via bug-autofix (no human approval step). Use for hard regressions — tests or evals that were previously passing and are now failing. These are defects, not proposals.\n- `idea`: lands in `idea-needs-approval` state — waits for a human to apply `approved` before the Coder claims it. Use for security-invariant failures (scope/impact need human review), soft improvement signals (within noise band), and enhancement proposals.\n\nThree signal classes from MIR:\n1. Hard regression (green→red): file as `bug`. Defect with a clear pre/post. Automated fix is appropriate.\n2. Security invariant failure: file as `idea`. Scope and remediation must be human-reviewed.\n3. Soft/improvement signal: file as `idea`. Not confirmed a defect; improvement only.\n\nAnti-pattern: filing ALL signals as `idea` means regressions are human-gated and the Coder→PR→merge auto-chain never fires. The mesh can detect regressions but never self-heals them.\n\nImplementation sketch (src/mesh-improvement/issues.js):\n  function routingLabel(finding) {\n    if (finding.isHardRegression) return 'bug';\n    return 'idea';  // soft signals + security invariants\n  }\n\nTest matrix: hard regression → `bug` (not `idea`); security break → `idea` (not `bug`); soft signal → `idea` (not `bug`).\n\nProvenance: PR #295 (2026-06-21).",
+    "provenance": {
+      "source": "PR #295: fix(mesh-improvement): file hard regressions as `bug` so they auto-hand-off to the Coder",
+      "ts": "2026-06-21"
+    }
+  },
   "mir-all-findings-as-bug": {
     "status": "active",
     "valid_to": null,
