@@ -336,19 +336,23 @@ test('checkDraftInvariant: a compliant research-fix PR (draft + do-not-merge) �
   assert.deepEqual(checkDraftInvariant(prs), []);
 });
 
-test('checkDraftInvariant: a non-draft research-fix PR → CRITICAL (never-auto-merged breach)', () => {
+test('checkDraftInvariant: non-draft but STILL has do-not-merge (human un-drafted for review) → no issue', () => {
+  // The intended ③b review flow: a human un-drafts the PR; do-not-merge still blocks auto-merge.
   const prs = [{ number: 5, headRefName: 'dev-society/research-fix-42', isDraft: false, labels: [{ name: 'do-not-merge' }] }];
+  assert.deepEqual(checkDraftInvariant(prs), []);
+});
+
+test('checkDraftInvariant: still a DRAFT but missing do-not-merge → no issue (draft blocks merge)', () => {
+  const prs = [{ number: 5, headRefName: 'dev-society/research-fix-42', isDraft: true, labels: [{ name: 'other' }] }];
+  assert.deepEqual(checkDraftInvariant(prs), []);
+});
+
+test('checkDraftInvariant: non-draft AND missing do-not-merge → CRITICAL (could actually auto-merge)', () => {
+  const prs = [{ number: 5, headRefName: 'dev-society/research-fix-42', isDraft: false, labels: [{ name: 'other' }] }];
   const issues = checkDraftInvariant(prs);
   assert.equal(issues.length, 1);
   assert.equal(issues[0].severity, 'critical');
-  assert.match(issues[0].detail, /NOT a draft/);
-});
-
-test('checkDraftInvariant: a research-fix PR missing the do-not-merge label → CRITICAL', () => {
-  const prs = [{ number: 5, headRefName: 'dev-society/research-fix-42', isDraft: true, labels: [{ name: 'other' }] }];
-  const issues = checkDraftInvariant(prs);
-  assert.equal(issues.length, 1);
-  assert.match(issues[0].detail, /missing the .*do-not-merge/);
+  assert.match(issues[0].detail, /could auto-merge/);
 });
 
 test('checkDraftInvariant: PRs from OTHER branches are ignored', () => {

@@ -54,23 +54,24 @@ export function scanDaemonLog(logText, { sinceIso, feature = 'research-escalatio
 /**
  * checkDraftInvariant(prs, opts) → issues[]
  *
- * ③b's never-auto-merged invariant: every PR ③b opens (head branch starts with
- * `branchPrefix`) MUST be a draft AND carry the `requiredLabel` hold label. A
- * violation (non-draft, or missing the label) is CRITICAL — it means a ③b fix PR
- * could be auto-merged. PRs from other branches are ignored.
+ * ③b's never-auto-merged invariant: a ③b PR (head branch starts with `branchPrefix`) must
+ * never be AUTO-mergeable. `isAutoMergeable` blocks a PR that is a draft OR carries a hold
+ * label — so a ③b PR is only a breach when it is BOTH non-draft AND missing `holdLabel`.
+ * A human un-drafting it for review while `do-not-merge` still holds is the INTENDED flow,
+ * not a breach. PRs from other branches are ignored.
  *   prs: [{ number, isDraft, headRefName, labels:[{name}]|[string] }]
  */
-export function checkDraftInvariant(prs, { branchPrefix = 'dev-society/research-fix-', requiredLabel = 'do-not-merge' } = {}) {
+export function checkDraftInvariant(prs, { branchPrefix = 'dev-society/research-fix-', holdLabel = 'do-not-merge' } = {}) {
   const issues = [];
   const labelNames = (pr) => (Array.isArray(pr.labels) ? pr.labels : [])
     .map((l) => (typeof l === 'string' ? l : l && l.name)).filter(Boolean);
   for (const pr of Array.isArray(prs) ? prs : []) {
     if (!pr || typeof pr.headRefName !== 'string' || !pr.headRefName.startsWith(branchPrefix)) continue;
-    if (pr.isDraft !== true) {
-      issues.push({ severity: 'critical', signal: 'draft-invariant', detail: `③b PR #${pr.number} is NOT a draft — never-auto-merged invariant breached` });
-    }
-    if (!labelNames(pr).includes(requiredLabel)) {
-      issues.push({ severity: 'critical', signal: 'draft-invariant', detail: `③b PR #${pr.number} is missing the \`${requiredLabel}\` hold label` });
+    // Breach only when BOTH safety nets are gone → the PR could actually auto-merge.
+    const couldAutoMerge = pr.isDraft === false && !labelNames(pr).includes(holdLabel);
+    if (couldAutoMerge) {
+      issues.push({ severity: 'critical', signal: 'draft-invariant',
+        detail: `③b PR #${pr.number} is non-draft AND missing the \`${holdLabel}\` hold label — it could auto-merge (never-auto-merged invariant breached)` });
     }
   }
   return issues;
