@@ -87,13 +87,35 @@ export function summarizeActivity(events, { max = 12, now = Date.now() } = {}) {
 // DOM wiring (browser only)
 // --------------------------------------------------------------------------
 
+/**
+ * Pre-hydrate the visible chat thread from server-side history. Returns the
+ * loaded entries as the initial history array.
+ * @param {Element} thread
+ * @param {Function} addBubble
+ * @param {number} [limit]
+ * @returns {Promise<Array<{role:string,text:string,ts:string}>>}
+ */
+export async function loadThreadHistory(thread, addBubble, { limit = 40 } = {}) {
+  try {
+    const res = await fetch(`/api/concierge/history?limit=${limit}`);
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok || !Array.isArray(data.turns) || data.turns.length === 0) return [];
+    for (const turn of data.turns) {
+      const cls = turn.role === 'assistant' ? 'assistant' : 'owner';
+      addBubble(cls, String(turn.text ?? ''));
+    }
+    return data.turns;
+  } catch { return []; }
+}
+
 function mount() {
   const $ = (id) => document.getElementById(id);
   const thread = $('thread');
   const input = $('input');
   const composer = $('composer');
   const send = $('send');
-  const history = [];   // {role, text}
+  const history = [];   // {role, text} — pre-populated from server history on load
 
   // Capture the bootstrap token from ?t= once and persist it, then send it as a
   // header on every API call. This makes auth work even if the device drops the
@@ -216,26 +238,15 @@ function mount() {
 
   $('refresh').onclick = loadStatus;
 
-  // Re-hydrate thread from server-side conversation log (cross-session continuity).
-  (async () => {
-    try {
-      const r = await fetch('/api/concierge/history?limit=20', { headers: authHeaders() });
-      if (!r.ok) return;
-      const data = await r.json().catch(() => null);
-      if (!Array.isArray(data?.history) || !data.history.length) return;
-      for (const turn of data.history) {
-        if (turn.role === 'user') {
-          addBubble('owner', turn.text || '');
-          history.push({ role: 'user', text: turn.text || '' });
-        } else {
-          addBubble('assistant', turn.reply || turn.text || '');
-          history.push({ role: 'assistant', text: turn.reply || turn.text || '' });
-        }
-      }
-    } catch { /* no history yet — first session */ }
-  })();
-
-  addBubble('assistant', 'Hi — I\'m your mesh concierge. Tell me an idea to discuss, an instruction to relay, or ask what the mesh is up to. I\'ll only file something when you tap Confirm.');
+  // Pre-hydrate from server-side history; show greeting only when starting fresh.
+  loadThreadHistory(thread, addBubble, { limit: 40 }).then((loaded) => {
+    history.push(...loaded.map((e) => ({ role: e.role, text: e.text ?? '' })));
+    if (!loaded.length) {
+      addBubble('assistant', 'Hi — I\'m your mesh concierge. Tell me an idea to discuss, an instruction to relay, or ask what the mesh is up to. I\'ll only file something when you tap Confirm.');
+    }
+  }).catch(() => {
+    addBubble('assistant', 'Hi — I\'m your mesh concierge. Tell me an idea to discuss, an instruction to relay, or ask what the mesh is up to. I\'ll only file something when you tap Confirm.');
+  });
 }
 
 if (typeof document !== 'undefined') {

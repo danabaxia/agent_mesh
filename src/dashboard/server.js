@@ -374,8 +374,15 @@ function passesSameOriginGate(req, listenerPort, allowedHosts = []) {
   const origin = req.headers['origin'];
   if (origin) {
     if (isRemote) {
-      // Same-origin under the proxy: https on the MagicDNS/allowlisted host.
-      if (origin === `https://${hostName}` || origin === `https://${hostName}:${hostPort}`) return true;
+      // Same-origin under the proxy. Accept BOTH http and https on the MagicDNS/
+      // allowlisted host: `tailscale serve --http=80` fronts the dashboard over
+      // plain HTTP on the tailnet (WireGuard already encrypts), so a same-origin
+      // request carries `Origin: http://<host>`. ES module scripts are fetched in
+      // CORS mode and ALWAYS send Origin (unlike stylesheets/classic scripts), so
+      // an https-only check here 403'd /mobile/app.js specifically → the PWA shell
+      // loaded but its JS never ran ("opens but won't fully load" on the phone).
+      if (origin === `https://${hostName}` || origin === `http://${hostName}` ||
+          origin === `https://${hostName}:${hostPort}` || origin === `http://${hostName}:${hostPort}`) return true;
       return false;
     }
     const expectedOrigin = `http://127.0.0.1:${listenerPort}`;
@@ -2640,17 +2647,6 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     return;
   }
 
-  if (pathname === '/api/concierge/history' && req.method === 'GET') {
-    const limit = Math.max(1, Math.min(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 200));
-    try {
-      const history = await concierge.getHistory({ limit });
-      sendJson(res, 200, { ok: true, history });
-    } catch (err) {
-      sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
-    }
-    return;
-  }
-
   if (pathname === '/api/concierge/confirm' && req.method === 'POST') {
     let payload;
     try { payload = JSON.parse((await readBodyCapped(req, 64 * 1024)) || '{}'); }
@@ -2661,6 +2657,22 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     } catch (err) {
       if (err instanceof ConciergeError) sendJson(res, err.status, { ok: false, error: { code: 'concierge', message: err.message, detail: err.detail } });
       else sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
+    }
+    return;
+  }
+
+  if (pathname === '/api/concierge/history' && req.method === 'GET') {
+    const limit = Math.min(200, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+    try {
+      // Support both getHistory() (raw entries, `reply` field) and history() (normalized, `text` field).
+      // Return both `history` and `turns` keys so callers using either API shape work correctly.
+      const raw = typeof concierge.getHistory === 'function' ? await concierge.getHistory({ limit }) : null;
+      const normalized = typeof concierge.history === 'function' ? await concierge.history({ limit }) : null;
+      const result = raw ?? normalized ?? [];
+      const turns = normalized ?? raw ?? [];
+      sendJson(res, 200, { ok: true, history: result, turns });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
     }
     return;
   }

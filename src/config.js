@@ -96,6 +96,12 @@ export const DEFAULT_HEALTH_PROMPT_SOFT_BYTES = 16_384;   // per-agent prompt so
 export const DEFAULT_HEALTH_HEADROOM_WARN_PCT = 25;       // context headroom below this → cognition flag
 export const DEFAULT_HEALTH_HISTORY_DAYS = 14;            // activity-history sparkline window (days)
 
+// Proactive health-alert sweep (dev-society daemon) — issue #361. Consumes the
+// organ-level health model and files a `needs-human` issue when an organ goes
+// CRITICAL, auto-closing on recovery. AGENT_MESH_HEALTH_ALERT_INTERVAL_MS=0 (or
+// AGENT_MESH_HEALTH_ALERT_DISABLED) disables. See CLAUDE.md Config.
+export const DEFAULT_HEALTH_ALERT_INTERVAL_MS = 900_000;  // 15m health-alert tick (0 disables)
+
 // Resolve the health thresholds from an env-like bag, falling back to the defaults
 // above. Pure: no process access of its own. Used by health-collect + /api/health.
 export function resolveHealthThresholds(env = {}) {
