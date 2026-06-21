@@ -8,6 +8,7 @@ import {
   scanErrLog,
   scanScheduleState,
   findStrandedEscalations,
+  checkDraftInvariant,
   advanceClock,
   summarize,
 } from '../src/soft-launch-monitor/core.js';
@@ -303,4 +304,60 @@ test('summarize — validated state', () => {
 
 test('DEFAULT_WINDOW_MS is 24 hours in ms', () => {
   assert.equal(DEFAULT_WINDOW_MS, 24 * 60 * 60 * 1000);
+});
+
+// ── ③b coverage: scanDaemonLog features[] + checkDraftInvariant ──
+
+test('scanDaemonLog features[]: detects research-fix errors AND research-escalation errors', () => {
+  const log = [
+    '2026-06-21T05:00:00.000Z   research-fix error: coder infra failure',
+    '2026-06-21T05:01:00.000Z   research-escalation error: gh api user failed',
+    '2026-06-21T05:02:00.000Z   ▶ claim #9 normal line',
+  ].join('\n');
+  const issues = scanDaemonLog(log, { sinceIso: '2026-06-21T00:00:00Z', features: ['research-escalation', 'research-fix'] });
+  assert.equal(issues.length, 2);
+  assert.ok(issues.every((i) => i.signal === 'daemon-log'));
+});
+
+test('scanDaemonLog features[]: an advisory-failed line is counted ONCE, not per feature', () => {
+  const log = '2026-06-21T05:00:00.000Z   advisory #12 (analyst) failed: timed out';
+  const issues = scanDaemonLog(log, { sinceIso: '2026-06-21T00:00:00Z', features: ['research-escalation', 'research-fix'] });
+  assert.equal(issues.length, 1);
+});
+
+test('scanDaemonLog: single-feature back-compat still works', () => {
+  const log = '2026-06-21T05:00:00.000Z   research-escalation error: boom';
+  assert.equal(scanDaemonLog(log, { sinceIso: '2026-06-21T00:00:00Z', feature: 'research-escalation' }).length, 1);
+  assert.equal(scanDaemonLog(log, { sinceIso: '2026-06-21T00:00:00Z' }).length, 1); // default feature
+});
+
+test('checkDraftInvariant: a compliant research-fix PR (draft + do-not-merge) → no issue', () => {
+  const prs = [{ number: 5, headRefName: 'dev-society/research-fix-42', isDraft: true, labels: [{ name: 'do-not-merge' }] }];
+  assert.deepEqual(checkDraftInvariant(prs), []);
+});
+
+test('checkDraftInvariant: a non-draft research-fix PR → CRITICAL (never-auto-merged breach)', () => {
+  const prs = [{ number: 5, headRefName: 'dev-society/research-fix-42', isDraft: false, labels: [{ name: 'do-not-merge' }] }];
+  const issues = checkDraftInvariant(prs);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].severity, 'critical');
+  assert.match(issues[0].detail, /NOT a draft/);
+});
+
+test('checkDraftInvariant: a research-fix PR missing the do-not-merge label → CRITICAL', () => {
+  const prs = [{ number: 5, headRefName: 'dev-society/research-fix-42', isDraft: true, labels: [{ name: 'other' }] }];
+  const issues = checkDraftInvariant(prs);
+  assert.equal(issues.length, 1);
+  assert.match(issues[0].detail, /missing the .*do-not-merge/);
+});
+
+test('checkDraftInvariant: PRs from OTHER branches are ignored', () => {
+  const prs = [{ number: 7, headRefName: 'dev-society/issue-99', isDraft: false, labels: [] }];
+  assert.deepEqual(checkDraftInvariant(prs), []);
+});
+
+test('checkDraftInvariant: tolerates string labels + empty/garbage input', () => {
+  assert.deepEqual(checkDraftInvariant([{ number: 1, headRefName: 'dev-society/research-fix-1', isDraft: true, labels: ['do-not-merge'] }]), []);
+  assert.deepEqual(checkDraftInvariant(null), []);
+  assert.deepEqual(checkDraftInvariant([{ number: 2 }]), []); // no headRefName → ignored
 });
