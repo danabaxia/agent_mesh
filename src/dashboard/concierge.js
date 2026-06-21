@@ -22,11 +22,11 @@
  *    surfaced to the UI as an error bubble — nothing is silently lost or filed.
  */
 
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, appendFile, writeFile, mkdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 
 import { spawnFile } from '../process.js';
-import { READ_TOOLS } from '../config.js';
+import { READ_TOOLS, DEFAULT_CONCIERGE_HISTORY_MAX } from '../config.js';
 
 export class ConciergeError extends Error {
   constructor(message, { status = 500, detail } = {}) {
@@ -44,6 +44,7 @@ export const CONFIRM_LABELS = new Set(['idea', 'approved', 'route:a2a']);
 const PROPOSAL_FENCE = /```concierge-proposal\s*\n([\s\S]*?)\n```/;
 const MAX_TEXT_CHARS = 8_000;     // per owner message
 const MAX_HISTORY_TURNS = 40;     // bound the embedded transcript
+const MAX_HISTORY_CONTEXT = 10;   // server-side turns loaded into buildPrompt for continuity
 const ASK_TIMEOUT_MS = 120_000;
 
 /**
@@ -92,6 +93,33 @@ export function validateLabels(labels) {
 // Strip the reply's proposal fence so the chat bubble shows prose, not raw JSON.
 function stripProposalFence(replyText) {
   return typeof replyText === 'string' ? replyText.replace(PROPOSAL_FENCE, '').trim() : '';
+}
+
+// --------------------------------------------------------------------------
+// Server-side conversation history (spec issue #362).
+// Stored as newline-delimited JSON under <meshRoot>/mesh/concierge/history.jsonl.
+// Pure read/write helpers — best-effort; any failure must not break message().
+// --------------------------------------------------------------------------
+
+async function readHistory(historyPath, { limit = 20 } = {}) {
+  try {
+    const raw = await readFile(historyPath, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    return lines.slice(-limit).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch { return []; }
+}
+
+async function appendHistory(historyPath, entries, { max = DEFAULT_CONCIERGE_HISTORY_MAX } = {}) {
+  await mkdir(dirname(historyPath), { recursive: true });
+  await appendFile(historyPath, entries.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+  // LRU trim: keep at most `max` entries. Read → slice → atomic-ish rewrite.
+  try {
+    const raw = await readFile(historyPath, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    if (lines.length > max) {
+      await writeFile(historyPath, lines.slice(-max).join('\n') + '\n', 'utf8');
+    }
+  } catch { /* trim failure is non-fatal */ }
 }
 
 // Build a compact status digest from the dev-society status files (best-effort —
@@ -178,14 +206,21 @@ async function defaultRunGh({ title, body, labels, meshRoot }) {
  * Create a concierge bound to one mesh root.
  * @param {object} opts
  * @param {string} opts.meshRoot
- * @param {Function} [opts.runAsk]   injectable ask runner (tests)
- * @param {Function} [opts.runGh]    injectable gh runner (tests)
+ * @param {Function} [opts.runAsk]    injectable ask runner (tests)
+ * @param {Function} [opts.runGh]     injectable gh runner (tests)
  * @param {string}   [opts.persona]
+ * @param {string}   [opts.historyPath]  override the JSONL path (tests)
+ * @param {number}   [opts.historyMax]   override entry cap (tests)
  */
-export function createConcierge({ meshRoot, runAsk = defaultRunAsk, runGh = defaultRunGh, persona = PERSONA } = {}) {
+export function createConcierge({ meshRoot, runAsk = defaultRunAsk, runGh = defaultRunGh, persona = PERSONA, historyPath, historyMax } = {}) {
+  const _historyPath = historyPath ?? join(meshRoot, 'mesh', 'concierge', 'history.jsonl');
+  const _historyMax = historyMax ?? DEFAULT_CONCIERGE_HISTORY_MAX;
+
   return {
     /**
      * One conversational turn. Read-only — never files anything.
+     * Loads the last MAX_HISTORY_CONTEXT turns from server-side storage into the
+     * prompt for cross-session continuity, and appends the new exchange after reply.
      * @returns {Promise<{reply:string, proposal:object|null}>}
      */
     async message({ history = [], text, signal } = {}) {
@@ -195,11 +230,30 @@ export function createConcierge({ meshRoot, runAsk = defaultRunAsk, runGh = defa
       if (text.length > MAX_TEXT_CHARS) {
         throw new ConciergeError('Message too long', { status: 400 });
       }
+      // Server-owned history provides continuity across sessions; fall back to
+      // client-sent history only when the log is empty (e.g. first ever turn).
+      const stored = await readHistory(_historyPath, { limit: MAX_HISTORY_CONTEXT });
+      const promptHistory = stored.length > 0 ? stored : history;
       const statusDigest = await readStatusDigest(meshRoot);
-      const prompt = buildPrompt({ persona, statusDigest, history, text: text.trim() });
+      const prompt = buildPrompt({ persona, statusDigest, history: promptHistory, text: text.trim() });
       const replyRaw = await runAsk({ prompt, meshRoot, signal });
       const proposal = parseProposal(replyRaw);
-      return { reply: stripProposalFence(replyRaw) || replyRaw, proposal };
+      const reply = stripProposalFence(replyRaw) || replyRaw;
+      // Append user + assistant entries to the history log (best-effort; never breaks the reply).
+      const ts = new Date().toISOString();
+      appendHistory(_historyPath, [
+        { role: 'user', text: text.trim(), ts },
+        { role: 'assistant', text: reply, ts },
+      ], { max: _historyMax }).catch(() => {});
+      return { reply, proposal };
+    },
+
+    /**
+     * Return the last `limit` history entries from the server-side log.
+     * @returns {Promise<Array<{role:string,text:string,ts:string}>>}
+     */
+    async history({ limit = 20 } = {}) {
+      return readHistory(_historyPath, { limit });
     },
 
     /**

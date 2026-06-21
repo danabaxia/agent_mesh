@@ -2654,6 +2654,19 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     return;
   }
 
+  if (pathname === '/api/concierge/history' && req.method === 'GET') {
+    const limit = Math.min(200, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+    try {
+      const turns = typeof concierge.history === 'function'
+        ? await concierge.history({ limit })
+        : [];
+      sendJson(res, 200, { ok: true, turns });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
+    }
+    return;
+  }
+
   // -----------------------------------------------------------------------
   // Static asset serving: GET / → index.html; GET /app.js, /app.css, etc.
   // Served ONLY behind the auth cookie (already checked above).

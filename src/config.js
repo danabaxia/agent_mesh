@@ -82,6 +82,10 @@ export const MIR_ID_RE = /^[a-z0-9:_-]+$/;
 // A non-terminal task whose last history transition is older than this is surfaced as stale.
 export const DEFAULT_BOARD_STALE_MS = 86_400_000; // 24 h
 
+// Mobile concierge history (spec issue #362). AGENT_MESH_CONCIERGE_HISTORY_MAX overrides.
+// Counted in individual messages (user + assistant each count as one entry).
+export const DEFAULT_CONCIERGE_HISTORY_MAX = 200;
+
 // Health "Vital Signs" dashboard view — spec 2026-06-21. All optional; powers the
 // read-only passive health model (src/dashboard/health-model.js). See CLAUDE.md Config.
 export const DEFAULT_HEALTH_AGENT_STALE_MS = 3_600_000;   // 1h since last activity → stale/idle band
