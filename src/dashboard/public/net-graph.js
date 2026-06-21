@@ -11,6 +11,8 @@
 // agent NAME = open workspace · click a skill/MCP dot = info callback · click
 // an agent-agent link = pair-analytics callback · hover = highlight neighbors.
 
+import { nodeRadius } from './net-graph-layout.js';
+
 const REPULSE = 2600;        // Coulomb constant
 const SPRING = 0.06;         // spring stiffness
 const GRAVITY = 0.015;       // pull toward canvas center
@@ -42,7 +44,7 @@ export function createNetGraph(svg, cb = {}) {
     const maxVol = Math.max(1, ...d.agents.map((a) => a.volume));
     for (const a of d.agents) {
       keep.add(a.name);
-      const r = 13 + 15 * Math.sqrt(a.volume / maxVol);
+      const r = nodeRadius(a.volume, maxVol);
       const n = ensure(a.name, 'agent', a.name, a.color, r);
       n.r = r;
       n.meta = a;
