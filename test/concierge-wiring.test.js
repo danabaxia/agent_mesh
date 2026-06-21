@@ -15,13 +15,13 @@ test('concierge is registered as a served ask-only agent with monitoring peers',
 });
 
 test('concierge agent.json is ask-only', () => {
-  const a = JSON.parse(readFileSync(join('dev-mesh', 'agents', 'concierge', 'agent.json'), 'utf8'));
+  const a = JSON.parse(readFileSync(join('dev-mesh', 'concierge', 'agent.json'), 'utf8'));
   assert.equal(a.name, 'concierge');
   assert.deepEqual(a['x-agentmesh'].modes, ['ask']);
 });
 
 test('concierge schedule runs the monitor sweep', () => {
-  const s = JSON.parse(readFileSync(join('dev-mesh', 'agents', 'concierge', '.agent', 'schedule.json'), 'utf8'));
+  const s = JSON.parse(readFileSync(join('dev-mesh', 'concierge', '.agent', 'schedule.json'), 'utf8'));
   const job = s.jobs.find((j) => j.builtin === 'concierge-monitor-sweep');
   assert.ok(job && job.kind === 'builtin' && job.enabled);
 });
