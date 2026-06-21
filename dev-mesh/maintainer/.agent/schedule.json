@@ -57,6 +57,15 @@
       "builtin": "autofix-pr-sweep",
       "cadence": { "kind": "every", "minutes": 10 },
       "enabled": true
+    },
+    {
+      "id": "needs-human-cleanup",
+      "name": "Close stale needs-human issues whose referenced PR is merged/closed",
+      "kind": "builtin",
+      "builtin": "needs-human-cleanup",
+      "cadence": { "kind": "every", "minutes": 30 },
+      "enabled": true,
+      "description": "Cleanup: when a needs-human backstop's referenced PR is MERGED or CLOSED, the issue is stale — close it with done label."
     }
   ]
 }
