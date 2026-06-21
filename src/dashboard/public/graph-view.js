@@ -354,7 +354,11 @@ async function loadSchedules() {
     const detail = jobHasReport(j.id) ? `<tr class="sched-detail" id="sched-detail-${esc(j.id)}" hidden><td colspan="5"><div class="sched-report" id="sched-report-${esc(j.id)}"></div></td></tr>` : '';
     return main + detail;
   };
-  const ciRow = (w) => `<tr><td class="title"><span class="tt"><b class="an" style="color:#8b949e">GitHub Actions</b> · ${esc(w.workflow)}</span></td><td><span class="kind issue">${esc(w.cadenceLabel || '')}</span></td><td>${w.running ? '<span class="state open">▶ running</span>' : pill(w.status)}</td><td class="age" title="latest cached run (not necessarily a scheduled run)">${esc(w.lastRunAt ? new Date(w.lastRunAt).toLocaleString() : '—')}</td><td class="age">—</td></tr>`;
+  const ciRow = (w) => {
+    const tip = w.description ? `${w.description} · ${w.file}` : w.file;
+    const desc = w.description ? `<div class="sched-desc" title="${esc(tip)}">${esc(w.description)}</div>` : '';
+    return `<tr><td class="title"><span class="tt" title="${esc(tip)}"><b class="an" style="color:#8b949e">GitHub Actions</b> · ${esc(w.workflow)} <span style="color:var(--ink2);font:11px ui-monospace,monospace">${esc(w.file)}</span></span>${desc}</td><td><span class="kind issue">${esc(w.cadenceLabel || '')}</span></td><td>${w.running ? '<span class="state open">▶ running</span>' : pill(w.status)}</td><td class="age" title="latest cached run (not necessarily a scheduled run)">${esc(w.lastRunAt ? new Date(w.lastRunAt).toLocaleString() : '—')}</td><td class="age">—</td></tr>`;
+  };
   const body = jobs.map(jobRow).join('') + wfs.map(ciRow).join('');
   el.innerHTML = `<table><thead><tr><th>executor · job</th><th>cadence</th><th>last</th><th>latest run</th><th></th></tr></thead><tbody>${body}</tbody></table>`;
   el.querySelectorAll('.sched-run').forEach((btn) => btn.addEventListener('click', async () => {
