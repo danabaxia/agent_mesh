@@ -76,7 +76,7 @@ if (costBudget !== null && accumulatedCostUsd >= costBudget) {
 The check uses `>=` so exactly hitting the budget also refuses (safe rather than
 permissive). The error code `cost_budget_exceeded` is distinct from all existing
 codes (`mode_disabled`, `bad_input`, `readonly_parent`, `lock_timeout`,
-`spawn_failed`, `depth_exhausted`).
+`spawn_failed`, `depth_budget`).
 
 ### 3.4 Accumulation (post-completion)
 
@@ -101,14 +101,41 @@ any tokens burned by the child are real costs that count toward the budget.
 
 ### 3.5 `fan_out_to_peers` integration
 
-`fanOutToPeers` calls `delegateToPeer` per peer in parallel. The budget check in
-`delegateToPeer` runs before each spawn; since the accumulator is shared and updates
-happen after each `await client.send` resolves, a concurrent fan-out may issue
-slightly over-budget (all concurrent calls pass the pre-flight check before any
-accumulation happens). This is acceptable in v1: the over-run is bounded by the
-fan-out cap (`AGENT_MESH_FAN_OUT_MAX_PEERS`), and a conservative operator can
-account for it by setting the budget lower. A stricter approach (pre-reserve cost
-before spawn) requires cost estimation, which is out of scope.
+`fanOutToPeers` implements its own parallel dispatch via `Promise.allSettled` +
+direct `client.send(peer, message)` calls per peer — it does **not** route through
+`delegateToPeer`. The budget check in §3.3 therefore lives only in `delegateToPeer`
+and does **not** automatically cover fan-out.
+
+To guard `fan_out_to_peers`, a **separate** pre-flight check must be inserted inside
+`fanOutToPeers` after the depth pre-flight and before the scatter:
+
+```js
+if (costBudget !== null && accumulatedCostUsd >= costBudget) {
+  return fanRefusal('cost_budget_exceeded',
+    `session cost budget ($${costBudget.toFixed(4)}) reached after ` +
+    `$${accumulatedCostUsd.toFixed(4)} of peer spend; fan-out refused.`);
+}
+```
+
+Similarly, cost accumulation (§3.4) must be added in the `fanOutToPeers` gather
+loop, after each `mapTask` call, to keep the shared accumulator current for
+subsequent `delegate_to_peer` or `fan_out_to_peers` calls:
+
+```js
+if (typeof mapped.subtree_cost_usd === 'number') {
+  accumulatedCostUsd += mapped.subtree_cost_usd;
+}
+```
+
+Since all fan-out peers are dispatched concurrently before any settle, the
+pre-flight check is a single aggregate gate (not per-peer): the entire fan-out is
+either admitted or refused as a unit. A concurrent fan-out may still slightly
+exceed budget if a previous `delegate_to_peer` call completes (and its cost
+accumulates) between the fan-out pre-flight and the fan-out resolving. This is
+acceptable in v1: the over-run is bounded by the fan-out cap
+(`AGENT_MESH_FAN_OUT_MAX_PEERS`), and a conservative operator can account for it by
+setting the budget lower. A stricter approach (per-peer pre-reserve) requires cost
+estimation, which is out of scope.
 
 ### 3.6 Logging
 
@@ -141,7 +168,8 @@ New cases in `test/peer-bridge.test.js` (hermetic; injectable `createClient` and
 | `AGENT_MESH_COST_BUDGET_USD` set in `peer.env` | `RESERVED_BRIDGE_ENV` blocks override; parent-env budget still enforced |
 | child task returns `status: error` | cost still accumulated; subsequent check may refuse |
 | child task returns no `subtree_cost_usd` | accumulator unchanged; delegation not refused |
-| `fan_out_to_peers` with 3 peers, budget reached before third | first two proceed, third refused (concurrent over-run is acceptable) |
+| `fan_out_to_peers` called after budget exhausted | entire fan-out refused with `cost_budget_exceeded` (single pre-flight gate) |
+| `fan_out_to_peers` called before budget exhausted | all peers dispatched; accumulated cost updated per peer after settle |
 
 ## 6. Risks
 
