@@ -95,6 +95,29 @@ From the PR onward the normal GitHub-Actions Dev-mesh runs (review/CI/human merg
   --allow-shell` on the host and reach it from your phone via **Tailscale** (`tailscale serve
   7077`) — private, no public exposure.
 
+### Mesh Concierge — discuss + instruct + review from your phone
+The **Mesh Concierge** (spec `docs/superpowers/specs/2026-06-21-mesh-mobile-concierge-design.md`)
+is a private, mobile-first PWA in front of the running dashboard. From your phone you can
+**discuss ideas** with an ask-only concierge agent, **deliver instructions** that land in the
+evolve pipeline (it drafts a GitHub issue you file with one tap), and **review status**.
+
+One-time setup:
+1. Install Tailscale on the Mac **and** the phone, and `tailscale up` (interactive login) on each
+   — both join the same private tailnet.
+2. With the dashboard running on `:7077`, on the Mac run:
+   ```sh
+   node scripts/mesh-mobile-serve.mjs <mesh-root>
+   ```
+   It runs `tailscale serve` (TLS-terminated on the tailnet → `127.0.0.1:7077`; **no LAN/internet
+   socket is opened**) and prints a one-time link `https://<your-mac>.<tailnet>.ts.net/m?t=<token>`.
+3. Open that link **once** on your phone (over the tailnet), then *Add to Home Screen*.
+
+Security: the dashboard stays bound to `127.0.0.1`; the same-origin gate accepts `*.ts.net`
+MagicDNS hosts (and anything in `AGENT_MESH_DASHBOARD_ALLOWED_HOSTS`) but **still requires the
+token** on every route. The concierge is **ask-only** (it cannot write the repo); the *only* write
+is `gh issue create`, performed framework-side and **only on your explicit Confirm tap**, with a
+fixed label allowlist (`idea` / `approved` / `route:a2a`).
+
 ## Why writes/IO are the daemon's job, not the agents' (security model, validated in P0)
 - **Onward delegation is ask-only** — an agent can't delegate a *write* to a peer, so the daemon
   issues the top-level `do` to the Coder itself.
