@@ -34,6 +34,15 @@
       "description": "Daemon-driven trigger: dispatch dev-mesh-memory-automerge.yml when open memory:promote PRs exist, on the reliable ~10min cadence (GH cron is throttled to ~2.6h+)."
     },
     {
+      "id": "review-respond-sweep",
+      "name": "review-respond-sweep — Address CHANGES_REQUESTED PRs (beats throttled GH cron)",
+      "kind": "builtin",
+      "builtin": "review-respond-sweep",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true,
+      "description": "Daemon-driven trigger: dispatch dev-mesh-review-respond.yml when open non-draft CHANGES_REQUESTED PRs exist, on the reliable ~10min cadence (GH cron is throttled to ~3-5h, stalling the code pipeline + causing false needs-human escalations)."
+    },
+    {
       "id": "merge-sweep",
       "name": "merge-sweep — Report-only: inspect the merge-gate state",
       "kind": "builtin",

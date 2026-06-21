@@ -49,6 +49,7 @@ import { acquireBuildLock, releaseBuildLock, readBuildBusy } from '../src/dev-so
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
 import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
 import { dispatchMemoryAutomerge } from '../src/automerge/memory-dispatch.js';
+import { dispatchReviewRespond } from '../src/automerge/review-respond-dispatch.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { mergeSweepReportPath } from '../src/merge-sweep/report.js';
 import { runRemediation, remediationPath } from '../src/merge-sweep/remediation-run.js';
@@ -241,6 +242,19 @@ if (!once && !selftest) {
     })
       .then((r) => ({ status: 'ok', output: r.dispatched ? `dispatched for ${r.openCount} open memory PR(s)` : (r.error ? `list failed: ${r.error}` : 'no open memory:promote PRs') }))
       .catch((e) => { log('memory-automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Daemon-driven review-respond: dev-mesh-review-respond.yml (which addresses
+    // CHANGES_REQUESTED PRs) runs only on throttled GH cron (~3-5h apart), so PRs the
+    // Reviewer blocked stall for hours — gating the whole code pipeline (most first-draft
+    // PRs get CHANGES_REQUESTED) and causing false needs-human escalations. The daemon's
+    // ~10min cadence dispatches the responder when — and only when — open non-draft
+    // CHANGES_REQUESTED PRs exist. Mirrors the memory-automerge daemon drain.
+    'review-respond-sweep': () => dispatchReviewRespond({
+      gh: async (a) => (await sh('gh', a, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      log: (...a) => log('review-respond:', ...a),
+    })
+      .then((r) => ({ status: 'ok', output: r.dispatched ? `dispatched for ${r.pendingCount} CHANGES_REQUESTED PR(s)` : (r.error ? `list failed: ${r.error}` : 'no CHANGES_REQUESTED PRs') }))
+      .catch((e) => { log('review-respond-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
     // Post-merge reconciler: close OPEN issues whose closing PR ("Closes #N") has merged
     // but GitHub's keyword auto-close missed, add `done`, and clear the orphaned state label
     // (pr:in-review/in-progress, or `approved` for issues never claimed in-progress — #248/#251).
