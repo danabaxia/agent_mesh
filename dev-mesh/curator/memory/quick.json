@@ -1111,5 +1111,28 @@
       "source": "PR #299: fix(mesh-improvement): MIR files issues against an explicit --repo (not cwd git auto-detect)",
       "ts": "2026-06-21"
     }
+  },
+  "gitignored-generated-file-absent-test": {
+    "status": "active",
+    "valid_to": null,
+    "core": false,
+    "l0": "Never assert 'gitignored generated file must not exist' — CI clone is clean; deployed env has it → env-flaky.",
+    "l1": "PR #300: tester/.mcp.json is doctor-generated and gitignored. Old test asserted its absence (correct pre-task-board). After task-board, doctor wires tester as a board participant → file is present on deploy. CI (clean clone) passes; deployed mesh fails. Fix: 'IF file exists, it must contain only the ask-safe peer-bridge' — vacuous on clean clone, content-validated on deploy. Root cause: MIR --run-suites surfaces this class of env-flaky failures that hermetic CI never sees.",
+    "value": "Pattern: testing doctor-generated / tool-generated files that are gitignored.\n\n(1) NEVER assert 'file must not exist'. Gitignored files are absent on clean CI clones but present on deployed instances where the generator ran. Result: CI=green, production=red (env-flaky).\n\n(2) Assert the REAL invariant: IF the file exists, it must match the expected schema/content:\n  if (existsSync(path)) {\n    const cfg = JSON.parse(readFileSync(path, 'utf8'));\n    // e.g. assert only the ask-safe peer-bridge is present; no mutating servers\n    assert.ok(cfg.mcpServers?.agentmesh_peerbridge);\n    assert.strictEqual(Object.keys(cfg.mcpServers).length, 1);\n  }\n  // No else — absence is vacuously correct\n\n(3) The stated invariant is almost never 'file must not exist' — it is a safety property about the file's CONTENTS (e.g. 'no mutating servers', 'only ask-safe bridge'). Test that.\n\n(4) Env-flaky signature: test passes in hermetic CI (npm test) but fails under MIR --run-suites (real deploy). Primary suspect: an absence assertion on a gitignored, generator-produced artifact.\n\n(5) When fixing one such test, audit sibling gitignored files (*.mcp.json, .agent/*.json) for the same pattern — absence tests cluster around framework-generated artifacts.\n\nProvenance: PR #300 (2026-06-21).",
+    "provenance": {
+      "source": "PR #300: fix(test): tester-agent-schedule allows the ask-safe peer-bridge (was env-flaky)",
+      "ts": "2026-06-21"
+    }
+  },
+  "static-analyzers-as-l0-tests": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Zero-dep frontend QA: run import-graph, route-manifest, secret-boundary, and isolation-guard analyses as node --test.",
+    "l1": "PR #303: zero-dep dashboard QA via four static node --test analyses. (1) Orphaned-module sweep: import graph from HTML entrypoints — unreachable modules fail; allowlist future-wired helpers. (2) Route-manifest: server handlers vs 45 client URL refs — dead URLs fail. (3) Secret-safety: pin buildActivity() (the pure transform), not the SSE HTTP layer — hub forwards verbatim so boundary is the transform. (4) L0 isolation guard: fails if *.component.test.js / *.spec.js appears in test/ — keeps devDep-requiring tests out of the no-install gate.",
+    "value": "Pattern for zero-dep frontend test coverage when devDeps are prohibited at the L0 gate:\n\n(1) Orphaned-module sweep: recursively follow <script src> and import() from each HTML entrypoint to build the reachable set. Any .js file NOT in the set fails. Allowlist helpers that are intentionally future-wired (exist and tested, but not yet imported from a live page). Discover module files dynamically (readdirSync) — no hardcoded list.\n\n(2) Route-manifest reconciliation: build a routes-manifest.js as the source of truth for server-side handlers. Each test asserts (a) every server route has at least one matching client URL ref; (b) every client URL ref matches a server route. Dead client URLs fail immediately — keeps client and server in sync without any runtime dependency.\n\n(3) Secret-safety — target the pure transform, not the HTTP layer: when a transport layer forwards records verbatim (e.g. an SSE hub), testing that the endpoint omits secrets would miss the real boundary. Instead pin the pure buildActivity() transform: assert only allowlisted structural keys survive, plant a synthetic secret key, verify it is absent from the output. This is the correct test boundary whenever 'what the user receives' is determined by a pure function, not the protocol.\n\n(4) L0 isolation guard: a single test file asserts no *.component.test.js or *.spec.js exists at the top level of test/. These naming conventions signal devDep-requiring tests (jsdom, Playwright, vitest). The guard is a meta-test: it fails before any new devDep test can accidentally breach the no-install gate. Zero production dependencies; runs in under 1 ms.\n\n(5) Negative-case targeting: after building positive mode coverage, audit for uncovered NEGATIVES. PR #303's resume-command test targeted the 'never --continue' invariant — positive mode assertions already existed, but the regression guard (no mode must ever emit --continue) was untested. Frame the negative test as: 'assert X does not appear in any output.'\n\nProvenance: PR #303 (2026-06-21) — Front-End QA Plan 1.",
+    "provenance": {
+      "source": "PR #303: test(dashboard): Front-End QA Plan 1 — zero-dep L0 unit + static tests",
+      "ts": "2026-06-21"
+    }
   }
 }
