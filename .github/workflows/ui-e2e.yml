@@ -1,0 +1,40 @@
+# Dedicated frontend-QA gate — UI component (jsdom + axe-core) + dashboard E2E (Playwright/Chromium).
+#
+# Kept OFF the zero-dependency per-PR `ci.yml` on purpose: this needs `npm ci` + a Chromium
+# download (~100MB), which would slow the fast L0 hermetic path that every PR pays. Runs on
+# manual dispatch + nightly instead — frontend QA is not a per-commit merge blocker, and the
+# local agent runs it fast (browser cached + the live dashboard already up) for inner-loop dev.
+#
+# Visual-regression note: the pinned snapshot baseline is platform/browser specific
+# (`board-view-chromium-darwin.png`, committed for local macOS). Cross-platform baselines are a
+# separate effort, so this Linux job runs the FUNCTIONAL + a11y E2E and skips the `visual:` test.
+name: ui-e2e
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 7 * * *' # nightly ~07:37 UTC (off-peak minute)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-e2e
+  cancel-in-progress: false
+
+jobs:
+  frontend-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: UI component + a11y (jsdom, no browser)
+        run: npm run test:ui
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Dashboard E2E (functional + a11y; visual is local-only)
+        run: npx playwright test --grep-invert "visual:"
