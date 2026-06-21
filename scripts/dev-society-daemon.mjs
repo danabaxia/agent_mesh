@@ -130,6 +130,7 @@ if (!once && !selftest) {
         runSuites: true,
         gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
         now: () => new Date(),
+        repo: cfg.repo,   // file issues against the explicit repo, never via cwd git auto-detect
       });
       return res.status === 'ok'
         ? { status: 'ok', output: res.summary }

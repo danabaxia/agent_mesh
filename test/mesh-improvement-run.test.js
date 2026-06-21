@@ -47,6 +47,31 @@ test('dry-run never calls gh; live-run creates and records issueNumber', async (
   assert.equal(persisted.ledger['behavior:overall:pass-rate'].issueNumber, 777);
 });
 
+test('repo is targeted explicitly via --repo on every issue mutation (not cwd git auto-detect)', async () => {
+  const mir = buildReport({ inputs, previousMir, at: '2026-06-20T06:30:00Z',
+    ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
+  const calls = [];
+  await syncReport({ mir, mirDir: '/tmp/mir', dryRun: false, repo: 'o/r',
+    gh: async (args) => { calls.push(args); return args[0] === 'issue' && args[1] === 'create' ? 'https://github.com/o/r/issues/9' : ''; },
+    writeFile: () => {}, recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
+  const issueCalls = calls.filter((a) => a[0] === 'issue');
+  assert.ok(issueCalls.length >= 1, 'expected at least one issue mutation');
+  for (const a of issueCalls) {
+    const i = a.indexOf('--repo');
+    assert.ok(i !== -1 && a[i + 1] === 'o/r', `every issue mutation must carry --repo o/r: ${a.join(' ')}`);
+  }
+});
+
+test('no repo provided → --repo omitted (back-compat)', async () => {
+  const mir = buildReport({ inputs, previousMir, at: '2026-06-20T06:30:00Z',
+    ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
+  const calls = [];
+  await syncReport({ mir, mirDir: '/tmp/mir', dryRun: false,
+    gh: async (args) => { calls.push(args); return args[0] === 'issue' && args[1] === 'create' ? 'https://github.com/o/r/issues/9' : ''; },
+    writeFile: () => {}, recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
+  assert.ok(calls.filter((a) => a[0] === 'issue').every((a) => !a.includes('--repo')));
+});
+
 test('live-run self-heals labels: every create label is `gh label create`d before the first issue create', async () => {
   const mir = buildReport({ inputs, previousMir, at: '2026-06-20T06:30:00Z',
     ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
