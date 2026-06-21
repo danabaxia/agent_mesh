@@ -1191,17 +1191,6 @@
       "ts": "2026-06-21"
     }
   },
-  "cron-throttle-backstop-false-escalation": {
-    "status": "active",
-    "valid_to": null,
-    "l0": "GHA cron throttle cascades: backstop sweep sees slow-cron stage as 'broken' → false needs-human escalations.",
-    "l1": "PR #327: review-respond cron fired every 3-5h. The merge-sweep backstop treated unprocessed CHANGES_REQUESTED PRs as 'automators could not clear it' → PR #323 falsely escalated PR #321 as needs-human. Items weren't broken — they were waiting for a throttled upstream stage. Fix: review-respond-sweep daemon builtin (10min, maintainer schedule.json) dispatches the workflow only when CHANGES_REQUESTED non-draft PRs exist — final of four mesh pipeline drains on daemon cadence.",
-    "value": "When a pipelined system has a backstop sweep that escalates 'stuck' items, every upstream stage's actual cycle time must be shorter than the backstop staleMs. A throttled GHA cron (*/15 → 3-5h observed) creates items that sit past the stale threshold BEFORE they're ever processed — generating false needs-human escalations that hide real failures.\n\nFix: move all pipeline stages to daemon builtins at ≤10min cadence (see gh-actions-cron-throttled-daemon-dispatch). PR #327 (2026-06-21) completed the pattern: all four mesh pipeline drains (code-automerge, memory-automerge, issue-sweep, review-respond) are now daemon-driven.\n\nDiagnostic signal: needs-human escalations for items that are otherwise CLEAN (no conflict, no failing CI, no blocking label) → check for a cron-driven upstream stage whose observed fire interval exceeds backstop staleMs. The gate logic is not at fault; the cadence mismatch is.\n\nGate before dispatch: check open CHANGES_REQUESTED non-draft PRs exist before calling gh workflow run — avoids burning Actions minutes when queue is empty.",
-    "provenance": {
-      "source": "PR #327: feat(daemon): daemon-driven review-respond drain (beats throttled GitHub cron)",
-      "ts": "2026-06-21"
-    }
-  },
   "http-peer-agentcard-signing": {
     "status": "active",
     "valid_to": null,
@@ -1210,6 +1199,28 @@
     "value": "Pattern for extending an anti-spoof invariant from local (stdio) to network (HTTP) transports.\n\nThe problem: stdio peers are locally-spawned — operator-controlled by definition. HTTP peers receive their AgentCard at connect time with no cryptographic check. A misconfigured URL or MitM can return a spoofed card (wrong name, widened capabilities) and the framework accepts it silently.\n\nThe solution (A2A v1.0 Signed Agent Cards, PR #317 spec):\n\n(1) Server-side: set AGENT_MESH_SIGNING_KEY_FILE to an Ed25519 private key PEM. serve-a2a-http canonicalizes the attested fields (name, capabilities, skills), signs, and attaches the signature to every initialize response.\n\n(2) Client-side: add publicKey (Ed25519 base64url DER) per HTTP peer entry in registry.json. HttpClientSession verifies on connect. No publicKey = accept unverified (backwards-compat, zero migration cost). publicKey present + bad/missing sig = peer_identity_unverified Task error (failure-as-data, not thrown).\n\n(3) gen-signing-key CLI: generates a fresh Ed25519 keypair — private key PEM for the server, base64url DER for registry.json. Reduces operator friction to a one-time setup.\n\n(4) Canonicalization: deterministic byte-stable serialization of attested fields so field-insertion-order differences do not break verification.\n\nInvariants upheld: anti-spoof (AgentCard content cryptographically attested for HTTP peers); failure-as-data (peer_identity_unverified is a Task error, never an exception). Stdio path is completely unaffected. No PKI chain, no mandatory enforcement — pure operator-pinned trust. Provenance: PR #317 (2026-06-21).",
     "provenance": {
       "source": "PR #317: spec: idea: signed AgentCard verification for HTTP peers — anti-spoof for cross-machine meshes (#314)",
+      "ts": "2026-06-21"
+    }
+  },
+  "subtree-cost-rollup-a2a-tasks": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Thread subtree_cost_usd through A2A Task chain: own + Σ peer subtrees gives single-read full-chain cost.",
+    "l1": "In a multi-hop A→B→C chain, B's Task `agentmesh/metrics` carried only B's own cost — C's cost (incurred via delegate_to_peer) was invisible to A. Computing full-chain cost required correlating N separate run-log directories. PR #328 adds `subtree_cost_usd` = own `cost_usd` + Σ `subtree_cost_usd` of downstream peer Tasks. The peer bridge reads `subtree_cost_usd` (falling back to `cost_usd` for older peers) and logs it so the parent aggregates correctly. The L4 perf benchmark reads `subtree_cost_usd` from the root Task directly.",
+    "value": "Pattern for cross-hop cost rollup in A2A Task chains:\n\n1. Each Task's `agentmesh/metrics` carries two cost fields: `cost_usd` (own hop only) and `subtree_cost_usd` (own + Σ all downstream peer subtrees).\n\n2. The peer bridge accumulates downstream `subtree_cost_usd` (falling back to `cost_usd` for older peers) from each downstream Task before building the parent Task metrics block. Never treat absent as 0 without explicit fallback — silent undercounting corrupts budget math.\n\n3. Perf benchmarks and callers read the root Task's `subtree_cost_usd` directly — no need to correlate N run-log directories.\n\n4. Token/turn counts ride the run record (not Task metrics) — only cost fields are threaded through the Task chain. Whitelist `subtree_cost_usd` in `normalizeMetrics` (`src/a2a/protocol.js`).\n\n5. Budget enforcement (refuse delegation when subtree cost would exceed a cap) is a follow-on; v1 is observability only — the field enables it without blocking.\n\nProvenance: PR #328 (2026-06-21), closes Issue #315.",
+    "provenance": {
+      "source": "PR #328: feat: cross-hop delegation cost rollup — subtree_cost_usd in Task metadata",
+      "ts": "2026-06-21"
+    }
+  },
+  "cron-throttle-backstop-false-escalation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GHA cron throttle cascades: backstop sweep sees slow-cron stage as 'broken' → false needs-human escalations.",
+    "l1": "PR #327: review-respond cron fired every 3-5h. The merge-sweep backstop treated unprocessed CHANGES_REQUESTED PRs as 'automators could not clear it' → PR #323 falsely escalated PR #321 as needs-human. Items weren't broken — they were waiting for a throttled upstream stage. Fix: review-respond-sweep daemon builtin (10min, maintainer schedule.json) dispatches the workflow only when CHANGES_REQUESTED non-draft PRs exist — final of four mesh pipeline drains on daemon cadence.",
+    "value": "When a pipelined system has a backstop sweep that escalates 'stuck' items, every upstream stage's actual cycle time must be shorter than the backstop staleMs. A throttled GHA cron (*/15 → 3-5h observed) creates items that sit past the stale threshold BEFORE they're ever processed — generating false needs-human escalations that hide real failures.\n\nFix: move all pipeline stages to daemon builtins at ≤10min cadence (see gh-actions-cron-throttled-daemon-dispatch). PR #327 (2026-06-21) completed the pattern: all four mesh pipeline drains (code-automerge, memory-automerge, issue-sweep, review-respond) are now daemon-driven.\n\nDiagnostic signal: needs-human escalations for items that are otherwise CLEAN (no conflict, no failing CI, no blocking label) → check for a cron-driven upstream stage whose observed fire interval exceeds backstop staleMs. The gate logic is not at fault; the cadence mismatch is.\n\nGate before dispatch: check open CHANGES_REQUESTED non-draft PRs exist before calling gh workflow run — avoids burning Actions minutes when queue is empty.",
+    "provenance": {
+      "source": "PR #327: feat(daemon): daemon-driven review-respond drain (beats throttled GitHub cron)",
       "ts": "2026-06-21"
     }
   },
