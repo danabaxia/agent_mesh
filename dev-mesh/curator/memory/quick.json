@@ -1256,5 +1256,16 @@
       "source": "PR #332: feat(ci): dedicated frontend-QA gate (ui-e2e.yml) — the suite was run nowhere",
       "ts": "2026-06-21"
     }
+  },
+  "flake-quarantine-multi-axis-gate": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Multi-axis flake gate: occurrences + distinct-days triggers quarantine; cleanRuns=0 stays gate-blocking.",
+    "l1": "PR #338 flake quarantine uses 3 axes: (1) occurrences ≥ FLAKE_MIN_OCCURRENCES (default 2), (2) distinct calendar days ≥ FLAKE_MIN_DISTINCT_DAYS (default 2), (3) cleanRuns>0. Single-day burst: noop. Hard break (cleanRuns=0): stays gate-blocking. Multi-day recurrence with ≥1 clean run earns quarantine — tracked non-blocking issue, deduplicated via issueNumber ledger write-back.",
+    "value": "Implement as pure-plan/host-applies: classifier (no I/O) emits {file|update|quarantine-exit|noop}; host applies via gh + ledger write-back. Quarantine = non-blocking but visible. Exit: EXIT_CLEAN_RUNS consecutive green. Tests: burst→noop, hard-break→blocking, already-filed→update-not-duplicate, config-override, quarantine-exit. Config: AGENT_MESH_FLAKE_MIN_OCCURRENCES, FLAKE_MIN_DISTINCT_DAYS.",
+    "provenance": {
+      "source": "PR #338: spec: Auto-file (and quarantine) flaky-test regressions from the ledger at an occurrence threshold (#336)",
+      "ts": "2026-06-21"
+    }
   }
 }
