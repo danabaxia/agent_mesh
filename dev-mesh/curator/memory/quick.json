@@ -958,6 +958,17 @@
       "ts": "2026-06-21"
     }
   },
+  "sweep-checkpoint-exclude-unowned": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Exclude unowned PR classes from sweep checkpoints — GITHUB_TOKEN PRs are always UNSTABLE and trigger false backstops.",
+    "l1": "PR #281: merge-sweep/run.js classified memory:promote PRs as blocked:not-clean:UNSTABLE after ≥4 sweeps. Root cause: GITHUB_TOKEN recursion guard prevents CI from running on GITHUB_TOKEN-created PRs — they are always UNSTABLE. The dedicated memory-automerge checkpoint already owns them; the automerge checkpoint should explicitly exclude them. Companion fix: runMergedPrCleanup daemon builtin (30-min cadence) closes open needs-human issues whose referenced PR is already MERGED or CLOSED — handles backstops fired before the root-cause fix or via out-of-band PR resolution.",
+    "value": "Two-layer fix when sweep checkpoints generate spurious needs-human escalations for PR classes they do not own.\n\n(1) Root cause — explicit label exclusion in each checkpoint:\nEvery sweep checkpoint that classifies PR health (UNSTABLE/DIRTY/blocked) must explicitly filter out PR labels it does not own before evaluating CI status. Without this, a PR class whose CI is structurally always UNSTABLE (e.g., memory:promote PRs opened by GITHUB_TOKEN — GitHub's recursion guard blocks CI from running) will be classified as blocked:not-clean:UNSTABLE after ≥N sweeps and trigger the backstop.\n\nFix:\n  // In the automerge checkpoint, before health classification:\n  if (pr.labels.some(l => l.name === 'memory:promote')) continue;\n\nGeneral rule: for each PR class, identify the checkpoint that OWNS it (e.g., memory:promote → memory-automerge). Every OTHER checkpoint that evaluates health must skip that class by label. Enumerate owned labels explicitly — 'default allow + filter later' is fragile as new label classes are added.\n\nWhy GITHUB_TOKEN PRs are always UNSTABLE: GitHub's recursion guard blocks all pull_request events on GITHUB_TOKEN-opened PRs. No CI run ever triggers → check suite is permanently empty → merge-ability is UNSTABLE. This is structural, not a transient flake; any generic health check will misclassify them as broken. (See actions-recursion-guard-schedule for the full recursion-guard pattern.)\n\n(2) Symptom layer — cleanup daemon for stale backstop issues:\nWhen a backstop fires before the exclusion fix lands (or via out-of-band PR resolution), open needs-human issues accumulate for already-closed/merged PRs. Add a daemon builtin (runMergedPrCleanup, ~30-min cadence) that:\n  1. Lists open issues with the needs-human label.\n  2. Extracts the referenced PR number from each issue body.\n  3. Queries `gh pr view N --json state`.\n  4. Closes the issue if state == MERGED or CLOSED.\n\nThis is a best-effort symptom fix; the root-cause exclusion is the durable fix.\n\nRelated: actions-recursion-guard-schedule (why GITHUB_TOKEN PRs never trigger CI), pr-janitor-gap-classes (complementary pattern for PRs that slip through all sweeps). Provenance: PR #281 (2026-06-21), closing Issue #274.",
+    "provenance": {
+      "source": "PR #281: fix(merge-sweep+maintainer): prevent and clean up spurious needs-human escalations for memory:promote PRs",
+      "ts": "2026-06-21"
+    }
+  },
   "reconcile-approved-label-before-close": {
     "status": "active",
     "valid_to": null,
