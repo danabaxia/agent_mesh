@@ -14,10 +14,19 @@
     "INSTALL.md"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:ui": "node --test test/ui/*.test.js",
+    "test:e2e": "playwright test"
   },
   "engines": {
     "node": ">=20"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "//devDependencies": "NIGHTLY-ONLY. The per-PR L0 gate (ci.yml → node run-all-tests.mjs) installs NOTHING and must stay zero-dependency: run-all-tests.mjs only discovers top-level test/*.test.js, never test/ui/ or test/e2e/. These devDeps power the nightly integration.yml front-end QA jobs (jsdom+axe component tier; Playwright e2e/visual). Pinned to EXACT versions for a reproducible lockfile. See docs/superpowers/plans/2026-06-20-frontend-qa-plan-3-nightly-devdep.md.",
+  "devDependencies": {
+    "@axe-core/playwright": "4.11.3",
+    "@playwright/test": "1.61.0",
+    "axe-core": "4.12.1",
+    "jsdom": "29.1.1"
+  }
 }
