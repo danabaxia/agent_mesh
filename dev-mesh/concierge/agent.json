@@ -1,0 +1,12 @@
+{
+  "name": "concierge",
+  "protocolVersion": "1.0",
+  "version": "0.1.0",
+  "skills": [],
+  "x-agentmesh": {
+    "modes": [
+      "ask"
+    ],
+    "meshVersion": "0.1.0"
+  }
+}
