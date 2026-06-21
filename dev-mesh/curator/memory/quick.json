@@ -1289,5 +1289,16 @@
       "source": "PR #342: feat(mir): sync CI eval scorecards into local MIR runs — un-blind quality metrics (#337)",
       "ts": "2026-06-21"
     }
+  },
+  "discover-deploy-confidence-rank": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Discover agent folders by confidence (agent.json>system.md>AGENT.md); deploy is dry-run-default + name-idempotent.",
+    "l1": "PR #344: before this, wiring an agent required knowing its path and running add --apply + doctor manually. discover does a bounded-depth walk (maxDepth=4 default), ranks folders by marker confidence: agent.json=high, prompts/system.md=medium, AGENT.md=low; matched folder = leaf. deploy: substrate → discover → add out-of-tree candidates → doctor. Name-idempotent (re-run skips registered agents). A folder under the mesh root is reported for join only. discover is read-only; AGENT.md content is detection-only, never executed.",
+    "value": "Pattern: confidence-ranked agent discovery + name-idempotent deploy for one-click mesh bootstrapping.\n\n(1) discover (src/builder/discover.js): read-only bounded-depth walk (default maxDepth=4). Ranks candidate folders by marker confidence:\n  - high: agent.json present\n  - medium: prompts/system.md present\n  - low: AGENT.md present\nA matched folder is a leaf — no further descent. Prunes noise dirs (node_modules, .git, vendor, dist, build) and mesh-substrate dirs. Annotates alreadyInMesh against the manifest.\n\n(2) deploy (src/builder/deploy.js): chains initMesh (if absent) → discover → add each new out-of-tree candidate → doctor.\n  - Dry-run by default; --apply required to write.\n  - Name-idempotent: re-deploy skips already-registered agents.\n  - A folder UNDER the mesh root is reported for 'join' only, never added into itself.\n  - One agent's add failure is captured in errors[] and never aborts the rest.\n\n(3) Safety invariants preserved:\n  - AGENT.md is detected for presence only — content never read or executed (AGENT.md-as-data invariant).\n  - discover spawns nothing and writes nothing.\n  - deploy mutations go through existing add/doctor/initMesh with their single-writable-root guards.\n\n(4) CLI:\n  - agent-mesh discover <scan-root> [--mesh <mesh-root>] [--depth N] [--json]\n  - agent-mesh deploy <scan-root> --mesh <mesh-root> [--modes ask,do] [--depth N] [--apply]\n\n(5) Smoke check: discover dev-mesh --mesh dev-mesh shows all agents as [in mesh]; deploy dev-mesh --mesh <tmp> (dry-run) plans a fresh mesh + all agents without writing.\n\nProvenance: PR #344 (2026-06-21).",
+    "provenance": {
+      "source": "PR #344: feat(cli): discover + deploy — recognize and one-click-join local agents",
+      "ts": "2026-06-21"
+    }
   }
 }
