@@ -1179,5 +1179,16 @@
       "source": "PR #310: test/ci(dashboard): Front-End QA Plan 3 — nightly devDep tier (jsdom+axe component, Playwright e2e scaffold)",
       "ts": "2026-06-21"
     }
+  },
+  "gh-actions-cron-throttled-daemon-dispatch": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GH Actions cron throttled (*/15 → 2.6h+ observed) — daemon workflow_dispatch with open-PR gate is the reliable trigger.",
+    "l1": "PR #312: memory:promote PRs piled up 4.3h+ because dev-mesh-memory-automerge.yml's */15 cron fires ~2.6h in practice. Fix: daemon builtin `memory-automerge-sweep` (10min schedule) dispatches `gh workflow run` ONLY when open memory:promote PRs exist. Merge/validation logic stays in the workflow; daemon provides the reliable trigger ('GitHub Actions as a tool'). Gate conserves Actions minutes when queue is empty.",
+    "value": "Pattern for making a GitHub Actions workflow run reliably and promptly:\n\n(1) GH Actions cron is best-effort — even */15 may fire every 2.6h+ under load. Never rely on cron alone for latency-sensitive operations (PR drain queues, memory promotion).\n\n(2) Daemon-dispatch ('GitHub Actions as a tool'): add a daemon builtin (kind:builtin in schedule.json, interval ≤10min) that calls `gh workflow run <workflow.yml> --repo <repo>`. Merge/validation logic stays in the workflow (already battle-tested); daemon provides the reliable trigger frequency.\n\n(3) Gate on work existing: before dispatching, query `gh pr list --label <label> --state open --json number`. Only call `gh workflow run` when ≥1 result. Avoids burning an Actions run every 10min when nothing is queued.\n\n(4) Never throws: wrap list query in try/catch; failure → return {dispatched:false, error}. Scheduler builtins must be loop-safe (see scheduler-builtin-return-shape).\n\n(5) Keep GH cron as a backstop: it still fires eventually if throttled — useful if the daemon is down or restarting.\n\n(6) Mirrors the code-PR automerge-sweep: both use the daemon for reliable frequency; merge logic stays in Actions. Apply whenever a workflow is latency-critical but cron-unreliable.\n\nProvenance: PR #312 (2026-06-21).",
+    "provenance": {
+      "source": "PR #312: feat(daemon): daemon-driven memory:promote drain (beats throttled GitHub cron)",
+      "ts": "2026-06-21"
+    }
   }
 }
