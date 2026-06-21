@@ -2,7 +2,7 @@
 // Impure data shell. Every effectful dependency (gh runner, record reader,
 // fs) is injected so the core stays hermetically testable.
 import { join } from 'node:path';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { readRunLogRecords, dedupeRunRecords } from '../log.js';
 
@@ -10,6 +10,33 @@ export async function readLocalLogs({ logDir, date, prefix = 'delegate', readRec
   const path = join(logDir, `${prefix}-${date}.jsonl`);
   const records = await readRecords(path);
   return dedupeRunRecords(records);
+}
+
+// `AGENT_MESH_LOG_DIR` resolves under EACH served agent's own root, so delegate
+// run logs live at <meshRoot>/<agent>/<logSeg>, never a single mesh-wide dir.
+// Enumerate one log dir per agent subfolder (+ any legacy/top-level extras) so a
+// report sees every agent's token usage. A missing meshRoot yields just `extraDirs`
+// (no throw). The "token panel shows zero" bug was reading only a top-level dir.
+export function agentLogDirs({ meshRoot, logSeg = '.agent-mesh/logs', extraDirs = [] }) {
+  const dirs = [...extraDirs];
+  let entries = [];
+  try { entries = readdirSync(meshRoot, { withFileTypes: true }); } catch { /* no mesh root */ }
+  for (const e of entries) {
+    if (e.isDirectory() && !e.name.startsWith('.')) dirs.push(join(meshRoot, e.name, logSeg));
+  }
+  return dirs;
+}
+
+// Read + dedupe delegate-<date>.jsonl across many log dirs (one per agent). A run
+// writes a start line then a done line under the SAME id; dedupeRunRecords keeps
+// the latest (usage-bearing) one, so don't pre-filter. Missing files are skipped.
+export async function readLocalLogsMulti({ logDirs, date, prefix = 'delegate', readRecords = readRunLogRecords }) {
+  const all = [];
+  for (const dir of logDirs) {
+    const records = await readRecords(join(dir, `${prefix}-${date}.jsonl`));
+    all.push(...records);
+  }
+  return dedupeRunRecords(all);
 }
 
 const PR_FIELDS = 'number,title,author,url,createdAt,closedAt,mergedAt';

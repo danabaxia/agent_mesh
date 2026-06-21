@@ -15,7 +15,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aggregate } from '../src/report/aggregate.js';
 import { renderMarkdown, renderModel, dailyMarker, findDatedCommentId } from '../src/report/render.js';
-import { readLocalLogs, fetchGhActivity, fetchCiUsage } from '../src/report/sources.js';
+import { agentLogDirs, readLocalLogsMulti, fetchGhActivity, fetchCiUsage } from '../src/report/sources.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -28,7 +28,13 @@ const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] :
 const REPO = process.env.DEV_SOCIETY_REPO || '';
 const LABEL = process.env.DAILY_REPORT_LABEL || 'mesh:daily-report';
 const TITLE = process.env.DAILY_REPORT_TITLE || '📊 Daily Mesh Report';
-const logDir = resolve(repoRoot, process.env.AGENT_MESH_LOG_DIR || '.agent-mesh/logs');
+// AGENT_MESH_LOG_DIR resolves under EACH served agent root, so delegate run logs
+// live per-agent at <meshRoot>/<agent>/<logSeg> — not a single top-level dir.
+// Gather one log dir per agent (+ the legacy top-level path for back-compat) so
+// the token panel reflects every agent's usage instead of zero.
+const logSeg = process.env.AGENT_MESH_LOG_DIR || '.agent-mesh/logs';
+const meshRoot = process.env.DEV_SOCIETY_MESH_ROOT || join(repoRoot, 'dev-mesh');
+const logDirs = agentLogDirs({ meshRoot, logSeg, extraDirs: [resolve(repoRoot, logSeg)] });
 // Where the dashboard's Daily tab reads the report from (the same model the issue renders).
 const CACHE = process.env.AGENT_MESH_DAILY_REPORT_CACHE || join(repoRoot, '.dev-society', 'daily-report.json');
 
@@ -88,13 +94,13 @@ async function main() {
   if (flag('--selftest')) {
     const report = aggregate({ date, prs: [], openPrs: [], issues: [], openIssues: [], localRecords: [], ciRecords: [] });
     process.stdout.write(renderMarkdown(report) + '\n');
-    console.error(`selftest OK — date=${date} logDir=${logDir} marker=${dailyMarker(date)}`);
+    console.error(`selftest OK — date=${date} logDirs=${logDirs.length} marker=${dailyMarker(date)}`);
     return;
   }
   if (!REPO) { console.error('error: DEV_SOCIETY_REPO=owner/repo required'); process.exit(2); }
 
   const [localRecords, activity] = await Promise.all([
-    readLocalLogs({ logDir, date }).catch((e) => { console.error('local logs failed:', e.message); return []; }),
+    readLocalLogsMulti({ logDirs, date }).catch((e) => { console.error('local logs failed:', e.message); return []; }),
     fetchGhActivity({ gh, repo: REPO }).catch((e) => { console.error('gh activity failed:', e.message); return { prs: [], openPrs: [], issues: [], openIssues: [] }; }),
   ]);
   const ciRecords = await fetchCiUsage({ gh, repo: REPO, date }).catch(() => []);  // empty until P2
