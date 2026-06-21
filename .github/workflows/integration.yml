@@ -89,6 +89,76 @@ jobs:
       - name: L1 — mesh e2e (real claude peer-selection + two-hop over stdio A2A)
         run: AGENT_MESH_E2E=1 node --test test/eval-mesh-e2e.test.js
 
+  # ── Front-End QA (Plan 3) — nightly devDep tier ─────────────────────────────
+  # These two jobs are the dashboard front-end's nightly QA. They slot at the
+  # L1-adjacent integration tier (they run alongside l1-e2e on the same nightly),
+  # but they do NOT use a real `claude` and MUST NOT receive CLAUDE_CODE_OAUTH_TOKEN
+  # — least privilege: a DOM/visual test has no business holding the OAuth secret.
+  # They install the Plan-3 nightly-only devDeps via `npm ci` from the committed
+  # lockfile (the per-PR L0 ci.yml gate still installs NOTHING — those devDeps are
+  # invisible to run-all-tests.mjs, which globs only top-level test/*.test.js).
+  #
+  # frontend-qa-component is GATING (a real jsdom/axe failure reds the nightly,
+  # like l1-e2e). frontend-qa-e2e is NON-BLOCKING (continue-on-error) so a flaky
+  # browser/visual diff can't red the real-claude L1 gate.
+  frontend-qa-component:
+    name: FE QA — jsdom + axe component tier (gates nightly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # NO OAuth token here — DOM tests need no Claude (least privilege).
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # --ignore-scripts: no devDep lifecycle script runs (e.g. playwright's
+      # postinstall browser download) — the component tier needs only jsdom+axe.
+      - name: Install nightly devDeps (lockfile-pinned, no lifecycle scripts)
+        run: npm ci --ignore-scripts
+      - name: Component tier (jsdom + axe) — GATING
+        run: node --test test/ui/*.test.js
+
+  frontend-qa-e2e:
+    name: FE QA — Playwright e2e + visual (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # NON-BLOCKING: a flaky visual diff / browser hiccup must not red the nightly's
+    # real-claude L1 gate. The component tier above is the gating front-end signal.
+    continue-on-error: true
+    # NO OAuth token here either (least privilege).
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.INTEGRATION_REF }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install nightly devDeps (lockfile-pinned, no lifecycle scripts)
+        run: npm ci --ignore-scripts
+      # Pin the browser: --with-deps installs OS libs; chromium only (the config
+      # uses a single chromium project). The Playwright version is pinned in the
+      # lockfile, so the downloaded browser build is pinned with it.
+      - name: Install pinned Playwright chromium
+        run: npx playwright install --with-deps chromium
+      - name: Playwright smoke + visual (non-blocking)
+        # First run has no committed visual baseline (platform-named snapshots are
+        # generated on the first real CI run): --update-snapshots writes them, the
+        # 4 core flows + the real-browser axe structural check still assert. A
+        # later run with baselines present gates pixel drift within maxDiffPixelRatio.
+        run: npm run test:e2e -- --update-snapshots
+      - name: Upload Playwright report (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-qa-e2e-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
   l0-json:
     name: L0 hermetic suite (JSON producer for MIR)
     runs-on: ubuntu-latest

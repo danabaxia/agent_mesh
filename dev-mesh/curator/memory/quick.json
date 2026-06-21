@@ -1145,5 +1145,28 @@
       "source": "PR #289 (2026-06-21): Reviewer blocking finding — stale-base silent revert of PRs #281/#286 quick.json entries",
       "ts": "2026-06-21"
     }
+  },
+  "frontend-extract-dom-free-first": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Tier FE-refactors: extract DOM-free pure helpers first (zero-dep); defer DOM-coupled code to the jsdom plan.",
+    "l1": "PR #306 (FE-QA Plan 2): DOM-free helpers (net-graph-layout.js — geometry; session-view-model.js — formatters) extracted + tested zero-dep. graph-view-model.js/freshness.js kept additive — inline formulae diverged from the proposed module API, so extraction would silently change behavior. Deferrals documented in plan doc for Plan 3 (jsdom). Route-manifest check promoted from advisory to enforcing: parses real /api/* routes from server.js, asserts bidirectional match with ROUTE_PATTERNS in CI.",
+    "value": "When refactoring browser code with no DOM in CI: (1) DOM-free = no document/window, deterministic I/O — extract now, test with hand-computed values, zero deps. (2) Divergent or DOM-coupled: keep additive. The check: does inline code match proposed API exactly? Differing formulae = silent behavior change — defer. Document each deferral and why. (3) Once advisory structure checks confirm parity, promote to enforcing: parse real server source, assert bidirectional route equivalence in test suite.",
+    "provenance": {
+      "source": "PR #306: test/refactor(dashboard): Front-End QA Plan 2 — safe zero-dep extractions + enforcing route check",
+      "ts": "2026-06-21"
+    }
+  },
+  "devdep-tier-isolation": {
+    "status": "active",
+    "valid_to": null,
+    "core": false,
+    "l0": "devDep tiers: L0 zero-install; nightly = gating component (jsdom+axe) + non-blocking E2E (Playwright,continue-on-error).",
+    "l1": "PR #310 (Front-End QA Plan 3/3): first devDeps (jsdom, axe-core, Playwright) isolated to nightly integration.yml — L0 ci.yml untouched (rm -rf node_modules && node run-all-tests.mjs → 244 green). Two nightly sub-tiers: frontend-qa-component (gating, jsdom mounts real render modules + axe) and frontend-qa-e2e (continue-on-error, Playwright with data-render-state=settled signal + --update-snapshots first run). Real axe finding: 4 color-contrast misses annotated a11y-known-gap; gating is serious/critical-only.",
+    "value": "Pattern: three-tier frontend QA ladder isolating devDependencies to nightly CI.\n\nTier 0 — L0 per-PR gate (zero-install, hermetic):\nnode run-all-tests.mjs must pass after `rm -rf node_modules`. Place devDep-requiring tests in subdirectories the flat runner skips (test/ui/, test/e2e/). The L0 isolation guard (Plan 1) actively fails if *.component.test.js or *.spec.js appears at test/ root. This invariant is the hard wall.\n\nTier 1 — nightly gating (frontend-qa-component):\n`npm ci --ignore-scripts && node --test test/ui/*.test.js`\n- Mount real render modules in jsdom; assert DOM structure, ARIA roles, text.\n- Run axe-core; skip contrast/focus rules (jsdom-unreliable; cover in Playwright).\n- Job is gating: failure blocks the nightly L1.\n- No OAuth token: least-privilege.\n\nTier 2 — nightly non-blocking (frontend-qa-e2e):\n`npx playwright test` with `continue-on-error: true`.\n- First run: --update-snapshots creates visual baselines; job 'fails' harmlessly — review and commit snapshots in a follow-up.\n- Pin maxDiffPixelRatio; block external fonts in playwright.config.js.\n\nKey patterns:\n(1) Settled signal: add `data-render-state=\"settled\"` to the root element when stable (RNG seeded, timers flushed, net-graph sync). Playwright waits on this instead of arbitrary sleeps. Gate behind ?e2e=1 query param — behavior-neutral to users.\n\n(2) Known a11y gaps: annotate marginal axe violations (e.g. contrast 4.25:1 vs 4.5:1 AA) with `a11y-known-gap`, gate only on serious/critical, file a backlog CSS-fix issue. Never suppress silently.\n\n(3) npm ci --ignore-scripts: required for all nightly devDep installs to block postinstall hooks.\n\n(4) Commit package-lock.json alongside the first devDep; pin exact patch versions and browser version.\n\nProvenance: PR #310 (2026-06-21) — Front-End QA Plan 3/3.",
+    "provenance": {
+      "source": "PR #310: test/ci(dashboard): Front-End QA Plan 3 — nightly devDep tier (jsdom+axe component, Playwright e2e scaffold)",
+      "ts": "2026-06-21"
+    }
   }
 }
