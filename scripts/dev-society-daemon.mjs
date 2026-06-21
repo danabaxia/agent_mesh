@@ -48,6 +48,7 @@ import { ensureLabels } from '../src/gh-labels.js';
 import { acquireBuildLock, releaseBuildLock, readBuildBusy } from '../src/dev-society/build-lock.js';
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
 import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
+import { dispatchMemoryAutomerge } from '../src/automerge/memory-dispatch.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { mergeSweepReportPath } from '../src/merge-sweep/report.js';
 import { runRemediation, remediationPath } from '../src/merge-sweep/remediation-run.js';
@@ -226,6 +227,20 @@ if (!once && !selftest) {
         .then((r) => ({ status: 'ok', output: r.disabled ? 'automerge disabled (AUTOMERGE_ENABLED!=true via env or repo var)' : `merged ${r.merged.length}, skipped ${r.skipped}, ineligible ${r.ineligible}` }))
         .catch((e) => { log('automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; });
     },
+    // Daemon-driven memory drain: GitHub Actions' cron for dev-mesh-memory-automerge.yml is
+    // heavily throttled (declared */15 but observed firing only ~every 2.6h+), so memory:promote
+    // PRs pile up between scheduled sweeps. The daemon's reliable ~10min cadence dispatches that
+    // (already retry-fixed) workflow when — and only when — there are open memory:promote PRs.
+    // The merge logic (union-resolve + validate + retry) lives in the workflow, so the daemon
+    // TRIGGERS it rather than reimplementing (GitHub Actions as a tool). Gating on the open count
+    // avoids burning an Actions run every 10min with nothing to merge.
+    'memory-automerge-sweep': () => dispatchMemoryAutomerge({
+      gh: async (a) => (await sh('gh', a, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      log: (...a) => log('memory-automerge:', ...a),
+    })
+      .then((r) => ({ status: 'ok', output: r.dispatched ? `dispatched for ${r.openCount} open memory PR(s)` : (r.error ? `list failed: ${r.error}` : 'no open memory:promote PRs') }))
+      .catch((e) => { log('memory-automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
     // Post-merge reconciler: close OPEN issues whose closing PR ("Closes #N") has merged
     // but GitHub's keyword auto-close missed, add `done`, and clear the orphaned state label
     // (pr:in-review/in-progress, or `approved` for issues never claimed in-progress — #248/#251).
