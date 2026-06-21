@@ -53,3 +53,21 @@ test('GET /api/health degrades to empty health when no snapshot (never 500)', as
     assert.deepEqual(body.findings, []);
   } finally { await srv.close(); }
 });
+
+test('GET /api/health serves the full Vital Signs model (organs + overall + report)', async () => {
+  const meshRoot = await mkdtemp(join(tmpdir(), 'hb-route-vitals-'));
+  await initMesh(meshRoot);
+  const { srv, port, cookie } = await boot(meshRoot);
+  try {
+    const r = await fetch(`${srv.url}/api/health`, { headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', Cookie: cookie } });
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.ok(['nominal', 'warn', 'critical', 'unknown'].includes(body.overall));
+    for (const organ of ['agents', 'jobs', 'board', 'pipeline', 'cognition']) {
+      assert.ok(body.organs[organ], `organ ${organ} present`);
+    }
+    assert.ok(Array.isArray(body.agentVitals));
+    assert.ok(body.activityHistory && Array.isArray(body.activityHistory.days));
+    assert.equal(typeof body.report.markdown, 'string');
+  } finally { await srv.close(); }
+});

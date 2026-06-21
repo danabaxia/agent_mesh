@@ -60,6 +60,7 @@ import { buildResumeCommand } from './resume-command.js';
 import { readActivity } from '../activity-log/log.js';
 import { filterEvents } from '../activity-log/event.js';
 import { readMergeSweepApi } from './merge-sweep-api.js';
+import { collectHealth } from './health-collect.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -866,17 +867,22 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, consoleB
     return;
   }
 
-  // GET /api/health → read-only heartbeat snapshot written by the daemon.
-  // Degrades to an empty health object (never 500) when the file is missing or
-  // corrupt — mirrors the gh-activity cache read pattern in loadActivitySnapshot.
+  // GET /api/health → the full Mesh "Vital Signs" model (passive): per-agent
+  // liveness, five-organ status, activity history, and a rendered health report.
+  // Backward-compatible: the old heartbeat keys (summary/findings/openEscalations)
+  // stay at the top level + under organs.jobs, so the legacy Graph-view Health
+  // panel keeps working. Never 500s — on total failure returns an unknown shell.
+  // Spec: docs/superpowers/specs/2026-06-21-mesh-health-vitals-view-design.md
   if (pathname === '/api/health' && req.method === 'GET') {
-    const file = process.env.AGENT_MESH_HEARTBEAT_FILE || resolve(meshRoot, '..', '.dev-society', 'heartbeat.json');
-    let snap = { generatedAt: null, summary: { ok: 0, failing: 0, overdue: 0, stuck: 0, escalated: 0 }, findings: [], openEscalations: [] };
     try {
-      const parsed = JSON.parse(await readFile(file, 'utf8'));
-      if (parsed && typeof parsed === 'object') snap = parsed;
-    } catch { /* missing/corrupt snapshot → empty health */ }
-    sendJson(res, 200, snap);
+      sendJson(res, 200, await collectHealth({ meshRoot, env: process.env, now: Date.now() }));
+    } catch {
+      sendJson(res, 200, {
+        generatedAt: null, overall: 'unknown', organs: {}, agentVitals: [],
+        activityHistory: { days: [], perAgent: {}, events: [] }, report: { markdown: '' },
+        summary: { ok: 0, failing: 0, overdue: 0, stuck: 0, escalated: 0 }, findings: [], openEscalations: [],
+      });
+    }
     return;
   }
 
