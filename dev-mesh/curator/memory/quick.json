@@ -1355,5 +1355,16 @@
       "source": "PR #357: feat(dashboard): mobile concierge Status — live activity feed",
       "ts": "2026-06-21"
     }
+  },
+  "tailscale-serve-http-over-https": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "tailscale serve: use --http=80 <port> not --https=443 — HTTPS Certs off by default; CLI rejects 127.0.0.1:<port>.",
+    "l1": "Two bugs in mesh-mobile-serve.mjs (PR #359, found live on a real tailnet): (1) --https=443 requires the tailnet's HTTPS Certificates feature, which is OFF by default — tailscale serve exits 'does not support getting TLS certs'; (2) 127.0.0.1:<port> is rejected — the CLI wants a bare port. Both fail silently until runtime on a real tailnet.",
+    "value": "Fix: `tailscale serve --bg --http=80 <port>`. Tailscale's WireGuard layer encrypts all tailnet traffic — HTTP over tailnet is private + encrypted without the HTTPS-cert feature. Set bootstrapUrl to emit `http://`. To opt into real HTTPS: enable 'HTTPS Certificates' + MagicDNS in the Tailscale admin console, then switch to `--https=443 <port>` (bare port, no 127.0.0.1 prefix). Verified live during phone front-door bring-up. Related: mobile-tailscale-askonly-concierge (broader mobile architecture).",
+    "provenance": {
+      "source": "PR #359: fix(mesh-mobile-serve): HTTP-over-tailnet serve (no TLS-cert dependency)",
+      "ts": "2026-06-21"
+    }
   }
 }
