@@ -374,8 +374,15 @@ function passesSameOriginGate(req, listenerPort, allowedHosts = []) {
   const origin = req.headers['origin'];
   if (origin) {
     if (isRemote) {
-      // Same-origin under the proxy: https on the MagicDNS/allowlisted host.
-      if (origin === `https://${hostName}` || origin === `https://${hostName}:${hostPort}`) return true;
+      // Same-origin under the proxy. Accept BOTH http and https on the MagicDNS/
+      // allowlisted host: `tailscale serve --http=80` fronts the dashboard over
+      // plain HTTP on the tailnet (WireGuard already encrypts), so a same-origin
+      // request carries `Origin: http://<host>`. ES module scripts are fetched in
+      // CORS mode and ALWAYS send Origin (unlike stylesheets/classic scripts), so
+      // an https-only check here 403'd /mobile/app.js specifically → the PWA shell
+      // loaded but its JS never ran ("opens but won't fully load" on the phone).
+      if (origin === `https://${hostName}` || origin === `http://${hostName}` ||
+          origin === `https://${hostName}:${hostPort}` || origin === `http://${hostName}:${hostPort}`) return true;
       return false;
     }
     const expectedOrigin = `http://127.0.0.1:${listenerPort}`;

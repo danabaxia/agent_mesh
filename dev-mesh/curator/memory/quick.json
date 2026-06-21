@@ -1377,5 +1377,16 @@
       "source": "PR #366: feat: server-side concierge history for cross-session continuity (#362)",
       "ts": "2026-06-21"
     }
+  },
+  "ios-cookie-redirect-drop": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "iOS Safari drops SameSite=Strict cookies set on redirect — serve 200 directly + use Lax + dual cookie/header auth.",
+    "l1": "PR #363: iOS Safari dropped the SameSite=Strict cookie on the /m?t= 302 redirect → all CSS/JS subrequests 403'd → partial render. Fix (defense in depth): (1) /m?t= serves 200 directly, sets cookie on same response (no redirect hop); (2) SameSite=Strict → Lax (sent on top-level nav + same-site subrequests; CSRF unchanged because API always requires explicit token, never ambient cross-site POST); (3) /api/* accepts token via cookie OR X-Dashboard-Token header — PWA captures ?t= once and sends as header. Desktop / keeps its redirect.",
+    "value": "Apply when building a mobile PWA with token-in-URL authentication:\n\n(1) NEVER set an auth cookie on a redirect response: iOS Safari drops Set-Cookie on 3xx in some SameSite+HTTPS combinations. Serve the token-handoff page directly on 200 with the Set-Cookie header on that SAME response. Pattern: GET /m?t=<token> → 200 + Set-Cookie; the desktop GET / 302 redirect path is unaffected.\n\n(2) SameSite=Lax, not Strict: Strict cookies are not sent on same-site subresource requests after top-level navigation — CSS/JS/XHR all fail auth. Lax is correct when the cookie must be present on both the initial nav AND subsequent subresource requests. CSRF posture is unchanged when APIs always validate an explicit token (never rely on ambient cookies from cross-site POSTs).\n\n(3) Dual-mode auth for APIs: accept the token via HTTP-only cookie OR X-Dashboard-Token header. The PWA captures ?t= once on first load and attaches it as a header on every API call — fully cookie-independent. This survives future cookie-quirk regressions without a second partial-load failure.\n\n(4) Public shell, gated API: serve the static UI shell (HTML/CSS/JS) unauthenticated so the page always renders. Protect only /api/* data and action routes. Non-sensitive UI code is safe unauthenticated; all sensitive operations require the explicit token.\n\nRelated: mobile-tailscale-askonly-concierge (broader mobile architecture). Provenance: PR #363 (2026-06-21).",
+    "provenance": {
+      "source": "PR #363: fix(dashboard): mobile auth survives iOS cookie quirks (partial-load fix)",
+      "ts": "2026-06-21"
+    }
   }
 }
