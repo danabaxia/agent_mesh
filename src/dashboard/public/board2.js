@@ -5,6 +5,7 @@ import { agentColor, buildKpis, buildCards, buildLane, buildTimeline } from '/bo
 import { openWorkspace, closeWorkspace, selectTab, setWorkspaceMesh, launchTerminal } from '/workspace.js';
 import { createNetGraph } from '/net-graph.js';
 import { renderGraphView } from '/graph-view.js';
+import { renderHealthView, stopHealthView } from '/health-view.js';
 import { seedRng, markRenderSettled } from '/e2e-mode.js';
 
 // e2e/visual determinism (Plan 3): no-op unless ?e2e=1. Seed Math.random BEFORE
@@ -21,6 +22,20 @@ function openGraphView() {
 }
 function closeGraphView() {
   document.querySelector('#view-graph').classList.remove('on');
+  document.querySelector('#view-board').classList.add('on');
+}
+
+// ── top-level Health view (passive vital signs: liveness + activity history) ──
+function openHealthView() {
+  document.querySelector('#view-board').classList.remove('on');
+  document.querySelector('#view-ws').classList.remove('on');
+  document.querySelector('#view-graph').classList.remove('on');
+  document.querySelector('#view-health').classList.add('on');
+  renderHealthView(document.querySelector('#view-health'));
+}
+function closeHealthView() {
+  stopHealthView();
+  document.querySelector('#view-health').classList.remove('on');
   document.querySelector('#view-board').classList.add('on');
 }
 
@@ -137,7 +152,14 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('#ws-back')) { closeWorkspace(); return; }
   if (e.target.closest('#ws-terminal')) { launchTerminal(); return; }
   const tv = e.target.closest('[data-topview]');
-  if (tv) { tv.dataset.topview === 'graph' ? openGraphView() : closeGraphView(); return; }
+  if (tv) {
+    const v = tv.dataset.topview;
+    closeGraphView(); closeHealthView();          // leave whichever top-view is open (idempotent)
+    if (v === 'graph') openGraphView();
+    else if (v === 'health') openHealthView();
+    // v === 'board' → both closes already restored the board
+    return;
+  }
   const wstab = e.target.closest('[data-wstab]');
   if (wstab) { selectTab(wstab.dataset.wstab); return; }
   const bv = e.target.closest('[data-bv]');

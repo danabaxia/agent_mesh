@@ -67,3 +67,25 @@ export const MIR_ID_RE = /^[a-z0-9:_-]+$/;
 // Task-board stale detection (mesh-health list_stale_tasks verb).
 // A non-terminal task whose last history transition is older than this is surfaced as stale.
 export const DEFAULT_BOARD_STALE_MS = 86_400_000; // 24 h
+
+// Health "Vital Signs" dashboard view — spec 2026-06-21. All optional; powers the
+// read-only passive health model (src/dashboard/health-model.js). See CLAUDE.md Config.
+export const DEFAULT_HEALTH_AGENT_STALE_MS = 3_600_000;   // 1h since last activity → stale/idle band
+export const DEFAULT_HEALTH_AGENT_DEAD_MS = 86_400_000;   // 24h silence + a known cadence → dead mechanism
+export const DEFAULT_HEALTH_DAEMON_STALE_MS = 900_000;    // 15m daemon-log silence → daemon heart stopped
+export const DEFAULT_HEALTH_PROMPT_SOFT_BYTES = 16_384;   // per-agent prompt soft size → cognition flag
+export const DEFAULT_HEALTH_HEADROOM_WARN_PCT = 25;       // context headroom below this → cognition flag
+export const DEFAULT_HEALTH_HISTORY_DAYS = 14;            // activity-history sparkline window (days)
+
+// Resolve the health thresholds from an env-like bag, falling back to the defaults
+// above. Pure: no process access of its own. Used by health-collect + /api/health.
+export function resolveHealthThresholds(env = {}) {
+  return {
+    agentStaleMs: readPositiveInt(env.AGENT_MESH_HEALTH_AGENT_STALE_MS, DEFAULT_HEALTH_AGENT_STALE_MS),
+    agentDeadMs: readPositiveInt(env.AGENT_MESH_HEALTH_AGENT_DEAD_MS, DEFAULT_HEALTH_AGENT_DEAD_MS),
+    daemonStaleMs: readPositiveInt(env.AGENT_MESH_HEALTH_DAEMON_STALE_MS, DEFAULT_HEALTH_DAEMON_STALE_MS),
+    promptSoftBytes: readPositiveInt(env.AGENT_MESH_HEALTH_PROMPT_SOFT_BYTES, DEFAULT_HEALTH_PROMPT_SOFT_BYTES),
+    headroomWarnPct: readPositiveInt(env.AGENT_MESH_HEALTH_HEADROOM_WARN_PCT, DEFAULT_HEALTH_HEADROOM_WARN_PCT),
+    historyDays: readPositiveInt(env.AGENT_MESH_HEALTH_HISTORY_DAYS, DEFAULT_HEALTH_HISTORY_DAYS),
+  };
+}
