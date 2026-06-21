@@ -1,4 +1,30 @@
-Emits `trend:<metric>:<cell>` findings into the same finding stream.
+# MIR Slow-Drift Trend Gate — Design
+
+## Goal
+
+Extend the MIR policy layer with a **trend-direction check** so that gradual metric
+deterioration across many runs is caught, even when individual runs stay within the
+per-run noise band. The check is additive — it runs alongside the existing rolling-window
+median per-run check and emits findings through the same `planIssues` path.
+
+## Problem
+
+The current MIR policy compares each run to the rolling-window median baseline. When a
+metric degrades gradually across many runs, the median degrades in sync — individual runs
+stay within the noise band and **no finding is ever filed**. Example:
+`quality_per_1k_tokens` silently declining 2–3 % per week never trips a per-run alert,
+yet after a month the mesh is meaningfully worse.
+
+This is distinct from the issues already solved:
+- Issue #324 / PR #330 addressed *high-variance* metrics by using a median baseline
+  instead of a point baseline — but the median itself can drift.
+- Issue #337 / PR #342 populated the eval metrics so there is now *data* to analyse —
+  but the policy only checks per-run delta against the rolling median.
+
+## Components
+
+- **`policy.js` (extended)** — new `assessTrend` call per metric/cell after the existing
+  per-run check. Emits `trend:<metric>:<cell>` findings into the same finding stream.
 - **Trend helpers (new, pure)** — `splitHalves(trend)`, `q1(values)`, and `assessTrend(metric, trend, noiseBandPct, N) → { adverse, magnitude, direction } | null`. Pure, table-testable, no I/O.
 - **Metric-direction map** — the per-metric "good direction" (higher-is-better vs. lower-is-better) used to classify adverse drift. Likely already present for the per-run check; reused, not duplicated.
 - **Config (existing only)** — `AGENT_MESH_MIR_TREND_N` (window length, default 10) and `AGENT_MESH_MIR_NOISE_BAND_PCT` (significance threshold). **No new env vars.**
@@ -20,7 +46,7 @@ Emits `trend:<metric>:<cell>` findings into the same finding stream.
 
 ## Testing
 
-New unit tests in `test/mir-policy.test.js`, all pure (no GitHub, no I/O):
+New unit tests in `test/mesh-improvement-policy.test.js`, all pure (no GitHub, no I/O):
 
 - **Short history:** `trend` with `< N` entries → no trend check runs → noop.
 - **Flat trend:** ≥ N entries, oldest-half Q1 ≈ newest-half Q1 → noop.
