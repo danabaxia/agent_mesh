@@ -1201,5 +1201,16 @@
       "source": "PR #317: spec: idea: signed AgentCard verification for HTTP peers — anti-spoof for cross-machine meshes (#314)",
       "ts": "2026-06-21"
     }
+  },
+  "evidence-gate-yagni-spec-amendment": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "YAGNI-deferred feature: gather variance evidence + amend governing spec before coding — skip either step = revert.",
+    "l1": "PR #321 added rolling-window/median MIR baseline without evidence (§11 of the MIR spec explicitly deferred it as YAGNI) — reverted (45d88c7). PR #326 (2026-06-21) formalises the gate: (1) ≥3 runs → compute CV + delta → classify triggering event as noise vs. regression → go/no-go + which lever; (2) amend §10/§11 with chosen lever + rationale (required before any code merges); (3) implement only the evidence-supported lever. Spec-conformance guard: a test/CI check asserts code and spec agree — rolling-window in code requires §11 to drop its deferred status.",
+    "value": "Three-step protocol for any YAGNI/deferred-v2 algorithmic change:\n\n(1) Evidence gate (Phase 0): collect ≥N runs of the affected metric. Compute mean/σ/CV and the delta distribution. Classify the triggering event (e.g. the -31.6% quality_per_1k_tokens drop) as noise vs. regression → decide go/no-go AND which lever. Document: if evidence shows noise, widen the band (Lever A); if it shows high-CV, use rolling-window median (Lever B). The gate selects exactly one; never ship both.\n\n(2) Governing spec amendment: amend the relevant §§ (here §10 baseline + §11 YAGNI-deferred) to promote the chosen mechanism to v1 with rationale. This artifact is REQUIRED before any implementation code merges. PR reviewers must check the amendment exists.\n\n(3) Implement only the evidence-supported lever: do not ship both, do not add adaptive/EWMA/per-metric tuning — those are still deferred.\n\n(4) Spec-conformance guard: add a test or CI check asserting that if the rolling-window algorithm is present in code, the governing spec §11 no longer lists it as deferred. This prevents re-introducing the PR #321 violation silently (code and spec must agree).\n\nKey failure modes caught by PR #326:\n- Implementing a YAGNI-deferred feature to fix what may be measurement noise, before gathering evidence.\n- Treating a single-run outlier as a confirmed regression without CV data from ≥3 runs.\n- Skipping spec amendment (leaving §11 contradicting the code).\n\nProvenance: PR #321 (reverted, commit 45d88c7) + PR #326 (2026-06-21, spec: rolling-window/median baseline for MIR).",
+    "provenance": {
+      "source": "PR #326 (2026-06-21): spec: rolling-window/median baseline for MIR high-variance ratio metrics (#324)",
+      "ts": "2026-06-21"
+    }
   }
 }
