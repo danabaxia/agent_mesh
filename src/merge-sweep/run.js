@@ -43,12 +43,17 @@ export async function runMergeSweep({ gh, repo, meshRoot, readReport, writeRepor
   };
 
   // 2) automerge (read-only classify; gate overlay + fail-closed)
+  // memory:promote PRs are UNSTABLE by nature (bot-authored, no CI) and have their own
+  // checkpoint (3) below — exclude them here so remediation's `not-clean:` escalation
+  // never mis-fires on them (mirrors the exclusion in automerge/escalation.js).
   const automergeCp = await safeCp('automerge', async () => {
     const prs = JSON.parse(await gh(['pr', 'list', '--repo', repo, '--state', 'open', '--json', PR_FIELDS, '--limit', '100']));
-    const items = (Array.isArray(prs) ? prs : []).map((pr) => {
-      const { state, reason } = classifyAutomergePr(pr, { gate });
-      return { ref: `PR#${pr.number}`, number: pr.number, state, detail: reason || (pr.title || '') };
-    });
+    const items = (Array.isArray(prs) ? prs : [])
+      .filter((pr) => !(pr.labels || []).some((l) => (l?.name || l) === 'memory:promote'))
+      .map((pr) => {
+        const { state, reason } = classifyAutomergePr(pr, { gate });
+        return { ref: `PR#${pr.number}`, number: pr.number, state, detail: reason || (pr.title || '') };
+      });
     return { name: 'automerge', status: items.length ? 'flagged' : 'clean', items };
   });
 
