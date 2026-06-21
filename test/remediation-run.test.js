@@ -45,6 +45,44 @@ test('a failing issue create leaves the item in prior state (not escalated)', as
   assert.notEqual(state['automerge:PR#1']?.state, 'escalated');
 });
 
+test('UNSTABLE escalation carries an actionable non-required-check diagnosis, not the generic content-fixer message', async () => {
+  // PR #259 (issue #269): UNSTABLE means GitHub considers the PR technically mergeable
+  // but a NON-REQUIRED / pending / skipped check is unmet. The content fixers have no
+  // handle on it (mergefix only resolves DIRTY conflicts; ci-sweep only repairs a
+  // FAILURE in the rollup), so the issue must NOT claim "auto-fix exhausted" — it must
+  // tell the human this is a CI/branch-protection state to resolve.
+  let createBody = null, createTitle = null;
+  const { gh } = recGh((a) => {
+    const s = a.join(' ');
+    if (s.includes('issue list')) return '[]';
+    if (s.includes('pr view')) return JSON.stringify({ state: 'OPEN' });
+    if (a[0] === 'issue' && a[1] === 'create') {
+      createTitle = a[a.indexOf('--title') + 1];
+      createBody = a[a.indexOf('--body') + 1];
+      return 'https://github.com/o/r/issues/269';
+    }
+    return '[]';
+  });
+  await runRemediation({ gh, repo: 'o/r', meshRoot: '/m', readReport: () => reportWith([{ ref: 'PR#259', number: 259, state: 'blocked', detail: 'not-clean:UNSTABLE', ageRuns: 9 }]), readState: () => ({}), writeState: () => {}, now: new Date('2026-06-20T12:00:00Z'), cfg: CFG });
+  assert.doesNotMatch(createTitle, /auto-fix exhausted/, 'UNSTABLE title must not claim auto-fix exhausted');
+  assert.match(createBody, /UNSTABLE/, 'body names the UNSTABLE merge state');
+  assert.match(createBody, /non-required|branch protection|re-run/i, 'body gives an actionable CI/branch-protection direction');
+  assert.doesNotMatch(createBody, /automatic fixers could not clear it/, 'no misleading content-fixer claim for UNSTABLE');
+});
+
+test('DIRTY escalation keeps the generic content-fixer message', async () => {
+  let createBody = null;
+  const { gh } = recGh((a) => {
+    const s = a.join(' ');
+    if (s.includes('issue list')) return '[]';
+    if (s.includes('pr view')) return JSON.stringify({ state: 'OPEN' });
+    if (a[0] === 'issue' && a[1] === 'create') { createBody = a[a.indexOf('--body') + 1]; return 'https://github.com/o/r/issues/77'; }
+    return '[]';
+  });
+  await runRemediation({ gh, repo: 'o/r', meshRoot: '/m', readReport: () => reportWith([{ ref: 'PR#1', number: 1, state: 'blocked', detail: 'not-clean:DIRTY', ageRuns: 9 }]), readState: () => ({}), writeState: () => {}, now: new Date('2026-06-20T12:00:00Z'), cfg: CFG });
+  assert.match(createBody, /automatic fixers could not clear it/, 'DIRTY keeps the existing content-fixer message');
+});
+
 test('closed own marker issue (human-ack) for a still-stuck item → acked, no create', async () => {
   const { calls, gh } = recGh((a) => {
     const s = a.join(' ');
