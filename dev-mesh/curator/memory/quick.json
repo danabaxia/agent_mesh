@@ -1045,5 +1045,16 @@
       "source": "PR #278: fix(dashboard): drain in-flight auto-sync on close() — fixes recurring Windows ENOTEMPTY CI flake",
       "ts": "2026-06-21"
     }
+  },
+  "automerge-post-push-unknown-retry": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Post-push mergeability is transiently UNKNOWN — retry squash-merge (6x6s) in the same sweep; deferred = starvation loop.",
+    "l1": "PR #290: after union-resolving a conflicting memory PR and pushing, the immediate squash-merge fails 'not mergeable yet' — GitHub lazily recomputes mergeability (UNKNOWN state). Deferred to next sweep, a newer clean PR merges first, re-conflicting the stale branch: permanent starvation. PR #259 sat 3.7h across 5+ sweeps. Fix: retry squash-merge 6 times/6s apart in the same sweep; break early on genuine CONFLICTING (defer to mergefix), spin on UNKNOWN (transient). All 5 stalled PRs drained in one sweep post-fix.",
+    "value": "Pattern for any sweep that pushes a resolution to a PR branch then immediately squash-merges:\n\n**The UNKNOWN gap**: GitHub computes PR mergeability lazily. Right after `git push`, mergeability is UNKNOWN. `gh pr merge --squash` during UNKNOWN fails 'Pull Request is not mergeable' — even on a clean branch.\n\n**The starvation trap**: if the sweep defers to next run, newer clean PRs merge and advance main, re-conflicting the just-resolved branch. Older PRs starve permanently.\n\n**Fix**: retry squash-merge in the same sweep:\n```\nfor attempt in 1 2 3 4 5 6; do\n  state=$(gh pr view $PR --json mergeable --jq .mergeable)\n  [[ $state == CONFLICTING ]] && break   # real conflict → defer to mergefix\n  if [[ $state == MERGEABLE ]]; then\n    gh pr merge $PR --squash --delete-branch && break\n  fi\n  sleep 6   # UNKNOWN → wait and retry\ndone\n```\n\n**Break early on CONFLICTING**: a genuine conflict won't resolve on retry — break immediately, let mergefix handle it.\n\n**Do NOT break early on UNKNOWN**: UNKNOWN is GitHub's transient recomputation state; spin through it.\n\n**Evidence (PR #290)**: 5 stalled memory PRs (including PR #259 at 3.7h/5+ sweeps) all drained in one sweep run after this fix.\n\n**General rule**: push + merge is always a two-step with an async gap. Never assume MERGEABLE immediately after push. Retry-with-backoff or poll-then-merge. Provenance: PR #290 (2026-06-21).",
+    "provenance": {
+      "source": "PR #290: fix(memory-automerge): retry squash-merge to drain union-resolved PRs (fix memory PR starvation)",
+      "ts": "2026-06-21"
+    }
   }
 }
