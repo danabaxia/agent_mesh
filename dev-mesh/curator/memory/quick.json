@@ -924,5 +924,16 @@
       "source": "PR #261: spec — stale spec:in-review escalation with dedup-marker+hysteresis (Issue #256)",
       "ts": "2026-06-21"
     }
+  },
+  "soft-launch-clean-clock-watchdog": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Soft-launch monitor: multi-signal clean-clock; resets on any issue, validated at N-hours clean, not sticky.",
+    "l1": "PR #270: ③a research-escalation uses a clean-clock (resets on any found issue, `validated` at exactly 24h clean, not sticky — regression post-validation reopens clock). Signals: ISO-gated daemon log since liveSince, stderr-growth delta baselined on first run (no cold-start alarm), schedule-state lastStatus/consecutiveFailures, stranded open issues >6h. Pure core (all pure functions) + thin impure shell (always exits 0, prints STATUS: machine line, atomic state writes).",
+    "value": "Pattern for soft-launching a new feature with production validation:\n\n1. Pure-core detection module (no I/O, fully hermetically testable):\n   - scanDaemonLog(lines, liveSince): ISO-timestamp-gated filter strips unrelated output; matches feature-specific error patterns past a liveSince baseline.\n   - scanErrLog(currentSize, baseline): stderr growth delta — null baseline → 0 issues (prevents cold-start false alarm).\n   - scanScheduleState(state): catch lastStatus==='fail' or consecutiveFailures>0 (closes gaps that log parsing misses: silent schedule failures).\n   - findStrandedItems(issues, ageThreshold): open items older than threshold with no resolution comment or label.\n   - advanceClock(state, issueCount): reset cleanSince when issues>0; declare 'validated' at exactly N-hours clean (wall-clock anchored, not run-count).\n   - summarize(state): emit machine line for cron harness consumption.\n\n2. Thin impure shell (always exits 0):\n   - Reads state file (atomic JSON), calls pure core, writes state atomically.\n   - Prints 'STATUS: <state> — <description>' machine line for harness parsing.\n   - All I/O errors caught and converted to issues, never rethrown.\n\n3. Clean-clock semantics:\n   - Reset on ANY detected issue across ANY signal source.\n   - 'validated' at exactly N-hours clean since last reset (wall-clock, not run-count).\n   - NOT sticky: post-validation regression reopens the clock (state returns to 'clean').\n   - Anchored to liveSince so pre-feature log history is ignored.\n\n4. Multi-signal complementary coverage — each closes gaps the others miss:\n   - Log: catches runtime errors; misses silent schedule failures.\n   - Stderr growth: catches unexpected output not in structured logs.\n   - Schedule-state: catches missed runs and silent job failures.\n   - Stranded issues: catches user-visible impact no daemon log sees.\n\n5. Hermetic testing:\n   - Pure core has no I/O → unit-testable with constructed inputs.\n   - Use fixed ISO timestamps in tests, never Date.now().\n   - Test cold-start: null baseline → 0 stderr issues (no false alarm).\n   - Test each signal independently, then combined via advanceClock.\n\nProvenance: PR #270 (2026-06-21).",
+    "provenance": {
+      "source": "PR #270: feat(monitor): soft-launch monitor for ③a research-escalation (24h clean-clock watchdog)",
+      "ts": "2026-06-21"
+    }
   }
 }
