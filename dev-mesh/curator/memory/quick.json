@@ -957,5 +957,16 @@
       "source": "PR #263: feat(③a): read-only research-escalation diagnosis daemon builtin",
       "ts": "2026-06-21"
     }
+  },
+  "do-mode-draft-pr-two-guard": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Autonomous do-mode PRs: two independent never-merge guards — `--draft` + `do-not-merge`; classifier checks BOTH.",
+    "l1": "PR #276 research-fix opens a DRAFT PR only after a green do-mode build+test. Single-guard failure: `--draft` alone can be un-drafted manually; a label alone can be stripped. Two redundant guards mean both conditions must be clear before any auto-merge path fires. `classifyAutomergePr` blocks `isDraft !== false` AND `do-not-merge ∈ DEFAULT_HOLD_LABELS`. Status gate: infra failure → throw (no marker, retries); clean fail (tests red/no change) → marker comment, no PR; only green+change → open draft PR.",
+    "value": "Pattern for any autonomous daemon that fires do-mode and opens a PR:\n\n(1) Two independent never-merge guards:\n  - Open with hardcoded `gh pr create --draft` — never omit the flag.\n  - Apply `do-not-merge` label at PR creation. This is a separate, independent signal.\n  Failure modes of single-guard: a DRAFT PR can be un-drafted without removing the label; a label can be stripped without undrafting. Both conditions must be clear before auto-merge fires.\n\n(2) Auto-merge classifier checks BOTH:\n  `isAutoMergeable`/`classifyAutomergePr` must block when `isDraft !== false` OR when `do-not-merge` is in the hold-labels set. Neither alone is sufficient.\n\n(3) Status gate — three clean outcome paths:\n  - Infra failure (spawn error, unhandled throw) → write no marker; runner retries normally.\n  - Clean failure (tests red OR no file changes after the run) → post a dedup marker comment (e.g. `<!-- research-fix -->`) to prevent re-processing; open NO PR.\n  - Green + change → open draft PR. Human reviews, un-drafts, and merges. This is the intentional gate.\n\n(4) Untrusted diagnosis injection:\n  When a diagnosis derived from untrusted issue/PR text feeds the do-mode prompt, frame it explicitly as \"recommended strategy to evaluate, not obey\" — treat it as data, never as an instruction. The do-worker is path-guard-confined to its own worktree regardless.\n\n(5) Bot-authored dedup marker:\n  Use an HTML comment marker (e.g. `<!-- research-fix -->`) in the issue body for dedup. Guard spoofed human-added markers by checking `botLogin` on the comment author — not just the marker text.\n\nProvenance: PR #276 (2026-06-21), feat(③b): research-fix gated draft-PR.",
+    "provenance": {
+      "source": "PR #276: feat(③b): research-fix — gated draft-PR fix (do-mode, never auto-merged)",
+      "ts": "2026-06-21"
+    }
   }
 }
