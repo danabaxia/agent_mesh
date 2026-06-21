@@ -1311,5 +1311,16 @@
       "source": "PR #346: fix(report): token panel was always $0 — daily-report read the wrong (empty) log path",
       "ts": "2026-06-21"
     }
+  },
+  "mir-slow-drift-trend-gate": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR rolling median tracks slow drift — add Q1 two-half trend check as orthogonal signal for gradual deterioration.",
+    "l1": "PR #352 spec: when a metric degrades gradually across many runs, the rolling-window median baseline degrades in sync — individual runs stay within the noise band and no finding ever fires. Fix: additive trend check — split history into oldest/newest halves, compute Q1 of each, classify direction via metric-direction map. Adverse AND magnitude > noiseBandPct → emit 'trend:<metric>:<cell>' (cluster: trend-regression). Distinct id from per-run finding — both can coexist. Reuses AGENT_MESH_MIR_TREND_N + AGENT_MESH_MIR_NOISE_BAND_PCT; no new env vars.",
+    "value": "Apply when adding trend monitoring on top of a rolling-window median baseline: the median solves per-run noise but is susceptible to gradual drift — the baseline degrades with the metric, so individual runs never breach the noise band.\n\nAlgorithm (additive — runs alongside per-run check, does not replace it):\n1. Require ≥ TREND_N data points (default 10). Short history → skip.\n2. Split window into oldest and newest halves.\n3. Compute Q1 (first quartile) of each half — one outlier run cannot flip a half's verdict (unlike mean/min).\n4. Classify direction using the existing metric-direction map ('higher-is-better' vs 'lower-is-better').\n5. Adverse AND |magnitude| > noiseBandPct → emit finding id 'trend:<metric>:<cell>', cluster 'trend-regression'.\n\nFinding lifecycle via existing planIssues path (no new code):\n- First appearance → file issue\n- Recurrence → update\n- Reversal (drift no longer adverse) → close\n\nId 'trend:<metric>:<cell>' is distinct from the per-run id so both can coexist when a metric has both a spike and a long-term drift.\n\nConfig reuse: AGENT_MESH_MIR_TREND_N and AGENT_MESH_MIR_NOISE_BAND_PCT — no new env vars.\n\nNoop cases: history < TREND_N; flat trend (oldest Q1 ≈ newest Q1); favorable drift (metric improving).\n\nComplementary to mir-rolling-window-median-baseline (that lesson solves per-run noise; this lesson closes the blind spot the median creates for slow cumulative regressions that never breach the noise band individually). Provenance: PR #352 / Issue #349 (2026-06-21).",
+    "provenance": {
+      "source": "PR #352: spec: idea: MIR slow-drift trend gate — rolling-window median masks gradual metric deterioration (#349)",
+      "ts": "2026-06-21"
+    }
   }
 }
