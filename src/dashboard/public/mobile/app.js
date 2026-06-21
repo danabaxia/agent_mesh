@@ -95,10 +95,20 @@ function mount() {
   const send = $('send');
   const history = [];   // {role, text}
 
+  // Capture the bootstrap token from ?t= once and persist it, then send it as a
+  // header on every API call. This makes auth work even if the device drops the
+  // cookie (iOS Safari). The token is the same one the cookie carries.
+  try {
+    const t = new URLSearchParams(location.search).get('t');
+    if (t) localStorage.setItem('mesh_token', t);
+  } catch { /* private mode / no storage — fall back to cookie only */ }
+  const authToken = (() => { try { return localStorage.getItem('mesh_token') || ''; } catch { return ''; } })();
+  const authHeaders = (extra = {}) => authToken ? { ...extra, 'X-Dashboard-Token': authToken } : extra;
+
   const post = async (path, body) => {
     const res = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body)
     });
     const data = await res.json().catch(() => ({}));
@@ -194,7 +204,7 @@ function mount() {
   const loadStatus = async () => {
     const box = $('status');
     box.innerHTML = '<div class="card muted">Loading…</div>';
-    const get = async (p) => { try { const r = await fetch(p); return r.ok ? await r.json() : null; } catch { return null; } };
+    const get = async (p) => { try { const r = await fetch(p, { headers: authHeaders() }); return r.ok ? await r.json() : null; } catch { return null; } };
     const [health, daily, activity] = await Promise.all([get('/api/health'), get('/api/daily'), get('/api/activity-log?limit=20')]);
     const cards = summarizeStatus({ health, daily: daily?.report ?? daily });
     cards.push(summarizeActivity(activity?.events));

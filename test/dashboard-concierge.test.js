@@ -196,12 +196,41 @@ test('host-gate: explicit env-listed host accepted', async () => {
   } finally { await srv.close(); }
 });
 
-test('bootstrap also works at /m?t= (mobile entry)', async () => {
+test('/m?t= serves the mobile page directly (no redirect) with a Lax cookie', async () => {
+  // iOS Safari dropped Strict cookies set on a 302, 403ing the page's own assets.
+  // The mobile entry now serves the HTML on the SAME 200 response with a Lax cookie.
   const { srv, port, token } = await startServer();
   try {
     const res = await rawRequest({ port, path: `/m?t=${token}`, headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.location, '/m');
-    assert.ok((res.headers['set-cookie']?.[0] || '').includes('am_dash='));
+    assert.equal(res.status, 200);
+    assert.ok(res.body.includes('Mesh Concierge'), 'serves the mobile shell HTML');
+    const sc = res.headers['set-cookie']?.[0] || '';
+    assert.ok(sc.includes('am_dash='), 'sets the auth cookie');
+    assert.ok(/SameSite=Lax/i.test(sc), 'cookie is SameSite=Lax');
+  } finally { await srv.close(); }
+});
+
+test('mobile shell is public (renders without a token); a bad ?t= is still rejected', async () => {
+  const { srv, port } = await startServer();
+  try {
+    const page = await rawRequest({ port, path: '/m', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
+    assert.equal(page.status, 200);
+    assert.ok(page.body.includes('Mesh Concierge'));
+    const js = await rawRequest({ port, path: '/mobile/app.js', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
+    assert.equal(js.status, 200, 'shell assets load without a cookie');
+    const bad = await rawRequest({ port, path: `/m?t=wrong`, headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
+    assert.equal(bad.status, 403, 'an invalid token is still rejected');
+  } finally { await srv.close(); }
+});
+
+test('API auth accepts the X-Dashboard-Token header (cookie-independent fallback)', async () => {
+  const { srv, port, token } = await startServer();
+  try {
+    const ok = await rawRequest({ port, path: '/api/health', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', 'X-Dashboard-Token': token } });
+    assert.equal(ok.status, 200, 'valid header token authorizes an API call (no cookie)');
+    const no = await rawRequest({ port, path: '/api/health', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' } });
+    assert.equal(no.status, 403, 'still rejected with neither cookie nor header');
+    const bad = await rawRequest({ port, path: '/api/health', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', 'X-Dashboard-Token': 'nope' } });
+    assert.equal(bad.status, 403, 'a wrong header token is rejected');
   } finally { await srv.close(); }
 });

@@ -211,7 +211,11 @@ test('GET /?t=<token> → sets cookie + 302 redirect to /', async () => {
 
     const setCookie = res.headers.get('set-cookie') ?? '';
     assert.ok(setCookie.includes('am_dash='), 'Must set am_dash cookie');
-    assert.ok(setCookie.toLowerCase().includes('samesite=strict'), 'Must be SameSite=Strict');
+    // SameSite=Lax (was Strict): Strict cookies set on a redirect are dropped by
+    // some mobile browsers (iOS Safari); Lax is sent on top-level nav + same-site
+    // subresources, which is exactly this same-origin dashboard. CSRF surface is
+    // unchanged — the API also requires the token, never an ambient cross-site POST.
+    assert.ok(setCookie.toLowerCase().includes('samesite=lax'), 'Must be SameSite=Lax');
     assert.ok(setCookie.toLowerCase().includes('httponly'), 'Must be HttpOnly');
   } finally {
     await srv.close();
