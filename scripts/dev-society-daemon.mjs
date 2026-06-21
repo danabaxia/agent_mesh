@@ -226,9 +226,10 @@ if (!once && !selftest) {
         .catch((e) => { log('automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; });
     },
     // Post-merge reconciler: close OPEN issues whose closing PR ("Closes #N") has merged
-    // but GitHub's keyword auto-close missed, clearing the orphaned pr:in-review/in-progress
-    // label. Backstops the "done issue hangs open" drift (#183/#175) so the board never
-    // shows a merged item as still in-flight (the always-active invariant).
+    // but GitHub's keyword auto-close missed, add `done`, and clear the orphaned state label
+    // (pr:in-review/in-progress, or `approved` for issues never claimed in-progress — #248/#251).
+    // Backstops the "done issue hangs open" drift (#183/#175) so the board never shows a
+    // merged item as still in-flight and completed work is always `done`-labeled.
     'post-merge-reconcile': () => postMergeReconcile()
       .then((r) => ({ status: 'ok', output: `post-merge-reconcile: closed ${r.closed}` }))
       .catch((e) => { log('post-merge-reconcile error:', e.message); return { status: 'fail', error: e.message }; }),
@@ -346,7 +347,10 @@ async function postMergeReconcile() {
   } catch (e) { log('post-merge-reconcile: issue list failed', e.message); return { closed: 0 }; }
   const plan = planPostMergeReconcile(openIssues, mergedPrs);
   let closed = 0;
+  // Self-heal the `done` label before adding it (addLabel swallows a 422 on an unknown label).
+  if (plan.length) await ensureLabels(gh, ['done'], { repo: cfg.repo });
   for (const item of plan) {
+    await addLabel(item.issue, item.addLabel);
     for (const l of item.removeLabels) await rmLabel(item.issue, l);
     try {
       await gh(['issue', 'close', String(item.issue), '--repo', cfg.repo, '--reason', 'completed',

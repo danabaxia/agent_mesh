@@ -7,20 +7,28 @@ const pr = (number, closes) => ({ number, closingIssuesReferences: closes.map((n
 
 test('closes an OPEN pr:in-review issue whose closing PR merged (the #183/#199 drift)', () => {
   const plan = planPostMergeReconcile(
-    [iss(183, ['bug', 'approved', 'pr:in-review']), iss(999, ['bug', 'approved', 'pr:in-review'])],
+    [iss(183, ['bug', 'pr:in-review']), iss(999, ['bug', 'pr:in-review'])],
     [pr(214, [183])],
   );
   assert.equal(plan.length, 1);
-  assert.deepEqual(plan[0], { issue: 183, closingPr: 214, removeLabels: ['pr:in-review'] });
+  assert.deepEqual(plan[0], { issue: 183, closingPr: 214, removeLabels: ['pr:in-review'], addLabel: 'done' });
 });
 
-test('also clears in-progress; multiple in-flight labels removed', () => {
-  const plan = planPostMergeReconcile([iss(5, ['bug', 'in-progress', 'pr:in-review'])], [pr(7, [5])]);
-  assert.deepEqual(plan[0].removeLabels, ['pr:in-review', 'in-progress']);
+test('closes an `approved`-state orphan whose closing PR merged (the #248/#251 gap)', () => {
+  // #248 sat at `approved` (never claimed in-progress); PR #251 merged with `Closes #248`
+  // but GitHub's auto-close missed and the in-flight-only backstop skipped it.
+  const plan = planPostMergeReconcile([iss(248, ['idea', 'approved'])], [pr(251, [248])]);
+  assert.deepEqual(plan[0], { issue: 248, closingPr: 251, removeLabels: ['approved'], addLabel: 'done' });
 });
 
-test('does NOT touch an open issue with no in-flight label (e.g. human reopened)', () => {
-  const plan = planPostMergeReconcile([iss(5, ['bug', 'approved'])], [pr(7, [5])]);
+test('also clears in-progress; multiple stale state labels removed', () => {
+  const plan = planPostMergeReconcile([iss(5, ['bug', 'in-progress', 'pr:in-review', 'approved'])], [pr(7, [5])]);
+  assert.deepEqual(plan[0].removeLabels, ['pr:in-review', 'in-progress', 'approved']);
+  assert.equal(plan[0].addLabel, 'done');
+});
+
+test('does NOT touch an open issue with no state label (e.g. human reopened)', () => {
+  const plan = planPostMergeReconcile([iss(5, ['bug'])], [pr(7, [5])]);
   assert.deepEqual(plan, []);
 });
 

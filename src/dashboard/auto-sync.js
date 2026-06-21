@@ -13,20 +13,25 @@ export function createAutoSync({ runSync, schedule = setTimeout, clearSchedule =
   let running = false;
   let pendingRerun = false;
   let stopped = false;
+  let activeRun = null;   // promise of the current execute() chain (for stop() to drain)
 
   async function execute() {
     if (stopped) return;
     if (running) { pendingRerun = true; return; }   // backstop: runNow racing a run
     running = true;
-    let report;
-    try { report = { ok: true, result: await runSync() }; }
-    catch (error) { report = { ok: false, error }; log(`auto-sync failed: ${error?.message}`); }
-    running = false;
-    // onResult OBSERVES only — it must not call trigger()/runNow() back into the
-    // coordinator (it would see running=false and arm a spurious extra run). The
-    // server's onResult only calls sse.emitSync, which honors this.
-    try { onResult(report); } catch { /* observer must not break the loop */ }
-    if (pendingRerun && !stopped) { pendingRerun = false; await execute(); }
+    const run = (async () => {
+      let report;
+      try { report = { ok: true, result: await runSync() }; }
+      catch (error) { report = { ok: false, error }; log(`auto-sync failed: ${error?.message}`); }
+      running = false;
+      // onResult OBSERVES only — it must not call trigger()/runNow() back into the
+      // coordinator (it would see running=false and arm a spurious extra run). The
+      // server's onResult only calls sse.emitSync, which honors this.
+      try { onResult(report); } catch { /* observer must not break the loop */ }
+      if (pendingRerun && !stopped) { pendingRerun = false; await execute(); }
+    })();
+    activeRun = run;
+    await run;
   }
 
   function trigger() {
@@ -47,9 +52,15 @@ export function createAutoSync({ runSync, schedule = setTimeout, clearSchedule =
     await execute();
   }
 
-  function stop() {
+  // Async so callers (the dashboard's close()) can DRAIN an in-flight runSync
+  // before tearing down — otherwise a fire-and-forget startup doctor write can
+  // land after close() returns and race a caller's directory cleanup (the
+  // Windows ci-schedules-route ENOTEMPTY flake). Setting `stopped` first prevents
+  // any further reruns, so awaiting the current chain is bounded.
+  async function stop() {
     stopped = true;
     if (timer) { try { clearSchedule(timer); } catch { /* fake timers */ } timer = null; }
+    if (activeRun) { try { await activeRun; } catch { /* observer-safe; never throws */ } }
   }
 
   return { trigger, runNow, stop };

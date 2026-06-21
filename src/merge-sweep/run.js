@@ -43,14 +43,13 @@ export async function runMergeSweep({ gh, repo, meshRoot, readReport, writeRepor
   };
 
   // 2) automerge (read-only classify; gate overlay + fail-closed)
-  //    memory:promote PRs are excluded here — they are handled by the memory-automerge
-  //    checkpoint and always UNSTABLE (GITHUB_TOKEN recursion guard prevents CI runs).
-  //    Classifying them here would produce spurious blocked:not-clean:UNSTABLE items that
-  //    trigger needs-human escalations after 4+ sweeps (issue #274).
+  // memory:promote PRs are UNSTABLE by nature (bot-authored, no CI) and have their own
+  // checkpoint (3) below — exclude them here so remediation's `not-clean:` escalation
+  // never mis-fires on them (mirrors the exclusion in automerge/escalation.js).
   const automergeCp = await safeCp('automerge', async () => {
     const prs = JSON.parse(await gh(['pr', 'list', '--repo', repo, '--state', 'open', '--json', PR_FIELDS, '--limit', '100']));
     const items = (Array.isArray(prs) ? prs : [])
-      .filter((pr) => !(Array.isArray(pr.labels) && pr.labels.some((l) => (l && l.name || l) === 'memory:promote')))
+      .filter((pr) => !(pr.labels || []).some((l) => (l?.name || l) === 'memory:promote'))
       .map((pr) => {
         const { state, reason } = classifyAutomergePr(pr, { gate });
         return { ref: `PR#${pr.number}`, number: pr.number, state, detail: reason || (pr.title || '') };
