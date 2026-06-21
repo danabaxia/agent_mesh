@@ -18,6 +18,7 @@ function usage() {
     '  agent-mesh leave <mesh-root> <name>',
     '  agent-mesh validate <mesh-root> [agent]',
     '  agent-mesh doctor <mesh-root> [agent] [--apply]',
+    '  agent-mesh discover <scan-root> [--mesh <mesh-root>] [--depth N] [--json]   # recognize local agent folders',
     '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat] [--no-replace]',
     '  agent-mesh shell <mesh-root> <agent>   # open native claude in an agent folder',
     '',
@@ -239,6 +240,73 @@ export async function main(argv, env = process.env) {
       } else {
         process.stdout.write('Conformance: FAIL\n');
         process.exitCode = 1;
+      }
+    } catch (err) {
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (command === 'discover') {
+    const [scanRootArg, ...rest] = argv.slice(1);
+    if (!scanRootArg) {
+      process.stderr.write(`${usage()}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    const scanRoot = resolve(scanRootArg);
+    let meshRootOpt;
+    let depth;
+    let asJson = false;
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === '--json') asJson = true;
+      else if (a === '--mesh') meshRootOpt = rest[++i] ? resolve(rest[i]) : undefined;
+      else if (a === '--depth') depth = Number(rest[++i]);
+    }
+
+    try {
+      const { discoverAgentCandidates } = await import('./builder/discover.js');
+      const opts = {};
+      if (meshRootOpt) opts.meshRoot = meshRootOpt;
+      if (Number.isFinite(depth) && depth > 0) opts.maxDepth = depth;
+      const found = await discoverAgentCandidates(scanRoot, opts);
+
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify(found, null, 2)}\n`);
+        return;
+      }
+      if (found.length === 0) {
+        process.stdout.write(`No agent candidates found under ${scanRoot}.\n`);
+        return;
+      }
+
+      process.stdout.write(`Found ${found.length} agent candidate(s) under ${scanRoot}:\n\n`);
+      for (const c of found) {
+        const marks = [
+          c.markers.agentJson && 'agent.json',
+          c.markers.promptsSystem && 'prompts/system.md',
+          c.markers.agentMd && 'AGENT.md'
+        ].filter(Boolean).join(', ');
+        const status = c.alreadyInMesh === true ? ' [in mesh]'
+          : c.alreadyInMesh === false ? ' [new]' : '';
+        process.stdout.write(`  ${c.confidence.padEnd(6)} ${c.name}${status}\n`);
+        process.stdout.write(`    ${c.path}\n`);
+        process.stdout.write(`    markers: ${marks}\n`);
+      }
+
+      // When pointed at a mesh, surface the exact wire-in commands for new ones —
+      // discovery proposes, the operator runs `add`/`doctor` (no auto-mutation).
+      if (meshRootOpt) {
+        const newOnes = found.filter((c) => c.alreadyInMesh === false);
+        if (newOnes.length) {
+          process.stdout.write('\nTo wire the new candidate(s) into the mesh:\n');
+          for (const c of newOnes) {
+            process.stdout.write(`  agent-mesh add ${meshRootOpt} ${c.path} --apply\n`);
+          }
+          process.stdout.write(`  agent-mesh doctor ${meshRootOpt} --apply\n`);
+        }
       }
     } catch (err) {
       process.stderr.write(`error: ${err.message}\n`);
