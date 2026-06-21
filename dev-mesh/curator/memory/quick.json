@@ -1134,5 +1134,16 @@
       "source": "PR #303: test(dashboard): Front-End QA Plan 1 — zero-dep L0 unit + static tests",
       "ts": "2026-06-21"
     }
+  },
+  "frontend-extract-dom-free-first": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Tier FE-refactors: extract DOM-free pure helpers first (zero-dep); defer DOM-coupled code to the jsdom plan.",
+    "l1": "PR #306 (FE-QA Plan 2): DOM-free helpers (net-graph-layout.js — geometry; session-view-model.js — formatters) extracted + tested zero-dep. graph-view-model.js/freshness.js kept additive — inline formulae diverged from the proposed module API, so extraction would silently change behavior. Deferrals documented in plan doc for Plan 3 (jsdom). Route-manifest check promoted from advisory to enforcing: parses real /api/* routes from server.js, asserts bidirectional match with ROUTE_PATTERNS in CI.",
+    "value": "When refactoring browser code with no DOM in CI: (1) DOM-free = no document/window, deterministic I/O — extract now, test with hand-computed values, zero deps. (2) Divergent or DOM-coupled: keep additive. The check: does inline code match proposed API exactly? Differing formulae = silent behavior change — defer. Document each deferral and why. (3) Once advisory structure checks confirm parity, promote to enforcing: parse real server source, assert bidirectional route equivalence in test suite.",
+    "provenance": {
+      "source": "PR #306: test/refactor(dashboard): Front-End QA Plan 2 — safe zero-dep extractions + enforcing route check",
+      "ts": "2026-06-21"
+    }
   }
 }
