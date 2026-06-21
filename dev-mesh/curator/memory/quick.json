@@ -1046,6 +1046,17 @@
       "ts": "2026-06-21"
     }
   },
+  "monitor-path-silent-vacuous-clean": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Monitor reads wrong path -> silently clean: empty file = 0 matches = 0 issues. Verify paths read real data on start.",
+    "l1": "PR #288: soft-launch monitor had 3 wrong paths — daemonOutLog/daemonErrLog -> deployRoot/daemon.{out,err}.log (real: .dev-society/daemon.*); scheduleStatePath -> deployRoot/.agent-mesh/schedule-state.json (real: deployRoot/dev-mesh/AGENT/.agent-mesh/). All 3 silently read non-existent files, returning 0 matches = clean. The 24h watch was effectively only the gh stranded-issue check; every clean result was a false read confirmed healthy by luck. Fixed + live-verified reading real 614-line daemon log.",
+    "value": "Pattern: monitor path correctness — a scan reading a wrong path silently returns 0 issues (empty input = 0 matches = clean), not an error. This looks exactly like a healthy system.\n\n(1) Wire a path-sanity log at scan init: log the path + file size/line count BEFORE scanning. A 0-byte read from an expected-non-empty file on a live deploy is a path bug, not genuine silence.\n\n(2) On deploy/setup, run a live smoke: confirm each monitor path exists and returns non-empty content. Assert file size > 0 or line count > 0. Fail fast if any monitor path is dead — a blind monitor is worse than no monitor.\n\n(3) Three path categories that can drift separately (all embed absolute paths at config time):\n   - Daemon log files: live under deployRoot/.dev-society/, NOT deployRoot/.\n   - Schedule state: live under deployRoot/dev-mesh/AGENT/.agent-mesh/, NOT deployRoot/.agent-mesh/.\n   - GitHub API queries: stateless, no drift risk.\n   Always resolve monitor paths relative to their correct sub-root, not a shared top-level root.\n\n(4) Test monitor paths explicitly. Hermetic unit tests over empty/non-empty inputs verify detection logic but cannot catch wrong path configs. Add a smoke assertion that the monitor actually read >0 bytes from each path it scanned.\n\n(5) When extending a monitor to cover new features (e.g. adding research-fix coverage in PR #288), verify new paths exist before shipping — a new scan over a wrong path starts silent from day 1.\n\nGeneral rule: if the scan framework silently handles missing files (empty input = 0 results), add an explicit existence check before scanning so a misconfigured path is an explicit error, not a vacuous pass.\n\nProvenance: PR #288 (2026-06-21).",
+    "provenance": {
+      "source": "PR #288: fix(monitor): correct wrong file paths (watch was vacuous) + extend coverage to #3b",
+      "ts": "2026-06-21"
+    }
+  },
   "automerge-post-push-unknown-retry": {
     "status": "active",
     "valid_to": null,
