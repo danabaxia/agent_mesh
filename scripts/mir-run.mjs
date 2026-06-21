@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { collectInputs } from '../src/mesh-improvement/collect.js';
+import { syncEvalArtifacts } from '../src/mesh-improvement/sync-artifacts.js';
 import { buildReport, syncReport } from '../src/mesh-improvement/run.js';
 import {
   DEFAULT_MIR_DIR, DEFAULT_MIR_NOISE_BAND_PCT, DEFAULT_MIR_RECOVER_RUNS,
@@ -10,7 +11,7 @@ import {
 
 const env = (k, d) => (process.env[k] ?? d);
 
-export async function runMir({ repoRoot, ref, dryRun, runSuites, gh, now, repo }) {
+export async function runMir({ repoRoot, ref, dryRun, runSuites, gh, now, repo, syncArtifacts = syncEvalArtifacts }) {
   try {
     const at = now().toISOString();
     const mirDir = join(repoRoot, env('AGENT_MESH_MIR_DIR', DEFAULT_MIR_DIR));
@@ -20,6 +21,12 @@ export async function runMir({ repoRoot, ref, dryRun, runSuites, gh, now, repo }
       spawnSync(process.execPath, ['run-all-tests.mjs', '--json', join(mirDir, 'test-results.json')],
         { cwd: repoRoot, stdio: 'inherit' });
     }
+    // Local daemon has no CI eval artifacts on disk → pull the latest before
+    // collecting, so behavior/adversarial/perf metrics aren't blind (#337).
+    // No-op on CI (the workflow stages this run's own fresh artifacts); every
+    // failure degrades silently to the existing null-metric behavior.
+    await syncArtifacts({ repoRoot, gh, isCI: !!process.env.GITHUB_ACTIONS, log: (m) => console.error(m) });
+
     const { inputs, previousMir } = collectInputs({
       resultsRoots: {
         tests: join(mirDir, 'test-results.json'),
