@@ -107,11 +107,26 @@ jobs:
               # concurrency group serialises sweeps and the per-loop fetch accounts for prior
               # merges, so the only residual gap is a dispatch racing a scheduled fire; a cap
               # overshoot there is a formatting issue the next sweep re-flags, not a security one.
-              if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch; then
-                echo "merged memory PR #$pr"
-              else
-                echo "#$pr not mergeable yet (conflict?) — mergefix/next sweep will retry"
-              fi
+              # GitHub computes mergeability LAZILY: right after we push the union-resolved
+              # merge above, `gh pr merge` transiently reports "not mergeable yet" even though
+              # the PR is now clean. A single attempt then defers to "next sweep" — but by then
+              # a newer clean memory PR has merged and advanced main, re-conflicting THIS PR, so
+              # older conflicting PRs STARVE forever (e.g. #259 sat 3.7h across 5+ sweeps while
+              # #284/#285/#287 merged immediately). Retry with a short backoff so the
+              # union-resolved PR settles and merges in THIS sweep. A genuine conflict reports
+              # mergeable=CONFLICTING (not just a failed merge call) — break early on that and
+              # defer to mergefix rather than burning the whole backoff.
+              merged=""
+              for attempt in 1 2 3 4 5 6; do
+                if gh pr merge "$pr" --repo "$GITHUB_REPOSITORY" --squash --delete-branch; then
+                  echo "merged memory PR #$pr"; merged=1; break
+                fi
+                if [ "$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json mergeable --jq .mergeable 2>/dev/null)" = "CONFLICTING" ]; then
+                  echo "#$pr genuinely conflicting — defer to mergefix"; break
+                fi
+                echo "#$pr not mergeable yet (attempt $attempt — GitHub recomputing mergeability)"; sleep 6
+              done
+              [ -z "$merged" ] && echo "#$pr not merged this sweep — mergefix/next sweep will retry"
             else
               gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" \
                 --body "🤖 memory auto-merge skipped: quick.json failed validateQuickMemory even after merging main — needs a human."
