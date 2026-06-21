@@ -1201,5 +1201,16 @@
       "source": "PR #317: spec: idea: signed AgentCard verification for HTTP peers — anti-spoof for cross-machine meshes (#314)",
       "ts": "2026-06-21"
     }
+  },
+  "mir-rolling-window-median-baseline": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR baseline: rolling-window median when ≥3 values; single-previous cold-start; lock with spec-conformance guard.",
+    "l1": "PR #330 (closes #324): ratio metrics (cost-per-turn, quality-per-token) are high-variance run-to-run. A single-previous-value baseline triggers false regressions on noisy outliers. Fix: carry per-finding `history` bounded by trendN; when ≥3 prior values exist, use median(history.slice(-trendN)) — resistant to a single anomalous run. Cold-start (<3 values) falls back to §10 single-previous-value — safe on first run. Spec-conformance guard: a test asserts §11 of the design doc does not re-list rolling-window as v2-deferred, binding the implementation decision to a CI gate.",
+    "value": "Apply when adding baseline comparison to any time-series metric with high coefficient of variation (CV > ~0.3) — typically ratio metrics like cost-per-turn, tokens-per-run, latency-per-token.\n\n(1) Carry history per finding: in the baseline record (mir.json), append the current metric value to the per-finding `history` array, capped to `trendN` entries:\n  newHistory[f.id] = [...priorValues, f.metric.value].slice(-trendN);\n\n(2) Two-tier baseline selection:\n  if (priorValues.length >= MEDIAN_WINDOW_MIN) {  // 3 is the Phase-0 constant\n    base = median(priorValues.slice(-trendN));     // outlier-resistant\n  } else {\n    base = prevFindings.get(f.id)?.metric.value;   // cold-start fallback\n  }\n\n(3) Why median over mean: a single anomalous run (network latency, model jitter) inflates the mean and triggers a false regression alarm on the next normal run. Median is insensitive to a single outlier in a window of trendN. Heuristic: if σ/mean > 0.3, single-previous-value is too noisy — switch to median.\n\n(4) Cold-start invariant: MEDIAN_WINDOW_MIN = 3 means runs 1 and 2 always use §10 single-previous. Never compute a median on fewer than 3 points; the result would be less stable than the value itself.\n\n(5) Spec-conformance guard: when an implementation decision was previously deferred, lock it with a test that reads both the spec and the code:\n  const spec = readFileSync('docs/.../design.md', 'utf8');\n  assert.ok(!spec.includes('v2-deferred'), '§11 must be in v1');\n  const code = readFileSync('src/.../baseline.js', 'utf8');\n  assert.ok(code.includes('median('), 'median must be in baseline.js');\nA future PR re-deferring the feature must also update the spec — CI enforces the coupling.\n\n(6) Required test matrix: cold-start fallback, median smoothing (outlier suppression), real regression detection (genuine δ), outlier recovery (metric returns to normal), history GC (trendN eviction), spec-conformance guard. Without all six, a refactor can silently remove cold-start safety or windowing.\n\nProvenance: PR #330 (2026-06-21), closes #324.",
+    "provenance": {
+      "source": "PR #330: feat(mir): rolling-window median baseline for high-variance ratio metrics (closes #324)",
+      "ts": "2026-06-21"
+    }
   }
 }
