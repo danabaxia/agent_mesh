@@ -1300,5 +1300,16 @@
       "source": "PR #344: feat(cli): discover + deploy — recognize and one-click-join local agents",
       "ts": "2026-06-21"
     }
+  },
+  "agent-log-dir-per-agent-root": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Delegate run logs live per-agent under `<meshRoot>/<agent>/.agent-mesh/`; aggregators must enumerate agent subdirs.",
+    "l1": "PR #346: daily-report.mjs read delegate run logs from a single top-level `<repoRoot>/.agent-mesh/logs/` path. AGENT_MESH_LOG_DIR resolves under each *served* agent's root — real logs are at `<meshRoot>/analyst/.agent-mesh/logs/`, `<meshRoot>/tester/.agent-mesh/logs/`, etc. Top-level dir is empty → local.runs: 0 → all-zero tokens/cost in today/week/month dashboard panels. Fix: agentLogDirs() enumerates non-dot agent subdirs; readLocalLogsMulti() reads and deduplicates the started/done record pair per run-id (keep the usage-bearing done record).",
+    "value": "Apply when adding any aggregation script that reads per-agent mesh run logs.\n\n(1) Log dir is per-agent: AGENT_MESH_LOG_DIR resolves relative to each agent's own root folder (`<meshRoot>/<agent>/`). Never read from `<repoRoot>/.agent-mesh/logs/` — that path is empty in production. Correct helper:\n  agentLogDirs({ meshRoot, logSeg = '.agent-mesh/logs', extraDirs = [] })\n  → readdirSync(meshRoot), skip dot-dirs, return `path.join(subdir, logSeg)` for each. Pass extraDirs for legacy back-compat.\n\n(2) Multi-dir read + dedup: each `delegate-<date>.jsonl` records two lines per run: a `started` line (no usage) and a `done` line (with tokens/cost). Concatenating N dirs double-counts. Dedup by `run.id`, keeping the done/usage-bearing record:\n  dedupeRunRecords(records): for each id, keep the record with usage set; fall back to last-seen.\n\n(3) meshRoot resolution: `process.env.DEV_SOCIETY_MESH_ROOT || path.join(repoRoot, 'dev-mesh')`.\n\n(4) Dot-dir skip: skip `subdir.startsWith('.')` — `.git`, `.agent-mesh` are tool dirs, not agents.\n\n(5) Test coverage: per-agent enumeration, dot-dir skip, missing meshRoot tolerance, cross-agent aggregation with started/done dedup, missing log file tolerance. PR #346 ships `test/report-per-agent-logs.test.js` (5 tests).\n\n(6) Follow-up gap (not this PR): run records write `route: null` → per-route breakdown groups everything under 'unknown'. A separate delegate.js capture fix is needed; it does not affect total cost/token counts.\n\nProvenance: PR #346 (2026-06-21).",
+    "provenance": {
+      "source": "PR #346: fix(report): token panel was always $0 — daily-report read the wrong (empty) log path",
+      "ts": "2026-06-21"
+    }
   }
 }
