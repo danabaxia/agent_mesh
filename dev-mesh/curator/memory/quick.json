@@ -1344,5 +1344,16 @@
       "source": "PR #355: feat(dashboard): Mesh Mobile Concierge — private phone front-door",
       "ts": "2026-06-21"
     }
+  },
+  "mobile-activity-feed-endpoint-reuse": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Mobile live-feed: reuse /api/activity-log (no new backend); extract pure display helpers zero-dep tested.",
+    "l1": "PR #357 (follow-up to #355): Recent activity card on /m Status reused /api/activity-log — no new endpoint. summarizeActivity (text truncation/agent label) and relTime (3m/2h/1d compact age) extracted as DOM-free pure helpers; 4 new test cases in test/mobile-pwa.test.js. One CSS property (.metric word-wrap) was the only layout change. L0: 254/254 green.",
+    "value": "When adding a live-feed widget to a mobile or dashboard view:\n(1) ENDPOINT AUDIT FIRST: check /api/* for an existing activity or log route before adding backend surface. /api/activity-log was already present — wiring the frontend to it cost zero backend lines.\n(2) PURE HELPER EXTRACTION: extract all display/formatting logic (summarize text, format relative age) as DOM-free pure functions co-located with zero-dep unit tests. Never embed formatting logic in the render path.\n(3) CSS IS SURGICAL: one property per new widget (e.g. word-wrap on .metric). If more is needed, reconsider the layout strategy.\n(4) TEST FIRST, RENDER SECOND: 4 unit tests for the two helpers before any DOM integration. Pattern confirms frontend-extract-dom-free-first for the mobile context.\nProvenance: PR #357 (2026-06-21), follow-up to PR #355 mobile-tailscale-askonly-concierge.",
+    "provenance": {
+      "source": "PR #357: feat(dashboard): mobile concierge Status — live activity feed",
+      "ts": "2026-06-21"
+    }
   }
 }
