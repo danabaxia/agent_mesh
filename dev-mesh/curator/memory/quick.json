@@ -1223,5 +1223,16 @@
       "source": "PR #326 (2026-06-21): spec: rolling-window/median baseline for MIR high-variance ratio metrics (#324)",
       "ts": "2026-06-21"
     }
+  },
+  "devdep-tier-workflow-gap": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "devDep tests excluded from L0 aren't gated — a non-L0 workflow must also exist; 'missing dep' ≠ 'expected skip'.",
+    "l1": "PR #332: test/ui/*.component.test.js (jsdom+axe) and test/e2e/dashboard-smoke.spec.js (Playwright) had npm scripts (test:ui/test:e2e), devDeps, and playwright.config.js — but no CI workflow ran them. In node --test (L0) they fail with MODULE_NOT_FOUND — easy to mistake for 'correctly excluded' when they're actually ungated. The L0 isolation guard ensures devDep tests don't pollute L0; it does NOT guarantee a nightly tier runs them. Fix: ui-e2e.yml (dispatch + nightly, off ci.yml — npm ci + Chromium too heavy per-PR).",
+    "value": "Pattern: devDep tests require an explicit CI workflow file — test infra alone is not a gate.\n\nFailure mode: test/ui/ and test/e2e/ tests are excluded from L0 (correct). No nightly workflow exists (gap). They fail in `node --test` with MODULE_NOT_FOUND — identical to the L0 isolation guard doing its job. The coverage hole is invisible until someone investigates why tests 'always fail'.\n\nDetection: for any devDep test failing MODULE_NOT_FOUND in the zero-dep suite, grep .github/workflows/ for the npm script name (test:ui, test:e2e, playwright). No match = ungated.\n\nPrevention lint (add to hermetic suite):\n  const wfs = readdirSync('.github/workflows').map(f => readFileSync(join('.github/workflows', f), 'utf8'));\n  if (existsSync('test/ui'))  assert(wfs.some(w => w.includes('test:ui')),  'test:ui has no workflow');\n  if (existsSync('test/e2e')) assert(wfs.some(w => w.includes('test:e2e')), 'test:e2e has no workflow');\n\nui-e2e.yml pattern (PR #332):\n- Triggers: workflow_dispatch + schedule nightly (e.g. '0 3 * * *')\n- Off ci.yml: npm ci + Chromium download ~1-2min, too heavy per-PR\n- Runs: npm run test:ui (jsdom+axe-core) + npm run test:e2e (Playwright)\n- Linux CI: skip visual snapshot tests (platform-specific baseline); functional/a11y E2E suffices\n- Commit a visual baseline so local devs see all-pass on first run\n\nRelated: devdep-tier-isolation (three-tier structure; this lesson closes the 'tier 2 exists on paper' gap).\n\nProvenance: PR #332 (2026-06-21) — gap found via github-vs-local research.",
+    "provenance": {
+      "source": "PR #332: feat(ci): dedicated frontend-QA gate (ui-e2e.yml) — the suite was run nowhere",
+      "ts": "2026-06-21"
+    }
   }
 }
