@@ -1377,5 +1377,16 @@
       "source": "PR #363: fix(dashboard): mobile auth survives iOS cookie quirks (partial-load fix)",
       "ts": "2026-06-21"
     }
+  },
+  "alert-episode-set-diff-dedup": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Alert dedup: openAlerts[] + set-diff → open new-critical, close recovered. One issue per critical episode.",
+    "l1": "PR #367 (planHealthAlerts in health-alert.js): filing a new issue every CRITICAL sweep tick creates duplicates that flood the queue. Solution: carry openAlerts:[key] in a state file. Pure planner computes: opens = current-critical keys NOT in prevOpen (new episode); closes = prevOpen keys no longer critical (recovered); nextState.openAlerts = [...current-critical]. Planner inherits the health-model's honesty rule — only reacts to what the model already classified; never re-judges liveness.",
+    "value": "Apply when any monitoring or health-sweep loop must open exactly one GitHub issue per critical episode and auto-close it on recovery.\n\n(1) State file carries {generatedAt, openAlerts:[key]} — key = namespaced alert id per monitored unit (e.g. 'mesh-health-alert:agents/critical'). Persisted between sweep ticks.\n\n(2) Pure planner({report, prev}) returns {opens, closes, state}:\n  opens = current-critical keys NOT in prev.openAlerts → file a new issue\n  closes = prev.openAlerts keys no longer critical → close the issue\n  state.openAlerts = [...current-critical]\n\n(3) Host shell applies the plan: gh issue create per open, gh issue close per close, then atomically writes new state. Planner has zero I/O — fully unit-testable with constructed inputs.\n\n(4) Re-entry behavior: an organ staying critical across ticks remains in openAlerts — neither opens nor closes (no duplicate issues). Recovery then re-critical = a new open (new episode).\n\n(5) Honesty inheritance: planner must NOT re-classify organ status. It only reacts to what the underlying model already classified, preserving the model's honesty invariants (e.g. never false-dead for idle on-demand agents).\n\nDistinct from daemon-health-observer-pattern (count-based seenCount flap-suppression) and soft-launch-clean-clock-watchdog (wall-clock clean-clock). Provenance: PR #367 (2026-06-21), src/mesh-health/health-alert.js, closes Issue #361.",
+    "provenance": {
+      "source": "PR #367: idea: health vital signs → proactive needs-human alert when any organ transitions to critical/dead (#361)",
+      "ts": "2026-06-21"
+    }
   }
 }
