@@ -1,4 +1,31 @@
- amendment** to `docs/superpowers/specs/2026-06-19-mesh-improvement-report-design.md` §10 and §11 — the authorizing artifact. **Required before any Lever-B code merges.**
+# Rolling-Window / Median Baseline for MIR High-Variance Ratio Metrics — Design
+
+## Goal
+
+Address MIR's false-positive rate for high-variance ratio metrics — specifically
+`quality_per_1k_tokens` — by providing an evidence-gated path to either **(A)** widening
+`AGENT_MESH_MIR_NOISE_BAND_PCT` or **(B)** replacing the §10 single-previous-value
+baseline with a rolling-window median. Both options are conditional on Phase 0 empirical
+evidence that the triggering metric shows sufficient run-to-run variance to warrant
+smoothing. The outcome of Phase 0 selects exactly one lever; this spec does not ship both.
+
+## Background
+
+PR #321 added a rolling-window/median baseline to the MIR comparator without first
+gathering variance evidence or amending the governing spec. §11 of
+`docs/superpowers/specs/2026-06-19-mesh-improvement-report-design.md` explicitly defers
+rolling-window/median baselines as a v2 YAGNI candidate, and no empirical support was
+provided that the -31.6% `quality_per_1k_tokens` drop in issue #318 was run noise rather
+than a real regression. The PR was reverted (commit 45d88c7).
+
+This spec formalises the correct three-step path: (1) gather variance/CV data for the
+affected metric across ≥3 runs; (2) amend §10/§11 to promote the chosen mechanism to
+v1 with rationale; (3) implement only the lever the evidence supports. The gating
+sequence is the explicit failure mode that PR #321 violated and is now a spec invariant.
+
+## Components
+
+- **Spec §10/§11 amendment** to `docs/superpowers/specs/2026-06-19-mesh-improvement-report-design.md` §10 and §11 — the authorizing artifact. **Required before any Lever-B code merges.**
 - **MIR baseline comparator** (existing, in the MIR report generator) — for Lever A: no logic change, only the configured band value. For Lever B: replaces the single-previous-value lookup with a trailing-median computation plus cold-start fallback.
 - **`AGENT_MESH_MIR_NOISE_BAND_PCT`** (existing config) — for Lever A, its default/recommended value changes. For Lever B it is retained and applied around the new median baseline.
 - **Run-history reader** (Lever B only) — supplies the trailing *W* run values for the metric to the comparator.
