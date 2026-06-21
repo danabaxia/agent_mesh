@@ -45,13 +45,14 @@ import { runMir } from './mir-run.mjs';
 import { runAnalystDailyReview } from './analyst-review-run.mjs';
 import { doctor } from '../src/builder/doctor.js';
 import { ensureLabels } from '../src/gh-labels.js';
-import { acquireBuildLock, releaseBuildLock } from '../src/dev-society/build-lock.js';
+import { acquireBuildLock, releaseBuildLock, readBuildBusy } from '../src/dev-society/build-lock.js';
 import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
 import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { mergeSweepReportPath } from '../src/merge-sweep/report.js';
 import { runRemediation, remediationPath } from '../src/merge-sweep/remediation-run.js';
 import { runResearchEscalation } from '../src/dev-society/research-escalation-run.js';
+import { runResearchFix } from '../src/dev-society/research-fix-run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
 
@@ -168,6 +169,17 @@ if (!once && !selftest) {
       now: new Date(), cfg: { escalateAfter: 4, hysteresisK: 3, capPerRun: 5, backoffBaseMs: 1_800_000 },
       log: (...a) => log('remediate:', ...a),
     }),
+    // ③b: do-mode. Coder implements ③a's diagnosis on a needs-human issue and opens a DRAFT
+    // PR (never auto-merged: --draft + do-not-merge). Build-lock serialized, cap 1/tick.
+    // Lock is acquired/released inside runDraftFixBuild (defined below, after runOneTask).
+    'research-fix': async () => runResearchFix({
+      gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      buildLockHeld: () => readBuildBusy(repoRoot),
+      runBuild: (a) => runDraftFixBuild(a),
+      cfg: { capPerRun: 1 },
+      log: (...a) => log('research-fix:', ...a),
+    }).catch((e) => { log('research-fix error:', e.message); return { status: 'fail', error: e.message }; }),
     // ③a: read-only. Analyst researches each open needs-human escalation (web + host-collected
     // PR/issue context) and posts a deduped diagnosis comment. Ask-only — no code, no PRs.
     'research-escalation': async () => runResearchEscalation({
@@ -208,9 +220,10 @@ if (!once && !selftest) {
         .catch((e) => { log('automerge-sweep error:', e.message); return { status: 'fail', error: e.message }; });
     },
     // Post-merge reconciler: close OPEN issues whose closing PR ("Closes #N") has merged
-    // but GitHub's keyword auto-close missed, clearing the orphaned pr:in-review/in-progress
-    // label. Backstops the "done issue hangs open" drift (#183/#175) so the board never
-    // shows a merged item as still in-flight (the always-active invariant).
+    // but GitHub's keyword auto-close missed, add `done`, and clear the orphaned state label
+    // (pr:in-review/in-progress, or `approved` for issues never claimed in-progress — #248/#251).
+    // Backstops the "done issue hangs open" drift (#183/#175) so the board never shows a
+    // merged item as still in-flight and completed work is always `done`-labeled.
     'post-merge-reconcile': () => postMergeReconcile()
       .then((r) => ({ status: 'ok', output: `post-merge-reconcile: closed ${r.closed}` }))
       .catch((e) => { log('post-merge-reconcile error:', e.message); return { status: 'fail', error: e.message }; }),
@@ -328,7 +341,10 @@ async function postMergeReconcile() {
   } catch (e) { log('post-merge-reconcile: issue list failed', e.message); return { closed: 0 }; }
   const plan = planPostMergeReconcile(openIssues, mergedPrs);
   let closed = 0;
+  // Self-heal the `done` label before adding it (addLabel swallows a 422 on an unknown label).
+  if (plan.length) await ensureLabels(gh, ['done'], { repo: cfg.repo });
   for (const item of plan) {
+    await addLabel(item.issue, item.addLabel);
     for (const l of item.removeLabels) await rmLabel(item.issue, l);
     try {
       await gh(['issue', 'close', String(item.issue), '--repo', cfg.repo, '--reason', 'completed',
@@ -573,6 +589,63 @@ async function runOneTask(issue) {
     rmSync(wt, { recursive: true, force: true });
     await git(['worktree', 'prune'], repoRoot).catch(() => {});
     releaseBuildLock(repoRoot);   // build done → deploy-sync may restart on the next tick
+  }
+}
+
+// ③b: the do-mode draft-fix build — parallel to runOneTask, reusing core.* helpers but with
+// the draft/diagnosis/needs-human policy. Returns a result the runResearchFix runner acts on.
+// Throws on a Coder INFRA failure (non-`done`) so the runner records no marker and retries.
+// Holds the build-lock for the entire build (acquire before worktree, release in outer finally)
+// so deploy-sync defers any daemon restart until the build completes.
+async function runDraftFixBuild({ issue, prompt, draft = true, holdLabel = 'do-not-merge' }) {
+  const branch = `dev-society/research-fix-${issue.number}`;
+  const wt = join(cfg.workRoot, `research-fix-${issue.number}`);
+  acquireBuildLock(repoRoot, { issue: issue.number });
+  try {
+    rmSync(wt, { recursive: true, force: true });
+    await git(['worktree', 'prune'], repoRoot);
+    await git(['fetch', 'origin', cfg.base, '-q'], repoRoot);
+    await git(['worktree', 'add', '-f', '-B', branch, wt, `origin/${cfg.base}`], repoRoot);
+    const client = await createA2AClient(core.registryFor(wt, { binPath: BIN }), { requestTimeoutMs: cfg.timeoutMs });
+    try {
+      log(`  → research-fix coder (do) #${issue.number}…`);
+      const coderTask = await client.send('coder', core.a2aMessage('do', prompt));
+      const oc = core.taskOutcome(coderTask);
+      if (!core.taskSucceeded(coderTask)) {
+        throw new Error(`coder infra failure: ${oc.status}${oc.errorCode ? ' ' + oc.errorCode : ''}`);
+      }
+      if (!(Array.isArray(oc.filesChanged) && oc.filesChanged.length)) {
+        return { opened: false, status: 'no-change', summary: `coder produced no change (status ${oc.status})` };
+      }
+      let tests;
+      try { await sh(process.execPath, ['run-all-tests.mjs'], { cwd: wt, maxBuffer: 1 << 26 }); tests = { passed: true, summary: 'suite green' }; }
+      catch (e) { tests = { passed: false, summary: (e.stdout || e.message || '').toString().split('\n').slice(-6).join('\n') }; }
+      const { stdout: diff } = await git(['--no-pager', 'diff', `origin/${cfg.base}`], wt);
+      const reviewerTask = await client.send('reviewer', core.a2aMessage('ask', core.reviewerPrompt(issue, diff)));
+      const review = core.taskText(reviewerTask);
+      if (!core.shouldOpenPR({ coderTask, tests })) {
+        return { opened: false, status: 'tests-red', summary: tests.summary };
+      }
+      await git(['add', '-A'], wt);
+      await git(['-c', 'commit.gpgsign=false', 'commit', '-qm',
+        `research-fix: ${issue.title}\n\nRefs #${issue.number}\n\nDraft fix by the A2A dev-society ③b (Coder over A2A do, using ③a's diagnosis). Never auto-merged.`], wt);
+      await git(['push', '-u', 'origin', branch, '--force-with-lease'], wt);
+      if (holdLabel) await ensureLabels(gh, [holdLabel], { repo: cfg.repo }).catch(() => {});
+      const body = `Refs #${issue.number} — **DRAFT** research-driven fix by the dev-society ③b (Coder over A2A \`do\`, using ③a's diagnosis). NEVER auto-merged; a human reviews, un-drafts, and merges.\n\n### Reviewer (A2A \`ask\`)\n${review.slice(0, 4000)}`;
+      const args = ['pr', 'create', '--repo', cfg.repo, '--base', cfg.base, '--head', branch,
+        '--title', `research-fix: ${issue.title} (#${issue.number})`, '--body', body, '--draft'];
+      if (holdLabel) args.push('--label', holdLabel);
+      const { stdout } = await gh(args);
+      const prNumber = (stdout.match(/\/pull\/(\d+)/) || [])[1] || null;
+      log(`  ✓ research-fix DRAFT PR: ${stdout.trim()}`);
+      return { opened: true, prNumber, status: 'opened' };
+    } finally {
+      await client.close().catch(() => {});
+      rmSync(wt, { recursive: true, force: true });
+      await git(['worktree', 'prune'], repoRoot).catch(() => {});
+    }
+  } finally {
+    releaseBuildLock(repoRoot);
   }
 }
 

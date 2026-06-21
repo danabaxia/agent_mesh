@@ -1,0 +1,13 @@
+{
+  "jobs": [
+    {
+      "id": "research-fix",
+      "name": "Draft-fix stuck escalations (do)",
+      "kind": "builtin",
+      "builtin": "research-fix",
+      "cadence": { "kind": "every", "minutes": 60 },
+      "enabled": true,
+      "description": "Do-mode: Coder implements ③a's diagnosis on a needs-human issue and opens a DRAFT PR (never auto-merged). Build-lock serialized, cap 1/tick."
+    }
+  ]
+}
