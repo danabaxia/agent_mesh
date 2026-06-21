@@ -957,5 +957,16 @@
       "source": "PR #263: feat(③a): read-only research-escalation diagnosis daemon builtin",
       "ts": "2026-06-21"
     }
+  },
+  "merge-sweep-checkpoint-label-exclusion": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Each PR type has exactly one checkpoint handler — all others must exclude it via label filter.",
+    "l1": "PR #275: memory:promote PRs had a dedicated memory checkpoint (3) but automerge checkpoint had no label filter. GITHUB_TOKEN-created PRs are always UNSTABLE (CI never runs on them), so automerge saw not-clean:UNSTABLE → remediation.ACTIONABLE('automerge') escalated to needs-human. Fix: exclude memory:promote from automerge in run.js — mirrors the exclusion already in automerge/escalation.js.",
+    "value": "Pattern for multi-checkpoint sweep systems (merge-sweep or any work-queue consumer with labelled PR types):\n\n(1) Assign exclusive ownership: each PR label/type belongs to exactly one checkpoint. Document this mapping.\n(2) Propagate exclusions consistently: if escalation.js already skips label X, run.js must too — both files form one logical checkpoint and must have matching guards.\n(3) Apply the filter BEFORE classification, not only in the remediation path. A missing pre-classification filter means the wrong checkpoint still scores the PR and can generate erroneous remediation.\n(4) GITHUB_TOKEN-created PRs are structurally UNSTABLE (GitHub never runs CI on them) — any checkpoint that classifies on check-suite status must exclude bot-created label classes that are UNSTABLE by nature.\n(5) Regression: assert that an UNSTABLE PR with the excluded label does NOT appear in the automerge checkpoint results and STILL appears in its dedicated checkpoint. Test is red before the fix, green after.\n\nProvenance: PR #275 (2026-06-21).",
+    "provenance": {
+      "source": "PR #275: fix(merge-sweep): exclude memory:promote PRs from automerge checkpoint",
+      "ts": "2026-06-21"
+    }
   }
 }
