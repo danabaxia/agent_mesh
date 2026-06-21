@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { escapeHtml, toggleLabel, summarizeStatus } from '../src/dashboard/public/mobile/app.js';
+import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime } from '../src/dashboard/public/mobile/app.js';
 import { resolveMagicHost, bootstrapUrl, serveArgs, run as serveRun } from '../scripts/mesh-mobile-serve.mjs';
 
 // ---- app.js pure helpers ----
@@ -34,6 +34,38 @@ test('summarizeStatus tolerates missing data and classifies health', () => {
 
   const bad = summarizeStatus({ health: { status: 'failing' } });
   assert.ok(bad[0].rows[0].cls === 'bad');
+});
+
+test('relTime renders compact relative ages', () => {
+  const now = Date.parse('2026-06-21T12:00:00Z');
+  assert.equal(relTime('2026-06-21T11:59:30Z', now), '30s');
+  assert.equal(relTime('2026-06-21T11:55:00Z', now), '5m');
+  assert.equal(relTime('2026-06-21T09:00:00Z', now), '3h');
+  assert.equal(relTime('2026-06-19T12:00:00Z', now), '2d');
+  assert.equal(relTime('not-a-date', now), '');
+});
+
+test('summarizeActivity renders recent events newest-first with level color + relative time', () => {
+  const now = Date.parse('2026-06-21T12:00:00Z');
+  const card = summarizeActivity([
+    { ts: '2026-06-21T11:58:00Z', type: 'pr_opened', summary: 'PR #9 opened', agent: 'coder', level: 'info' },
+    { ts: '2026-06-21T11:30:00Z', type: 'ci_failed', summary: 'CI red', agent: 'tester', level: 'error' }
+  ], { now });
+  assert.equal(card.title, 'Recent activity');
+  assert.equal(card.rows[0].label, 'PR #9 opened · coder');
+  assert.equal(card.rows[0].value, '2m');
+  assert.equal(card.rows[1].cls, 'bad');     // error → bad
+  assert.equal(card.rows[1].value, '30m');
+});
+
+test('summarizeActivity handles empty/missing feed', () => {
+  assert.equal(summarizeActivity([]).rows[0].value, '—');
+  assert.equal(summarizeActivity(undefined).rows[0].cls, 'muted');
+});
+
+test('summarizeActivity caps to max rows', () => {
+  const many = Array.from({ length: 30 }, (_, i) => ({ ts: '2026-06-21T11:00:00Z', summary: `e${i}` }));
+  assert.equal(summarizeActivity(many, { max: 12 }).rows.length, 12);
 });
 
 // ---- mesh-mobile-serve helpers ----
