@@ -124,13 +124,14 @@ login completes.
 
 This is the only change to a security boundary and is the focus of review + tests.
 
-### 3. Concierge agent — a new mesh agent folder (ask-only, peered)
+### 3. Concierge agent — a dashboard-managed ask spawn (ask-only)
 
-A real mesh agent folder (e.g. `dev-mesh/agents/concierge/`) wired by `doctor` like
-every other agent: `AGENT.md` (its persona/role, treated as untrusted data per the
-existing invariant), a marker-validated `registry.json` (so it gets the peer bridge),
-and the mesh-health read MCP. It runs **ask-mode only** — read tools + the ask-only
-peer bridge + mesh-health read verbs. It **cannot write the repo.**
+**v1:** the concierge is a read-only `claude` ask spawn owned by `concierge.js`
+(its own system prompt + persona), NOT a separate doctor-wired mesh agent folder —
+this keeps the feature self-contained and testable and avoids new mesh wiring. It
+runs **ask-mode only** — read tools + status-file/`gh` read access. It **cannot
+write the repo.** (Promoting the concierge to a full peered mesh agent folder
+under `dev-mesh/agents/concierge/` is a deferred follow-up, not v1.)
 
 Its job per turn:
 - Converse about an idea / instruction / status question.
@@ -246,9 +247,8 @@ Hermetic, zero-dep (`node --test`), consistent with the existing suite:
 | Component | File(s) | New/changed |
 | --- | --- | --- |
 | Host-gate allowlist | `src/dashboard/server.js` | changed |
-| Concierge endpoints | `src/dashboard/concierge.js` (+ route wiring in server.js) | new + changed |
+| Concierge endpoints + ask spawn | `src/dashboard/concierge.js` (+ route wiring in server.js) | new + changed |
 | Mobile PWA | `src/dashboard/public/mobile/` (html/css/js + manifest) | new |
-| Concierge agent | `dev-mesh/agents/concierge/` (AGENT.md, registry, mcp via doctor) | new |
 | Tailscale helper | `scripts/mesh-mobile-serve.mjs` | new |
 | Config | `src/config.js` (`AGENT_MESH_DASHBOARD_ALLOWED_HOSTS`) | changed |
 | Tests | `test/dashboard-concierge.test.js`, host-gate cases, PWA DOM tests, helper test | new |
