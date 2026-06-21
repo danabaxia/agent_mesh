@@ -93,15 +93,16 @@ coder schedule (every ~60 min)
        planResearchFix(issues, diagnosed, attempted, cfg) ─ pure ─▶ { toFix:[{number, prNum, diagnosis}] }  (cap 1)
        if build-lock held → yield (return ok, attempted 0)
        for the picked issue (≤1):
-         runCoderBuild({ issue, prompt: researchFixPrompt(issue, diagnosis), draft:true, holdLabel:'do-not-merge' })
+         runDraftFixBuild({ issue, prompt: researchFixPrompt(issue, diagnosis), draft:true, holdLabel:'do-not-merge' })
             fresh worktree off origin/base → Coder(do) → suite → Reviewer(ask) → shouldOpenPR gate
          ├─ green + change → gh pr create --draft (+do-not-merge) → <!-- research-fix:PR#N --> comment (issue stays needs-human)
          ├─ clean red/no-change → <!-- research-fix --> attempt-summary comment, NO PR
          └─ infra fail/timeout → NO marker (retry next tick)
 ```
 
-`runCoderBuild` is the shared Coder-do sequence extracted from `runOneTask` (see
-Components §3) so the normal build path and ③b's draft path don't duplicate ~90 lines.
+`runDraftFixBuild` is ③b's own Coder-do build (Components §3) — parallel to `runOneTask`,
+reusing the shared `core.*` helpers but with the draft/diagnosis/needs-human policy. The
+runner injects it as `runBuild`, so it's unit-tested with a fake.
 
 ## Components
 
@@ -150,19 +151,29 @@ markers are the bot's own). Marker write distinguishes a **clean** attempt (suit
 red or no-change → mark, dedup) from an **infra** failure (`runBuild` threw / non-`done`
 → no mark, retry).
 
-### 3. `scripts/dev-society-daemon.mjs` — extract `runCoderBuild` + wire the builtin
+### 3. `scripts/dev-society-daemon.mjs` — add `runDraftFixBuild` + wire the builtin
 
-Refactor `runOneTask`'s Coder-do→test→reviewer→PR core into a reusable:
+A **new** ③b-specific build function (parallel to `runOneTask`, not a refactor of it):
 ```js
-// runCoderBuild({ issue, prompt, draft = false, holdLabel = null })
+// runDraftFixBuild({ issue, prompt, draft = true, holdLabel = 'do-not-merge' })
 //   → { opened, prNumber, status, summary }
-// Identical behavior to today's runOneTask body for the NON-draft default (the normal
-// path keeps calling it with draft:false and the same coderPrompt) — covered by the
-// real-`claude` demo-e2e. When draft:true: `gh pr create --draft …` and addLabel(holdLabel).
+// Fresh worktree off origin/base → Coder(do) with `prompt` → tester (run-all-tests.mjs)
+// → Reviewer(ask) → core.shouldOpenPR gate. GREEN: commit + push + `gh pr create --draft`
+// + addLabel(holdLabel) → { opened:true, prNumber, status:'opened' }. Clean red/no-change:
+// → { opened:false, status:'tests-red'|'no-change', summary } (NO PR). Coder infra failure
+// (non-`done`) → throw (so the runner records no marker and retries). Cleans the worktree
+// in finally. Reuses the SAME core helpers as runOneTask (coder do, taskSucceeded/taskOutcome,
+// shouldOpenPR, reviewerPrompt) — the ~25 lines of orchestration overlap call shared logic.
 ```
-`runOneTask` becomes a thin caller of `runCoderBuild({ issue, prompt: core.coderPrompt(issue) })`
-plus its existing label transitions (`IN_PROGRESS`/`PR_IN_REVIEW`/`BLOCKED`). The
-`research-fix` builtin wires `runResearchFix` with `runBuild = (a) => runCoderBuild(a)`,
+**`runOneTask` is left untouched.** Its build path is exercised only by the real-`claude`
+`demo-e2e` (not the hermetic CI suite), so a "behavior-preserving" refactor of it can't be
+verified by `npm test` — not worth destabilizing the proven normal-build path. ③b's build is
+a separate, **injectable** function (the runner takes `runBuild` so it's unit-tested with a fake)
+and genuinely differs from `runOneTask` in policy (draft PR, diagnosis prompt, `needs-human`
+retained, marker comment, no `IN_PROGRESS`/`BLOCKED` transitions).
+
+The `research-fix` builtin wires `runResearchFix` with:
+`runBuild = async (a) => { acquireBuildLock(repoRoot, { issue: a.issue.number }); try { return await runDraftFixBuild(a); } finally { releaseBuildLock(repoRoot); } }`,
 `buildLockHeld = () => readBuildBusy(repoRoot)`, `gh`, `repo: cfg.repo`, `cfg:{capPerRun:1}`.
 
 `readBuildBusy(root)` already exists (`src/dev-society/build-lock.js:42`, built on the pure
@@ -214,11 +225,12 @@ PR, and the `do-not-merge` label. The issue stays `needs-human`; the human merge
   - build-lock held → no build, yields.
   - botLogin unresolved → fail closed, nothing posted.
   - cap honored (≤ capPerRun builds per run).
-- **`runCoderBuild` refactor:** a unit test that `draft:true` adds `--draft` to the
-  `gh pr create` argv and applies `holdLabel`; the non-draft default omits both. The
-  real-`claude` `demo-e2e` (do-mode write + PR) stays green (behavior-preserving refactor).
-  (`readBuildBusy`/`isBuildBusy` are already covered by the existing build-lock tests — ③b
-  reuses them, no new test.)
+- **`runDraftFixBuild`** is in the impure daemon shell (spawns real Coder/git/gh), so it's
+  not unit-tested directly — the runner's injected `runBuild` fake covers the logic above.
+  A lightweight assertion (or manual verification) confirms its `gh pr create` argv includes
+  `--draft` and it applies the `do-not-merge` label. `runOneTask` is unchanged, so the
+  real-`claude` `demo-e2e` keeps covering the normal build path. (`readBuildBusy`/`isBuildBusy`
+  are already covered by the existing build-lock tests — ③b reuses them, no new test.)
 - **Schedule lint:** the coder job has `builtin:"research-fix"`.
 
 ## Verification (manual, on the host — after merge)
