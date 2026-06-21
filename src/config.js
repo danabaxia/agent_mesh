@@ -91,6 +91,9 @@ export const DEFAULT_HEALTH_PROMPT_SOFT_BYTES = 16_384;   // per-agent prompt so
 export const DEFAULT_HEALTH_HEADROOM_WARN_PCT = 25;       // context headroom below this → cognition flag
 export const DEFAULT_HEALTH_HISTORY_DAYS = 14;            // activity-history sparkline window (days)
 
+// Health alert sweep — issue #361. AGENT_MESH_HEALTH_ALERT_DISABLED=1 disables the sweep.
+export const DEFAULT_HEALTH_ALERT_INTERVAL_MS = 900_000;  // 15m between alert sweeps
+
 // Resolve the health thresholds from an env-like bag, falling back to the defaults
 // above. Pure: no process access of its own. Used by health-collect + /api/health.
 export function resolveHealthThresholds(env = {}) {

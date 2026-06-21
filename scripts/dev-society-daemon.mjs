@@ -57,6 +57,9 @@ import { runResearchEscalation, runMergedPrCleanup } from '../src/dev-society/re
 import { runResearchFix } from '../src/dev-society/research-fix-run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
+import { collectHealth } from '../src/dashboard/health-collect.js';
+import { computeAlertActions } from '../src/mesh-health/health-alert.js';
+import { DEFAULT_HEALTH_ALERT_INTERVAL_MS } from '../src/config.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -82,6 +85,7 @@ const writeDispatchState = (s) => { mkdirSync(dirname(dispatchStatePath), { recu
 // Skipped in --once/--selftest (those paths exit early; scheduler must not start).
 let sched = null;
 let heartbeatTimer = null;
+let healthAlertTimer = null;
 // Activity-log emit shorthand — module-level so runOneTask (top-level fn) can reach it.
 // rec is a no-op stub until the live block below assigns the real implementation;
 // selftest/once never enter that block, so no files are written under those modes.
@@ -270,6 +274,13 @@ if (!once && !selftest) {
     'autofix-pr-sweep': () => autofixPrSweep()
       .then((r) => ({ status: 'ok', output: `autofix-pr-sweep: escalated ${r.escalated}` }))
       .catch((e) => { log('autofix-pr-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Health-alert sweep: calls buildHealthReport on the live mesh, diffs against prior
+    // alert state, opens a `needs-human` GH issue when the overall verdict transitions
+    // to `critical` or a specific organ goes `critical`, and auto-closes it on recovery.
+    // State persisted in <mesh-root>/mesh/health-alert-state.json.
+    'health-alert-sweep': () => runHealthAlertSweep()
+      .then((r) => ({ status: 'ok', output: r.summary }))
+      .catch((e) => { log('health-alert-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
   };
   // Materialize managed wiring (registry.json / .mcp.json) before the scheduler
   // can fire any job — the daemon (unlike the dashboard) has no auto-sync, so
@@ -346,9 +357,18 @@ if (!once && !selftest) {
     heartbeatTimer = setInterval(heartbeatTick, HB_INTERVAL);
     log('heartbeat started — interval=' + HB_INTERVAL + 'ms');
   }
+
+  // Health-alert sweep: polls buildHealthReport and files/closes `needs-human` GH issues.
+  // Disabled via AGENT_MESH_HEALTH_ALERT_DISABLED=1 or AGENT_MESH_HEALTH_ALERT_INTERVAL_MS=0.
+  const _haRaw = process.env.AGENT_MESH_HEALTH_ALERT_INTERVAL_MS;
+  const HA_INTERVAL = (_haRaw === undefined || _haRaw === '') ? DEFAULT_HEALTH_ALERT_INTERVAL_MS : Number(_haRaw);
+  if (HA_INTERVAL > 0 && !process.env.AGENT_MESH_HEALTH_ALERT_DISABLED) {
+    healthAlertTimer = setInterval(() => runHealthAlertSweep().catch((e) => log('health-alert-sweep error:', e.message)), HA_INTERVAL);
+    log('health-alert sweep started — interval=' + HA_INTERVAL + 'ms');
+  }
 }
 
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.stop(); } catch {} try { clearInterval(heartbeatTimer); } catch {} process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.stop(); } catch {} try { clearInterval(heartbeatTimer); } catch {} try { clearInterval(healthAlertTimer); } catch {} process.exit(0); });
 
 // ── GitHub shell (impure; uses the `gh` CLI the user authenticates) ─────────────
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
@@ -456,6 +476,52 @@ async function labelRepairSweep() {
   }
   if (!repaired) log('label-repair-sweep: no repairs');
   return { repaired };
+}
+
+const healthAlertStatePath = join(SCHED_MESH_ROOT, 'mesh', 'health-alert-state.json');
+
+function readHealthAlertState() {
+  try { return JSON.parse(readFileSync(healthAlertStatePath, 'utf8')); } catch { return {}; }
+}
+
+function writeHealthAlertState(s) {
+  mkdirSync(dirname(healthAlertStatePath), { recursive: true });
+  const tmp = `${healthAlertStatePath}.tmp`;
+  writeFileSync(tmp, JSON.stringify(s, null, 2));
+  renameSync(tmp, healthAlertStatePath);
+}
+
+async function runHealthAlertSweep() {
+  if (!cfg.repo) { log('health-alert-sweep: set DEV_SOCIETY_REPO'); return { summary: 'skipped (no repo)' }; }
+  const report = await collectHealth({ meshRoot: SCHED_MESH_ROOT, env: process.env, now: Date.now() });
+  const prior = readHealthAlertState();
+  const { toOpen, toClose, nextState } = computeAlertActions(report, prior);
+  let opened = 0; let closed = 0;
+  await ensureLabels(gh, ['needs-human', 'mesh-heartbeat'], { repo: cfg.repo }).catch(() => {});
+  for (const item of toOpen) {
+    try {
+      const { stdout } = await gh(['issue', 'create', '--repo', cfg.repo,
+        '--title', item.title, '--body', item.body,
+        '--label', 'needs-human', '--label', 'mesh-heartbeat']);
+      const num = Number((stdout.match(/\/issues\/(\d+)/) || [])[1] || '0');
+      if (num) { nextState.open[item.key] = num; opened++; }
+      log(`health-alert-sweep: opened #${num} for key=${item.key}`);
+      rec({ source: 'health-alert', type: 'health.alert.opened', level: 'error', summary: `health alert: ${item.key} → #${num}`, ref: `#${num}` });
+    } catch (e) { log(`health-alert-sweep: open failed key=${item.key}:`, e.message); }
+  }
+  for (const item of toClose) {
+    if (!item.number) continue;
+    try {
+      await gh(['issue', 'close', String(item.number), '--repo', cfg.repo, '--comment', item.comment]);
+      closed++;
+      log(`health-alert-sweep: closed #${item.number} for key=${item.key}`);
+      rec({ source: 'health-alert', type: 'health.alert.closed', level: 'info', summary: `health recovered: ${item.key} → closed #${item.number}`, ref: `#${item.number}` });
+    } catch (e) { log(`health-alert-sweep: close #${item.number} failed:`, e.message); }
+  }
+  writeHealthAlertState(nextState);
+  const summary = `health-alert-sweep: opened=${opened} closed=${closed} verdict=${report.overall}`;
+  log(summary);
+  return { summary };
 }
 
 async function dispatchAdvisory(issue, route) {
