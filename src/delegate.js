@@ -268,6 +268,10 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
     const downstream = await aggregateDownstreamChanges(root, env, runId);
     if (downstream !== null) result.downstream_changes = downstream;
   }
+  // Cross-hop cost rollup (issue #315): sum subtree costs from all peer bridge calls
+  // this worker made, regardless of mode (ask and do chains both generate costs).
+  const downstreamCostUsd = await aggregateDownstreamCosts(root, env, runId);
+  if (downstreamCostUsd !== null) result.downstream_cost_usd = downstreamCostUsd;
   await appendRunLog(logPath, {
     id: runId,
     parent_run_id: parentRunId,
@@ -438,4 +442,31 @@ async function aggregateDownstreamChanges(root, env, runId) {
     }
   }
   return changes.length > 0 ? changes : null;
+}
+
+/**
+ * After the worker finishes, read the bridge's a2a log records and sum the
+ * subtree_cost_usd from every completed peer call for this run. Works for both
+ * ask and do chains. Returns null when no bridge calls with cost data happened.
+ * Issue #315: cross-hop delegation cost rollup.
+ */
+async function aggregateDownstreamCosts(root, env, runId) {
+  const logDir = resolve(root, (env && env.AGENT_MESH_LOG_DIR) || DEFAULT_LOG_DIR);
+  let files;
+  try { files = await readdir(logDir); } catch { return null; }
+  const a2aFiles = files.filter((f) => f.startsWith('a2a-') && f.endsWith('.jsonl')).sort();
+  let total = 0;
+  let found = false;
+  for (const f of a2aFiles) {
+    const records = await readRunLogRecords(join(logDir, f));
+    for (const r of records) {
+      if (r.parent_run_id !== runId || r.state !== 'done') continue;
+      const c = r.subtree_cost_usd;
+      if (typeof c === 'number' && Number.isFinite(c) && c >= 0) {
+        total += c;
+        found = true;
+      }
+    }
+  }
+  return found ? total : null;
 }

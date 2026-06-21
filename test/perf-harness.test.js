@@ -101,6 +101,27 @@ test('efficiency meter: missing metrics block → latency falls back to root dur
   assert.equal(m.overhead_ms, null);
 });
 
+test('efficiency meter: subtree_cost_usd from root Task metrics takes precedence over run-record sum', () => {
+  // Root Task has subtree_cost_usd=0.05; run records sum to 0.03.
+  // The meter should trust the rolled-up field (accurate, single source).
+  const ctx = ctxFor({
+    A: [rec('rA', null, 120, { input_tokens: 10, output_tokens: 5, total_cost_usd: 0.01 })],
+    billing: [rec('rB', 'rA', 50, { input_tokens: 20, output_tokens: 8, total_cost_usd: 0.02 })]
+  }, { metrics: { total_ms: 100, worker_run_ms: 70, subtree_cost_usd: 0.05 } });
+  const m = efficiency().compute(ctx);
+  assert.equal(Number(m.cost_usd.toFixed(4)), 0.05, 'subtree_cost_usd from Task metrics used over run-record sum');
+});
+
+test('efficiency meter: falls back to run-record sum when subtree_cost_usd absent from Task metrics', () => {
+  // Same data but no subtree_cost_usd in metrics → legacy fallback path
+  const ctx = ctxFor({
+    A: [rec('rA', null, 120, { input_tokens: 10, output_tokens: 5, total_cost_usd: 0.01 })],
+    billing: [rec('rB', 'rA', 50, { input_tokens: 20, output_tokens: 8, total_cost_usd: 0.02 })]
+  });
+  const m = efficiency().compute(ctx);
+  assert.equal(Number(m.cost_usd.toFixed(4)), 0.03, 'falls back to run-record sum when field absent');
+});
+
 test('quality meter: contains-truth proxy + judge score passthrough', () => {
   assert.deepEqual(quality().compute(ctxFor({ A: [rec('rA', null, 1)] }, { answer: 'has TRUTH', judgeScore: 0.5 })),
     { contains_truth: 1, judge_score: 0.5 });

@@ -277,6 +277,66 @@ test('delegateToPeer(ask) writes a2a started+done records under the caller root'
   assert.ok(typeof done.finished_at === 'string');
 });
 
+// ---------------------------------------------------------------------------
+// cross-hop cost rollup (issue #315)
+// ---------------------------------------------------------------------------
+
+test('delegateToPeer: a2a log record carries subtree_cost_usd from the downstream Task metrics', async () => {
+  // Downstream Task B has subtree_cost_usd=$0.07 (own $0.02 + C's $0.05).
+  const taskWithCost = {
+    id: 't1',
+    status: { state: 'TASK_STATE_COMPLETED', message: { role: 'ROLE_AGENT', parts: [{ text: 'ok' }] }, timestamp: new Date().toISOString() },
+    artifacts: [{ artifactId: 't1-s', name: 'summary', parts: [{ text: 'done' }] }],
+    metadata: {
+      'agentmesh/log_path': '/logs/t1.json',
+      'agentmesh/files_changed': null,
+      'agentmesh/metrics': { subtree_cost_usd: 0.07, cost_usd: 0.02, total_ms: 500 }
+    }
+  };
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory({ task: taskWithCost });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot, AGENT_MESH_RUN_ID: 'run-A' }, createClient: factory });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'count books' });
+  assert.equal(res.ok, true);
+  assert.equal(res.subtree_cost_usd, 0.07);   // prefer subtree_cost_usd over cost_usd
+
+  const recs = await readA2aRecords(root);
+  const done = recs.find((r) => r.state === 'done');
+  assert.ok(done, 'done record written');
+  assert.equal(done.subtree_cost_usd, 0.07);  // logged for delegate.js aggregation
+});
+
+test('delegateToPeer: subtree_cost_usd falls back to cost_usd for older peers without subtree_cost_usd', async () => {
+  const taskLegacy = {
+    id: 't2',
+    status: { state: 'TASK_STATE_COMPLETED', message: { role: 'ROLE_AGENT', parts: [{ text: 'ok' }] }, timestamp: new Date().toISOString() },
+    artifacts: [{ artifactId: 't2-s', name: 'summary', parts: [{ text: 'done' }] }],
+    metadata: {
+      'agentmesh/log_path': '/logs/t2.json',
+      'agentmesh/files_changed': null,
+      'agentmesh/metrics': { cost_usd: 0.03, total_ms: 300 }   // no subtree_cost_usd
+    }
+  };
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory({ task: taskLegacy });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'search' });
+  assert.equal(res.ok, true);
+  assert.equal(res.subtree_cost_usd, 0.03);   // falls back to cost_usd
+});
+
+test('delegateToPeer: subtree_cost_usd is null when peer Task has no metrics cost data', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory();   // doneTask() has no agentmesh/metrics
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'ping' });
+  assert.equal(res.ok, true);
+  assert.equal(res.subtree_cost_usd, null);
+});
+
 test('delegateToPeer refusal (readonly_parent) writes a single a2a done:rejected record, no started', async () => {
   const { root, meshRoot } = await meshAgentRootWith(MARKED);
   const { factory, calls } = fakeClientFactory();
@@ -456,6 +516,62 @@ test('delegateToPeer(do) a2a log record carries peer_changes for downstream accu
   assert.ok(done, 'done record written');
   assert.deepEqual(done.peer_changes, ['lib/x.js'], 'peer_changes in a2a log for downstream accumulation');
   assert.equal(done.parent_run_id, 'run-parent');
+});
+
+// ---------------------------------------------------------------------------
+// subtree_cost_usd rollup (issue-315)
+// ---------------------------------------------------------------------------
+
+function taskWithMetrics(subtree_cost_usd) {
+  return {
+    id: 'tc1',
+    status: { state: 'TASK_STATE_COMPLETED', message: { role: 'ROLE_AGENT', parts: [{ text: 'done' }] }, timestamp: new Date().toISOString() },
+    artifacts: [{ artifactId: 'tc1-s', name: 'summary', parts: [{ text: 'result' }] }],
+    metadata: {
+      'agentmesh/log_path': '/logs/tc1.json',
+      'agentmesh/files_changed': null,
+      'agentmesh/metrics': { frameworkVersion: '0.2.0', subtree_cost_usd }
+    }
+  };
+}
+
+test('delegateToPeer: subtree_cost_usd extracted from downstream Task metrics', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory({ task: taskWithMetrics(0.0012) });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, true);
+  assert.equal(res.subtree_cost_usd, 0.0012, 'subtree_cost_usd propagated from downstream Task metrics');
+});
+
+test('delegateToPeer: subtree_cost_usd is null when downstream Task has no metrics', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  // doneTask() has no agentmesh/metrics field
+  const { factory } = fakeClientFactory({ task: doneTask() });
+  const bridge = createBridge({ root, env: { AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  const res = await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+  assert.equal(res.ok, true);
+  assert.equal(res.subtree_cost_usd, null, 'null when peer has no subtree_cost_usd');
+});
+
+test('delegateToPeer: a2a log record carries subtree_cost_usd for parent delegate rollup', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory } = fakeClientFactory({ task: taskWithMetrics(0.0035) });
+  const bridge = createBridge({
+    root,
+    env: { AGENT_MESH_MESH_CEILING: meshRoot, AGENT_MESH_RUN_ID: 'run-parent-cost' },
+    createClient: factory
+  });
+
+  await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'x' });
+
+  const recs = await readA2aRecords(root);
+  const done = recs.find((r) => r.state === 'done');
+  assert.ok(done, 'done record written');
+  assert.equal(done.subtree_cost_usd, 0.0035, 'subtree_cost_usd in a2a log record for parent aggregation');
+  assert.equal(done.parent_run_id, 'run-parent-cost');
 });
 
 // ---------------------------------------------------------------------------
