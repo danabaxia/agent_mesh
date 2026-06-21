@@ -968,5 +968,16 @@
       "source": "PR #278: fix(dashboard): drain in-flight auto-sync on close() — fixes recurring Windows ENOTEMPTY CI flake",
       "ts": "2026-06-21"
     }
+  },
+  "reconcile-approved-label-before-close": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Post-merge reconcile: include `approved`; label-before-close (`done` first) so terminal sweep backstops close failures.",
+    "l1": "PR #279 extended post-merge reconcile (PR #235) to cover `approved` — IN_FLIGHT only had pr:in-review and in-progress, leaving approved-but-unclaimed issues orphaned when their Closes-#N PR merged. Key ordering invariant: apply `addLabel 'done'` BEFORE `gh issue close`. The daemon terminal-sweep (isTerminalState tick) closes any open issue bearing a terminal label on the next pass — if close fails transiently, eventual consistency is guaranteed. Reversing the order breaks the backstop: close-success + silent addLabel failure leaves the issue closed-but-unlabeled; sweep never fires again.",
+    "value": "Two improvements to any post-merge reconciler that pairs label changes with issue closure:\n\n(1) Reconcile scope: cover ALL states an issue can be in when a PR merges — not just the most obvious in-flight states. Minimum set for this mesh: ['pr:in-review', 'in-progress', 'approved']. An approved-but-unclaimed issue is silently orphaned when its `Closes #N` PR merges; GitHub's keyword auto-close intermittently misses these (see github-autoclose-reconciler-backstop).\n\n(2) Label-before-close ordering: always apply the terminal label BEFORE calling `gh issue close`:\n  await addLabel(number, 'done');    // step 1\n  await closeIssue(number);          // step 2\nThe daemon terminal-sweep (isTerminalState) acts on any OPEN issue bearing done/rejected/wontfix/duplicate/invalid. If step 2 fails, the terminal sweep catches it on the next tick — two-layer guarantee. Reversing the order (close → label) removes this backstop: a close-success followed by a silent addLabel failure leaves the issue closed-but-unlabeled; the terminal sweep never fires on an already-closed issue.\n\nKnown gap (PR #279 Reviewer Finding 3): addLabel itself swallows errors (.catch(() => {})) — a write failure closes the issue without 'done', bypassing the backstop entirely. Add a debug log on addLabel failure to make this escape path observable.\n\nRelated: github-autoclose-reconciler-backstop (PR #235 — introduced the reconciler), terminal-close-escalate-sweep (PR #158 — the terminal self-heal sweep this ordering relies on). Provenance: PR #279 (2026-06-21).",
+    "provenance": {
+      "source": "PR #279: fix: post-merge reconcile misses approved-state issues and never applies done label (#257)",
+      "ts": "2026-06-21"
+    }
   }
 }
