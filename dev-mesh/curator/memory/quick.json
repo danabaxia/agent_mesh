@@ -1410,5 +1410,16 @@
       "source": "PR #367: idea: health vital signs → proactive needs-human alert when any organ transitions to critical/dead (#361)",
       "ts": "2026-06-21"
     }
+  },
+  "render-nested-api-guard-leaf-scalar": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Never pass nested API objects to String() — type-guard then drill to leaf scalar; test with the real response shape.",
+    "l1": "PR #373: mobile Status tab showed 'Tokens [object Object]' — summarizeStatus passed daily.tokens (an {total:{input,output,costUsd}} nested object) to String(). Fix: (1) check typeof x === 'object' before accessing nested props; (2) drill to leaf scalars (tot.costUsd, tot.input + tot.output) via a typed intermediate; (3) tolerate flat fallbacks only when typeof !== 'object'. Tests must use the REAL api shape — a stub with tokens:42 passes but misses the nested-object bug entirely.",
+    "value": "Apply whenever a dashboard renderer reads a field from an API response that may be a nested object rather than a scalar.\n\n(1) Type-guard before drilling: never assume a value is scalar because it maps to a 'number-like' concept (tokens, cost, metrics). Check typeof before accessing nested paths:\n  const tot = s.tokens && typeof s.tokens === 'object'\n    ? (s.tokens.total ?? s.tokens)\n    : null;\n  if (tot && typeof tot === 'object') {\n    if (typeof tot.costUsd === 'number') add('Cost (24h)', '$' + tot.costUsd.toFixed(2));\n    const io = (typeof tot.input === 'number' || typeof tot.output === 'number')\n      ? (tot.input || 0) + (tot.output || 0) : null;\n    add('Tokens in+out', io != null ? io.toLocaleString() : null);\n  }\n\n(2) Flat-shape tolerance: if the API may also return a simpler/flat shape, add a typeof guard on the flat path. Only pass scalars to the render function (String(), template literals, DOM text):\n  if (!rows.length) {\n    const flat = (k, label) => {\n      if (typeof s[k] === 'string' || typeof s[k] === 'number') add(label, s[k]);\n    };\n    flat('totalCost', 'Cost (24h)'); // scalar fallback only\n  }\n\n(3) Test with the REAL API shape: a test stub with tokens:42 passes even when the nested-object bug is live, because String(42) works. Tests must mirror the actual server response shape:\n  const daily = { summary: { tokens: { total: { input: 100, output: 200, costUsd: 0.50 } }, prs: { merged: ['pr1'], openNow: 2 } } };\n  assert.ok(!JSON.stringify(summarizeStatus({ daily })).includes('[object Object]'));\n\n(4) Red flag: '[object Object]' in UI output always means a plain object was coerced to string. Audit the render path for any implicit String() or template-literal conversion of a non-primitive. Victims: tokens.total.*, cost.usd, stats.value, any field with a sub-key in the schema.\n\n(5) Rule: add() / render() helpers should only ever call String() on primitives. Make the helper itself defensive: if (val != null && val !== '' && typeof val !== 'object') rows.push({ label, value: String(val) }).\n\nProvenance: PR #373 (2026-06-21), src/dashboard/public/mobile/app.js summarizeStatus.",
+    "provenance": {
+      "source": "PR #373: fix(dashboard): mobile Status renders real daily-report shape (no [object Object])",
+      "ts": "2026-06-21"
+    }
   }
 }
