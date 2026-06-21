@@ -1134,5 +1134,16 @@
       "source": "PR #303: test(dashboard): Front-End QA Plan 1 — zero-dep L0 unit + static tests",
       "ts": "2026-06-21"
     }
+  },
+  "monitor-two-guard-conjunction-check": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Monitor invariant for multi-guard safety: check CONJUNCTION (all guards cleared), not any single guard lifted.",
+    "l1": "PR #305: ③b draft-invariant fired CRITICAL on any non-draft research-fix PR, even while do-not-merge held — the PR could not auto-merge. Root: tested only !isDraft (one guard lifted) while ignoring the hold-label guard. Fix: couldAutoMerge = !isDraft && !hasHoldLabel — breach only when BOTH guards absent. False alarm reset the 24h clean-clock on PR #289 (human un-drafted for review; do-not-merge still present = safe). Companion to do-mode-draft-pr-two-guard: if you protect with N independent locks, monitor breach = ALL N locks open, never just one.",
+    "value": "When a safety system uses N independent holds to block a harmful outcome (e.g. auto-merging a 3b PR), the monitoring invariant must test whether the ACTUAL harmful outcome is possible — the conjunction of all holds being cleared — not whether any single hold was lifted.\n\nAnti-pattern: if (!pr.isDraft) fire CRITICAL. A human un-drafting for code review lifts the draft but do-not-merge still prevents auto-merge — false breach, noisy alarm, clean-clock reset.\n\nCorrect pattern: couldAutoMerge = !pr.isDraft && !labelNames(pr).includes(holdLabel) — breach fires only when the PR could ACTUALLY enter the auto-merge path.\n\nImplementation:\n1. Identify ALL guards protecting the invariant (here: isDraft + holdLabel).\n2. Compute the conjunction: breach = guards.every(g => !g.active).\n3. Document the compound condition in the function comment.\n4. Write one test per distinct state (draft+label, non-draft+label, draft+no-label, non-draft+no-label) — only the last is a breach.\n\nRelated: do-mode-draft-pr-two-guard (why two guards are used); soft-launch-clean-clock-watchdog (why false CRITICAL resets the 24h clock). Provenance: PR #305 (2026-06-21).",
+    "provenance": {
+      "source": "PR #305: fix(monitor): draft-invariant fires only when a ③b PR could ACTUALLY auto-merge",
+      "ts": "2026-06-21"
+    }
   }
 }
