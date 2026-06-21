@@ -2,7 +2,7 @@
   "jobs": [
     {
       "id": "research-fix",
-      "name": "Draft-fix stuck escalations (do)",
+      "name": "research-fix — ③b: implement ③a's diagnosis, open a DRAFT PR (never auto-merged)",
       "kind": "builtin",
       "builtin": "research-fix",
       "cadence": { "kind": "every", "minutes": 60 },
