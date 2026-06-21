@@ -10,6 +10,20 @@ function cronValue(afterColon) {
   return afterColon.replace(/\s+#.*$/, '').trim();          // unquoted: strip inline comment
 }
 
+/** The workflow's purpose = its leading `#` comment block (above/around `name:`), so the
+ * dashboard can hover each GitHub Action's "what it's for". Stops at the first body key. */
+export function headerComment(lines = []) {
+  const out = [];
+  for (const raw of lines) {
+    const t = String(raw).trim();
+    if (!t) continue;                              // skip blank lines
+    if (t.startsWith('#')) { const c = t.replace(/^#+\s?/, '').trim(); if (c) out.push(c); continue; }
+    if (/^name:/.test(t)) continue;                // keep scanning past the name line
+    break;                                          // first real body key (on:/jobs:/…) → header done
+  }
+  return out.join(' ').replace(/\s+/g, ' ').trim();
+}
+
 /** Indentation/section-aware scan: top-level name + crons inside on.schedule only. */
 export function parseCronWorkflows(files = []) {
   const out = [];
@@ -45,7 +59,7 @@ export function parseCronWorkflows(files = []) {
         if (cm) crons.push(cronValue(cm[1]));
       }
     }
-    if (crons.length) out.push({ workflow: workflow || String(f.name).replace(/\.ya?ml$/, ''), file: f.name, crons });
+    if (crons.length) out.push({ workflow: workflow || String(f.name).replace(/\.ya?ml$/, ''), file: f.name, crons, description: headerComment(lines) });
   }
   return out;
 }
@@ -84,7 +98,7 @@ export function listCiSchedules({ files = [], ghActivity = [] } = {}) {
       const r = runs.get(w.workflow) || {};
       return {
         executor: 'GitHub Actions',
-        workflow: w.workflow, file: w.file, cron: w.crons,
+        workflow: w.workflow, file: w.file, cron: w.crons, description: w.description || '',
         cadenceLabel: 'cron ' + w.crons.join(', '),
         lastRunAt: r.lastRunAt ?? null, running: !!r.running, status: r.status ?? null,
       };
