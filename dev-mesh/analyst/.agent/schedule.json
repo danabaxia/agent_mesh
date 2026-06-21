@@ -8,6 +8,15 @@
       "cadence": { "kind": "daily", "at": "09:30" },
       "enabled": true,
       "saveArtifact": true
+    },
+    {
+      "id": "research-escalation",
+      "name": "Research stuck escalations (diagnosis)",
+      "kind": "builtin",
+      "builtin": "research-escalation",
+      "cadence": { "kind": "every", "minutes": 120 },
+      "enabled": true,
+      "description": "Read-only: Analyst researches needs-human escalations (web + host-collected PR/issue context) and posts a diagnosis + strategy comment. No code changes."
     }
   ]
 }
