@@ -1278,5 +1278,16 @@
       "source": "PR #339: feat(dashboard): hover/inline purpose for each GitHub Action in SCHEDULES",
       "ts": "2026-06-21"
     }
+  },
+  "mir-ci-artifact-sync-before-collect": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR blind on local: sync CI eval artifacts pre-collect; no-op when GITHUB_ACTIONS; degrade silently on gh/auth failure.",
+    "l1": "PR #342: runMir reads eval-results/, adversarial-results/, perf-results/ — dirs only staged by CI. Local daemon never has them → all eval metrics null. Fix: sync-artifacts.js pulls gh run download (newest-run-first, first-hit-wins) BEFORE collectInputs. Guard 1: no-op when GITHUB_ACTIONS — fresh artifacts already staged; re-pulling overwrites with older run's data. Guard 2: per-artifact fail-safe — missing gh, no auth, expired artifact → degrade to null-metric; never aborts. Baseline/policy activate automatically once data flows; no schema changes needed.",
+    "value": "Apply when an analysis/reporting tool reads artifact directories populated only by CI (integration tests, eval scorecards, benchmark results) — and the same tool runs in a local daemon with no CI context.\n\n(1) Sync step BEFORE collect: add a sync-artifacts.js (or equivalent) that calls gh run download for each artifact → local dir map, newest-run-first (list workflow runs by status=success, pick the newest, download once per artifact type). Place the sync BEFORE collectInputs so downstream code behaves identically whether data arrived from CI staging or from the sync.\n\n(2) No-op on CI: guard with if (process.env.GITHUB_ACTIONS) — when running inside integration.yml, the current run's fresh artifacts are already staged by an earlier workflow step. Re-downloading would overwrite fresh results with an older run's data, corrupting the current scorecard.\n\n(3) Per-artifact fail-safe: wrap each download in its own try/catch. Missing gh binary, no auth, rate-limited, or expired artifact (GitHub retention ≤90 days) → degrade to null/missing for that artifact only. Never throw from the sync step; never abort the report. The existing null-metric baseline behavior is the correct degraded state.\n\n(4) Downstream activation is automatic: baseline.js trend-append and policy.js regression-filing both activate as soon as non-null data flows — no schema changes, no new flags needed. The sync is purely additive.\n\n(5) Test pattern: inject a fake gh binary via spawnSync; cover artifact-to-dir map, newest-run-first selection, older-run fallback, GITHUB_ACTIONS no-op, empty results, and per-artifact failure isolation (one download error must not block others).\n\nProvenance: PR #342 (2026-06-21), closes #337.",
+    "provenance": {
+      "source": "PR #342: feat(mir): sync CI eval scorecards into local MIR runs — un-blind quality metrics (#337)",
+      "ts": "2026-06-21"
+    }
   }
 }
