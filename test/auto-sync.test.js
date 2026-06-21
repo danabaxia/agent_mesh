@@ -69,3 +69,26 @@ test('stop cancels a pending fire', async () => {
   await t.fire(); // the captured fn should no-op after stop
   assert.equal(calls.length, 0);
 });
+
+test('stop() awaits an in-flight runSync (drains the startup run before resolving)', async () => {
+  // Root cause of the Windows ci-schedules-route.test.js flake: start() fires
+  // autoSync.runNow() fire-and-forget; if close() does not await the in-flight
+  // doctor write, it lands AFTER the test's rmSync → ENOTEMPTY. stop() must drain it.
+  const t = fakeSchedule();
+  let released = false;
+  let release; const gate = new Promise((r) => { release = r; });
+  const mgr = createAutoSync({
+    runSync: async () => { await gate; released = true; return { fixed: [] }; },
+    schedule: t.schedule, clearSchedule: t.clearSchedule, debounceMs: 5, onResult: () => {}, log: () => {}
+  });
+  const running = mgr.runNow();          // starts the run, blocks on gate
+  const stopP = mgr.stop();              // must await the in-flight run
+  let stopResolved = false;
+  stopP.then(() => { stopResolved = true; });
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(stopResolved, false, 'stop() must not resolve while runSync is in flight');
+  release();                            // let the in-flight run finish
+  await stopP;
+  assert.equal(released, true, 'in-flight runSync completed before stop() resolved');
+  await running;
+});

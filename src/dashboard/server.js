@@ -2920,11 +2920,13 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
     });
 
   const close = () =>
-    new Promise((resolve_, reject) => {
+    // Drain any in-flight auto-sync FIRST: start() fires runNow() fire-and-forget,
+    // and its doctor write would otherwise land after close() and race a caller's
+    // directory cleanup (Windows ENOTEMPTY). stop() awaits the in-flight run.
+    Promise.resolve(autoSync?.stop()).then(() => new Promise((resolve_, reject) => {
       // End SSE streams first: their open sockets would otherwise block
       // httpServer.close() from ever completing. This covers both the /api/events
       // hub and the live-mirror /session/:id/stream responses.
-      autoSync?.stop();
       sse.close();
       for (const r of mirrorStreams) { try { r.end(); } catch { /* already gone */ } }
       mirrorStreams.clear();
@@ -2943,7 +2945,7 @@ export function createDashboardServer({ meshRoot, port = 7077, token, consoleBro
         if (err) reject(err);
         else finish();
       });
-    });
+    }));
 
   // url is a getter so it returns the correct port after start()
   return {
