@@ -1067,5 +1067,16 @@
       "source": "PR #290: fix(memory-automerge): retry squash-merge to drain union-resolved PRs (fix memory PR starvation)",
       "ts": "2026-06-21"
     }
+  },
+  "mir-all-findings-as-bug": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR triage: file ALL findings as `bug` — autofix loop handles them; safety lives at the merge gate, not the label.",
+    "l1": "PR #297: soft perf/quality MIR findings were previously `idea`-labeled, requiring human `approved` before the Coder picked them up. Routing ALL findings as `bug` sends them to bug-autofix (do-mode) with no approval bottleneck. Safety: the Coder opens a PR requiring CI + human `approved` to merge — auto-attempt is broad but auto-merge stays gated. Decouple 'who tries to fix' (automated) from 'who approves the fix' (human gate at merge, not filing).",
+    "value": "When designing MIR/scanner triage for a self-evolving agent society:\n\n(1) File EVERY actionable finding as `bug` — hard regression, security-invariant break, soft perf/quality finding alike. The bug label routes issues via `routeFor` → bug-autofix (do-mode Coder) with no human `approved` prerequisite.\n\n(2) The safety boundary is the MERGE gate, not the filing label:\n- Coder's fix always opens a PR.\n- PR requires CI to pass + human `approved` label before auto-merge triggers.\n- Security findings don't need weaker treatment — the PR review IS the control.\n\n(3) Anti-pattern: filing soft findings as `idea` adds a human bottleneck that defeats the self-evolve goal. Ideas need an owner to approve them first; bugs get attempted automatically.\n\n(4) If a finding must NOT be auto-attempted (e.g. needs operator policy decision), don't file it as a standard issue at all — or use a distinct label/scheme outside the autofix loop.\n\n(5) Concretely in agent-mesh: `src/mesh-improvement/issues.js` `buildIssue` returns `labels: ['bug', descriptiveLabel]` for all findings. The descriptive label (`regression`, `security`, `perf`) preserves signal for human reviewers; `bug` is the autofix routing key.\n\nProvenance: PR #297 (2026-06-21) — fix(mesh-improvement): file ALL report findings as `bug` so the Coder auto-fixes everything.",
+    "provenance": {
+      "source": "PR #297: fix(mesh-improvement): file ALL report findings as `bug` so the Coder auto-fixes everything",
+      "ts": "2026-06-21"
+    }
   }
 }
