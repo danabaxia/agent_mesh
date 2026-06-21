@@ -65,9 +65,10 @@ button { font: inherit; cursor: pointer; }
 .status { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .card h3 { margin: 0 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
-.metric { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed var(--line); }
+.metric { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px dashed var(--line); }
 .metric:last-child { border-bottom: none; }
-.metric .v { font-weight: 700; }
+.metric > span:first-child { min-width: 0; overflow-wrap: anywhere; }
+.metric .v { font-weight: 700; white-space: nowrap; flex: 0 0 auto; }
 .ok { color: var(--accent-2); } .bad { color: var(--danger); } .warn { color: var(--warn); }
 .muted { color: var(--muted); }
 

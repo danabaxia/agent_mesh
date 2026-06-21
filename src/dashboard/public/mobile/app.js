@@ -55,6 +55,34 @@ export function summarizeStatus({ health, daily } = {}) {
   return cards;
 }
 
+/** Compact relative-time label ("3m", "2h", "1d") from an ISO timestamp. */
+export function relTime(ts, now = Date.now()) {
+  const t = Date.parse(ts);
+  if (!Number.isFinite(t)) return '';
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}m`;
+  if (s < 86400) return `${Math.round(s / 3600)}h`;
+  return `${Math.round(s / 86400)}d`;
+}
+
+/**
+ * Build a recent-activity card model from /api/activity-log events (newest-first).
+ * Each row: what happened + which agent + how long ago, colored by level.
+ * @returns {{title:string, rows:Array<{label:string,value:string,cls?:string}>}}
+ */
+export function summarizeActivity(events, { max = 12, now = Date.now() } = {}) {
+  const list = Array.isArray(events) ? events : [];
+  if (!list.length) return { title: 'Recent activity', rows: [{ label: 'No recent activity', value: '—', cls: 'muted' }] };
+  const rows = list.slice(0, max).map((e) => {
+    const what = e.summary ? String(e.summary) : String(e.type || 'event');
+    const who = e.agent ? ` · ${e.agent}` : '';
+    const cls = e.level === 'error' ? 'bad' : e.level === 'warn' ? 'warn' : '';
+    return { label: `${what}${who}`, value: relTime(e.ts, now), cls };
+  });
+  return { title: 'Recent activity', rows };
+}
+
 // --------------------------------------------------------------------------
 // DOM wiring (browser only)
 // --------------------------------------------------------------------------
@@ -167,8 +195,9 @@ function mount() {
     const box = $('status');
     box.innerHTML = '<div class="card muted">Loading…</div>';
     const get = async (p) => { try { const r = await fetch(p); return r.ok ? await r.json() : null; } catch { return null; } };
-    const [health, daily] = await Promise.all([get('/api/health'), get('/api/daily')]);
+    const [health, daily, activity] = await Promise.all([get('/api/health'), get('/api/daily'), get('/api/activity-log?limit=20')]);
     const cards = summarizeStatus({ health, daily: daily?.report ?? daily });
+    cards.push(summarizeActivity(activity?.events));
     box.innerHTML = cards.map((c) => `
       <div class="card"><h3>${escapeHtml(c.title)}</h3>
         ${c.rows.map((r) => `<div class="metric"><span>${escapeHtml(r.label)}</span><span class="v ${r.cls || ''}">${escapeHtml(r.value)}</span></div>`).join('')}
