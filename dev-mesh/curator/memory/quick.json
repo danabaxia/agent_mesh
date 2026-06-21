@@ -1388,5 +1388,27 @@
       "source": "PR #363: fix(dashboard): mobile auth survives iOS cookie quirks (partial-load fix)",
       "ts": "2026-06-21"
     }
+  },
+  "cross-session-history-server-side": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "PWA chat continuity: persist history JSONL server-side (LRU cap), pre-load into context, suppress greeting on resume.",
+    "l1": "PR #366: a browser PWA can be closed, rebooted, or evicted — the client cannot own conversation state. Fix: persist history server-side as JSONL (LRU-trim to AGENT_MESH_CONCIERGE_HISTORY_MAX=200), expose GET /api/concierge/history?limit=N for UI re-hydration, and have message() pre-load the last 10 server-side turns into buildPrompt automatically — model sees context without the client resending. Suppress the greeting when history already exists; a welcome banner after prior turns is disorienting.",
+    "value": "Apply when building any HTTP-served AI chat where the client is ephemeral (mobile PWA, browser tab, thin web client).\n\n(1) SERVER-SIDE STORAGE: append each turn ({role, content, ts}) to an append-only JSONL file at a stable server-owned path (e.g. <meshRoot>/mesh/<service>/history.jsonl). LRU-trim on append: keep the last MAX_ENTRIES entries (env-configurable, default 200). The file never grows unboundedly; trim is an in-memory array slice before the write.\n\n(2) HISTORY ENDPOINT: GET /api/<service>/history?limit=N returns the last N stored messages. Return [] on missing file (first-boot graceful). Never 500 — fail-open. Client calls this on load to re-hydrate the conversation UI.\n\n(3) MODEL PRE-LOAD: in the server-side message(userText) handler, read the last M server-side turns (e.g. M=10) and prepend them to buildPrompt BEFORE spawning the model. The client does NOT need to resend history — the server owns state continuity. Client-provided history is supplementary context, not authoritative.\n\n(4) GREETING SUPPRESSION: when the client loads and finds history.length > 0, skip the opening greeting. A welcome banner after an established conversation is disorienting. Pattern: if (historyFromServer.length === 0) showGreeting().\n\n(5) GRACEFUL FALLBACK FOR OLD SERVERS: if /history is absent or errors, client falls back to empty state — no crash. Pattern: const hist = res.ok ? await res.json() : []; wrap in try/catch → [].\n\n(6) MULTI-DEVICE SUPPORT: because history is server-side, any device calling GET /history sees the same conversation — cross-device continuity is automatic, no client-side sync protocol needed.\n\nProvenance: PR #366 (2026-06-21), closing Issue #362. Related: mobile-tailscale-askonly-concierge (concierge architecture), mobile-activity-feed-endpoint-reuse (endpoint-reuse pattern).",
+    "provenance": {
+      "source": "PR #366: feat: server-side concierge history for cross-session continuity (#362)",
+      "ts": "2026-06-21"
+    }
+  },
+  "alert-episode-set-diff-dedup": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Alert dedup: openAlerts[] + set-diff → open new-critical, close recovered. One issue per critical episode.",
+    "l1": "PR #367 (planHealthAlerts in health-alert.js): filing a new issue every CRITICAL sweep tick creates duplicates that flood the queue. Solution: carry openAlerts:[key] in a state file. Pure planner computes: opens = current-critical keys NOT in prevOpen (new episode); closes = prevOpen keys no longer critical (recovered); nextState.openAlerts = [...current-critical]. Planner inherits the health-model's honesty rule — only reacts to what the model already classified; never re-judges liveness.",
+    "value": "Apply when any monitoring or health-sweep loop must open exactly one GitHub issue per critical episode and auto-close it on recovery.\n\n(1) State file carries {generatedAt, openAlerts:[key]} — key = namespaced alert id per monitored unit (e.g. 'mesh-health-alert:agents/critical'). Persisted between sweep ticks.\n\n(2) Pure planner({report, prev}) returns {opens, closes, state}:\n  opens = current-critical keys NOT in prev.openAlerts → file a new issue\n  closes = prev.openAlerts keys no longer critical → close the issue\n  state.openAlerts = [...current-critical]\n\n(3) Host shell applies the plan: gh issue create per open, gh issue close per close, then atomically writes new state. Planner has zero I/O — fully unit-testable with constructed inputs.\n\n(4) Re-entry behavior: an organ staying critical across ticks remains in openAlerts — neither opens nor closes (no duplicate issues). Recovery then re-critical = a new open (new episode).\n\n(5) Honesty inheritance: planner must NOT re-classify organ status. It only reacts to what the underlying model already classified, preserving the model's honesty invariants (e.g. never false-dead for idle on-demand agents).\n\nDistinct from daemon-health-observer-pattern (count-based seenCount flap-suppression) and soft-launch-clean-clock-watchdog (wall-clock clean-clock). Provenance: PR #367 (2026-06-21), src/mesh-health/health-alert.js, closes Issue #361.",
+    "provenance": {
+      "source": "PR #367: idea: health vital signs → proactive needs-human alert when any organ transitions to critical/dead (#361)",
+      "ts": "2026-06-21"
+    }
   }
 }
