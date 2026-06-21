@@ -108,8 +108,13 @@ One-time setup:
    ```sh
    node scripts/mesh-mobile-serve.mjs <mesh-root>
    ```
-   It runs `tailscale serve` (TLS-terminated on the tailnet → `127.0.0.1:7077`; **no LAN/internet
-   socket is opened**) and prints a one-time link `https://<your-mac>.<tailnet>.ts.net/m?t=<token>`.
+   It runs `tailscale serve --http=80 7077` (proxies the tailnet → `127.0.0.1:7077`; **no LAN/internet
+   socket is opened**) and prints a one-time link `http://<your-mac>.<tailnet>.ts.net/m?t=<token>`.
+   The link is `http`, not `https`: Tailscale's WireGuard layer already encrypts all tailnet traffic,
+   so this is private + encrypted in transit **without** needing the tailnet's "HTTPS Certificates"
+   feature (OFF by default — an `--https` serve would fail with *"does not support getting TLS certs"*
+   until you enable it in the admin console). If you prefer a real `https://` URL, enable HTTPS
+   Certificates + MagicDNS in the Tailscale admin console first.
 3. Open that link **once** on your phone (over the tailnet), then *Add to Home Screen*.
 
 Security: the dashboard stays bound to `127.0.0.1`; the same-origin gate accepts `*.ts.net`

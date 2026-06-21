@@ -75,9 +75,11 @@ test('resolveMagicHost strips the trailing dot', () => {
   assert.equal(resolveMagicHost({ Self: {} }), null);
 });
 
-test('bootstrapUrl + serveArgs are well formed', () => {
-  assert.equal(bootstrapUrl('mac.ts.net', 'abc'), 'https://mac.ts.net/m?t=abc');
-  assert.deepEqual(serveArgs(7077), ['serve', '--bg', '--https=443', '127.0.0.1:7077']);
+test('bootstrapUrl + serveArgs are well formed (HTTP-over-tailnet, no TLS-cert dependency)', () => {
+  assert.equal(bootstrapUrl('mac.ts.net', 'abc'), 'http://mac.ts.net/m?t=abc');
+  // bare local port (NOT 127.0.0.1:port, which the CLI rejects); --http avoids the
+  // tailnet "HTTPS Certificates" feature being required (OFF by default).
+  assert.deepEqual(serveArgs(7077), ['serve', '--bg', '--http=80', '7077']);
 });
 
 test('serveRun fails cleanly when tailscale is absent (no token leak, non-ok)', () => {
@@ -105,8 +107,8 @@ test('serveRun prints the bootstrap link on success (print-only, stubbed tailsca
     loadToken: () => 'tok123', log: (m) => logs.push(m), err: () => {}
   });
   assert.equal(res.ok, true);
-  assert.equal(res.url, 'https://mac.tailnet.ts.net/m?t=tok123');
-  assert.ok(logs.join('\n').includes('https://mac.tailnet.ts.net/m?t=tok123'));
+  assert.equal(res.url, 'http://mac.tailnet.ts.net/m?t=tok123');
+  assert.ok(logs.join('\n').includes('http://mac.tailnet.ts.net/m?t=tok123'));
 });
 
 test('serveRun refuses when not connected', () => {
