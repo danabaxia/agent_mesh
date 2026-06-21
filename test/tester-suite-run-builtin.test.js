@@ -16,6 +16,7 @@ test('runMir dry-run produces a plan and performs no gh mutation', async () => {
     repoRoot: process.cwd(), ref: { commit: 'test', branch: 'main' },
     dryRun: true, runSuites: false, gh: async () => { ghCalls++; return ''; },
     now: () => new Date('2026-06-20T06:30:00Z'),
+    syncArtifacts: async () => [],   // hermetic: don't hit `gh` to stage CI eval artifacts
   });
   assert.equal(res.status, 'ok');
   assert.equal(ghCalls, 0);
