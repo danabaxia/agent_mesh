@@ -103,10 +103,13 @@ is removed once the agent lands).
 - **Sweep**: a daemon builtin `concierge-monitor-sweep`, registered in the daemon's builtin
   map and scheduled from `dev-mesh/agents/concierge/.agent/schedule.json`
   (`kind: "builtin"`, using one of the scheduler's supported cadence kinds — confirmed at
-  plan time; default an hourly/daily sweep). It is **read-only**:
-  it calls the pure monitor over health inputs (conformance counts, triage failures, stale
-  tasks, latest MIR signal) and returns `{ status, output }` per the builtin contract; a
-  thrown error → `{ status: "fail", error }` and never crashes the daemon.
+  plan time; default an hourly/daily sweep). It is **read-only**: the builtin **imports the
+  mesh-health core functions directly in-process** ([src/mesh-health/core.js](../../../src/mesh-health/core.js):
+  `checkConformance`/`triageLogs`/`listStaleTasks`) plus the latest MIR signal, then passes
+  those raw inputs to the pure `monitor.js`. (The *agent* reaches health via the MCP verbs;
+  the *daemon builtin* calls core.js directly — no MCP/LLM spawn.) Returns `{ status, output }`
+  per the builtin contract; a thrown error → `{ status: "fail", error }` and never crashes the
+  daemon.
 - **Findings model** (`src/concierge/monitor.js`, pure): maps raw inputs → an array of
   `{ id, severity: "info"|"warn"|"critical", kind, summary, detail, source, firstSeen }`,
   **deduped** by a stable `id` (kind+subject) so a recurring problem updates rather than
@@ -126,14 +129,19 @@ The agent's reply / an alert can carry a structured **action proposal** (extends
 
 | action | effect (framework-side, on Confirm) | allowlist |
 | --- | --- | --- |
-| `file_issue` | `gh issue create` (existing) | labels ∈ {idea, approved, route:a2a} |
-| `assign_task` | board `create_task_for_peer` | peer ∈ mesh peers; brief fields only |
-| `ask_peer_rerun` | ask-mode `delegate_to_peer` to re-run (e.g. tester suite) | peer ∈ allowlist; fixed task templates |
+| `file_issue` | `gh issue create` (existing path) | labels ∈ {idea, approved, route:a2a} |
+| `assign_task` | board **store** write `from:"concierge"` → peer (framework-stamped identity) | peer ∈ mesh peers; brief fields only |
+| `ask_peer_rerun` | **console A2A broker** ask-send to the peer with a fixed task template (e.g. tester re-run suite) | peer ∈ allowlist; fixed templates |
 
 `POST /api/concierge/confirm` becomes an **action dispatcher**: it validates `action` against
 the allowlist (and peer/label against their allowlists) **before any spawn**, then performs
 exactly that one framework-side operation and returns the result (issue URL / task id /
-peer summary). The agent never performs these itself.
+peer summary). The agent never performs these itself. Note the mechanism per action:
+`assign_task` writes the board store directly with framework-stamped `from:"concierge"` (board
+identity is framework-set, per the board invariant — not taken from model input); `ask_peer_rerun`
+reuses the same **console broker** (ask-mode A2A) used for chat routing, so it goes through the
+served-only/ask-only gates already in place; `file_issue` reuses the existing gh path. No use of
+the agent's own peer-bridge for these — they are framework-side and Confirm-gated.
 
 ## Components (units)
 
