@@ -1256,5 +1256,16 @@
       "source": "PR #332: feat(ci): dedicated frontend-QA gate (ui-e2e.yml) — the suite was run nowhere",
       "ts": "2026-06-21"
     }
+  },
+  "yaml-workflow-leading-comment-as-purpose": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "CI workflow leading `#` comment = purpose metadata; headerComment() handles above/below name:, stops at first body key.",
+    "l1": "PR #339: `headerComment()` in ci-schedules.js extracts a workflow's purpose from its leading `#` comment block. Handles two layouts: comment block appears ABOVE `name:` (common), or BELOW `name:` (before first body key). Blank comment lines skipped; scan stops at first non-comment body key. `parseCronWorkflows` now carries a `description` field. `graph-view.js ciRow` renders it as inline `sched-desc` label + `title=` tooltip. All 18 cron workflows expose a human-readable purpose in SCHEDULES — no separate purpose registry needed. Convention: new workflows must include a leading `#` block.",
+    "value": "Pattern: use leading `#` comment blocks in GitHub Actions workflow files as machine-readable purpose metadata.\n\n(1) Placement rules: comments may appear ABOVE `name:` (most common) or BELOW `name:` but before the first body key (e.g. `on:`, `jobs:`). Blank comment lines within the block are skipped. Scan stops at the first non-comment, non-blank line.\n\n(2) Parser (headerComment(content)):\n  - Split on newlines.\n  - Skip leading blank lines.\n  - Collect lines starting with `#`; stop on the first non-comment, non-blank line.\n  - If `name:` is the first non-comment line, reset and continue collecting the next `#` block.\n  - Return joined non-empty comment text (strip leading `# ` prefix). Return '' when absent — never null.\n\n(3) Integration: surface as a `description` field on each workflow object returned by `parseCronWorkflows`/`listCiSchedules`. Always a string; '' when absent.\n\n(4) Rendering: inline `sched-desc` label for quick scanning + `title=` attribute tooltip for the full text. Mirrors the existing mesh `jobRow` pattern so both job types have consistent display.\n\n(5) Convention: every new .github/workflows/*.yml file must begin with a descriptive `#` comment block (above or immediately below `name:`). This ensures SCHEDULES dashboard visibility and provides a single source of truth for human readers — no separate purpose registry to maintain.\n\n(6) Complementary to ci-schedules-yaml-section-scope: that lesson skips `#` lines when PARSING cron expressions; this lesson READS `#` lines for purpose metadata. They target different fields in the same scan pass.\n\nProvenance: PR #339 (2026-06-21).",
+    "provenance": {
+      "source": "PR #339: feat(dashboard): hover/inline purpose for each GitHub Action in SCHEDULES",
+      "ts": "2026-06-21"
+    }
   }
 }
