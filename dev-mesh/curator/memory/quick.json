@@ -957,5 +957,16 @@
       "source": "PR #263: feat(③a): read-only research-escalation diagnosis daemon builtin",
       "ts": "2026-06-21"
     }
+  },
+  "reconcile-approved-terminal-label": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Reconcile eligibility must include approved; every auto-close path must apply the terminal done label.",
+    "l1": "PR #260 spec #257: two gaps in post-merge-reconcile.js — (1) IN_FLIGHT missing approved so issues approved-but-not-in-progress were skipped when their closing PR merged (evidence: #248 open after PR #251); (2) reconcile removed in-flight labels and closed issues but never added done, making auto-reconciled issues invisible to label-scoped queries for completed work.",
+    "value": "Two invariants for any issue-lifecycle backstop or auto-close handler:\n\n(1) Eligibility set must cover ALL pre-terminal states. IN_FLIGHT commonly starts as [pr:in-review, in-progress] but approved issues also close when their PR merges via Closes #N. Extend the predicate: include approved (or add a parallel approved-orphan branch). Guard: preserve the no-ongoing-work invariant (only close if the closing PR has actually merged — do not auto-close an approved issue with no merged PR).\n\n(2) Every automated close path must apply the terminal label (done) — not just the happy-path human close. Pattern: add done BEFORE closing (label-before-close ordering), so a partial failure still leaves the issue in a coherent labeled state. Re-adding done to an already-labeled issue is a harmless gh no-op, so re-runs are safe.\n\nTest coverage: (a) approved orphan: issue at approved, PR merged with Closes #N → plan item with addLabel:done and close:true; (b) existing in-flight items: pr:in-review and in-progress cases also carry addLabel:done; (c) ordering: assert --add-label done issued BEFORE gh issue close per item; (d) guard preserved: approved issue with no merged closing PR → still no plan item.\n\nProvenance: PR #260 / Issue #257 (2026-06-21).",
+    "provenance": {
+      "source": "PR #260 (spec) / Issue #257 — post-merge reconcile approved-state orphans + done label gap",
+      "ts": "2026-06-21"
+    }
   }
 }
