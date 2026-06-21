@@ -37,9 +37,11 @@ import * as core from '../src/dev-society/core.js';
 import { createScheduler } from '../src/schedule/scheduler.js';
 import { pollGhActivity } from '../src/dev-society/gh-activity.js';
 import { runHeartbeat } from '../src/mesh-health/heartbeat-runner.js';
+import { planHealthAlerts } from '../src/mesh-health/health-alert.js';
+import { collectHealth } from '../src/dashboard/health-collect.js';
 import { listAllSchedules } from '../src/schedule/list-all.js';
 import { computeNextRun } from '../src/schedule/schedule-cadence.js';
-import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER, DEFAULT_ACTIVITY_KEEP_DAYS } from '../src/config.js';
+import { DEFAULT_HEARTBEAT_INTERVAL_MS, DEFAULT_HEARTBEAT_FAIL_THRESHOLD, DEFAULT_HEARTBEAT_OVERDUE_GRACE_MS, DEFAULT_HEARTBEAT_STALE_MS, DEFAULT_HEARTBEAT_ESCALATE_AFTER, DEFAULT_ACTIVITY_KEEP_DAYS, DEFAULT_HEALTH_ALERT_INTERVAL_MS } from '../src/config.js';
 import { recordActivity, pruneActivity } from '../src/activity-log/log.js';
 import { runMir } from './mir-run.mjs';
 import { runAnalystDailyReview } from './analyst-review-run.mjs';
@@ -82,6 +84,7 @@ const writeDispatchState = (s) => { mkdirSync(dirname(dispatchStatePath), { recu
 // Skipped in --once/--selftest (those paths exit early; scheduler must not start).
 let sched = null;
 let heartbeatTimer = null;
+let healthAlertTimer = null;
 // Activity-log emit shorthand — module-level so runOneTask (top-level fn) can reach it.
 // rec is a no-op stub until the live block below assigns the real implementation;
 // selftest/once never enter that block, so no files are written under those modes.
@@ -346,9 +349,55 @@ if (!once && !selftest) {
     heartbeatTimer = setInterval(heartbeatTick, HB_INTERVAL);
     log('heartbeat started — interval=' + HB_INTERVAL + 'ms');
   }
+
+  // Proactive health-alert sweep (issue #361): consume the organ-level health model
+  // and page the owner via a `needs-human` issue when an organ goes CRITICAL (a dead
+  // agent, stuck daemon heart, stuck handoff, …) — auto-closing on recovery. The pure
+  // planner (planHealthAlerts) decides; this shell does collectHealth + the gh calls.
+  const healthAlertStateFile = process.env.AGENT_MESH_HEALTH_ALERT_STATE_FILE || join(repoRoot, '.dev-society', 'health-alert-state.json');
+  const _haRaw = process.env.AGENT_MESH_HEALTH_ALERT_INTERVAL_MS;
+  const HA_INTERVAL = (_haRaw === undefined || _haRaw === '') ? DEFAULT_HEALTH_ALERT_INTERVAL_MS : Number(_haRaw);
+  const HA_DISABLED = /^(1|true|yes)$/i.test(process.env.AGENT_MESH_HEALTH_ALERT_DISABLED || '');
+  const readHealthAlertState = () => { try { return JSON.parse(readFileSync(healthAlertStateFile, 'utf8')); } catch { return null; } };
+  const writeHealthAlertState = (s) => { mkdirSync(dirname(healthAlertStateFile), { recursive: true }); const t = `${healthAlertStateFile}.tmp`; writeFileSync(t, JSON.stringify(s, null, 2)); renameSync(t, healthAlertStateFile); };
+  // Dedup across daemon restarts: find an OPEN issue carrying the alert key marker.
+  const findHealthAlertIssue = (key) =>
+    gh(['issue', 'list', '--repo', cfg.repo, '--state', 'open', '--search', `${key} in:body`, '--json', 'number', '--jq', '.[0].number'])
+      .then((r) => r.stdout.trim()).catch(() => '');
+
+  const healthAlertTick = async () => {
+    try {
+      const report = await collectHealth({ meshRoot: SCHED_MESH_ROOT, env: process.env, now: Date.now() });
+      const { opens, closes, state } = planHealthAlerts({ report, prev: readHealthAlertState(), now: new Date() });
+      // Self-heal the labels first (gh issue create --label 422s on an unknown label, the #182 class).
+      if (opens.length) await ensureLabels(gh, ['needs-human', 'mesh-health'], { repo: cfg.repo }).catch(() => {});
+      for (const o of opens) {
+        if (await findHealthAlertIssue(o.key)) continue;   // already filed (restart-safe dedup)
+        await gh(['issue', 'create', '--repo', cfg.repo, '--title', o.title, '--body', o.body, '--label', 'needs-human', '--label', 'mesh-health'])
+          .catch((e) => log('  (health-alert create failed)', e.message));
+        rec({ source: 'health-alert', type: 'health.alert.opened', level: 'error', summary: `${o.organ} CRITICAL → needs-human filed` });
+        log(`health-alert: filed needs-human for ${o.organ} (critical)`);
+      }
+      for (const c of closes) {
+        const found = await findHealthAlertIssue(c.key);
+        if (!found) continue;   // already closed / never filed → nothing to do
+        await gh(['issue', 'close', found, '--repo', cfg.repo, '--comment', c.body]).catch((e) => log('  (health-alert close failed)', e.message));
+        rec({ source: 'health-alert', type: 'health.alert.closed', level: 'info', summary: `${c.organ} recovered → alert closed` });
+        log(`health-alert: closed alert for ${c.organ} (recovered)`);
+      }
+      writeHealthAlertState(state);
+    } catch (e) {
+      log('health-alert failed:', e?.message || String(e));
+    }
+  };
+
+  if (HA_INTERVAL > 0 && !HA_DISABLED) {
+    healthAlertTimer = setInterval(healthAlertTick, HA_INTERVAL);
+    log('health-alert started — interval=' + HA_INTERVAL + 'ms');
+  }
 }
 
-for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.stop(); } catch {} try { clearInterval(heartbeatTimer); } catch {} process.exit(0); });
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, () => { try { sched?.stop(); } catch {} try { clearInterval(heartbeatTimer); } catch {} try { clearInterval(healthAlertTimer); } catch {} process.exit(0); });
 
 // ── GitHub shell (impure; uses the `gh` CLI the user authenticates) ─────────────
 const gh = (args, opts = {}) => sh('gh', args, { maxBuffer: 1 << 24, ...opts });
