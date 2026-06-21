@@ -1,16 +1,32 @@
 // src/mesh-improvement/baseline.js — pure: add deltas, trend, and the carried ledger.
-import { deltaPct } from './metrics.js';
+import { deltaPct, median } from './metrics.js';
 
 const TREND_KEYS = ['passRate', 'quality_per_1k_tokens'];
+
+// Minimum prior values needed before switching from single-previous-value to
+// rolling-window median. Matches the Phase-0 evidence threshold (≥3 runs).
+const MEDIAN_WINDOW_MIN = 3;
 
 export function applyBaseline(current, previous, { at, trendN }) {
   const day = at.slice(0, 10);
   const prevFindings = new Map((previous?.findings ?? []).map((f) => [f.id, f]));
   const prevLedger = previous?.ledger ?? {};
+  // Per-finding value history, carried forward across runs (bounded by trendN).
+  const prevHistory = previous?.history ?? {};
 
-  // Per-finding baseline + signed delta from the previous run's same-id finding.
+  // Per-finding baseline + signed delta.
+  // When ≥ MEDIAN_WINDOW_MIN prior values exist, use a rolling-window median
+  // baseline (robust against single-run outliers for high-variance ratio metrics).
+  // Cold start (< MEDIAN_WINDOW_MIN values): fall back to §10 single-previous-value.
+  const newHistory = {};
   const findings = current.findings.map((f) => {
-    const base = prevFindings.get(f.id)?.metric?.value ?? null;
+    const priorValues = prevHistory[f.id] ?? [];
+    const base = priorValues.length >= MEDIAN_WINDOW_MIN
+      ? median(priorValues.slice(-trendN))
+      : (prevFindings.get(f.id)?.metric?.value ?? null);
+    if (typeof f.metric.value === 'number') {
+      newHistory[f.id] = [...priorValues, f.metric.value].slice(-trendN);
+    }
     const dPct = deltaPct(f.metric.name, f.metric.value, base);
     return { ...f, metric: { ...f.metric, baseline: base, deltaPct: dPct } };
   });
@@ -48,7 +64,7 @@ export function applyBaseline(current, previous, { at, trendN }) {
     trend[k] = [...prior, v].filter((x) => typeof x === 'number').slice(-trendN);
   }
 
-  return { ...current, baseline: previous?.ref ?? null, summary, findings, ledger, trend };
+  return { ...current, baseline: previous?.ref ?? null, summary, findings, ledger, trend, history: newHistory };
 }
 
 function subtract(a, b) {

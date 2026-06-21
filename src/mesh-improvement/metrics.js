@@ -22,3 +22,26 @@ export function deltaPct(name, value, baseline) {
 export function isRegression(name, dPct, bandPct) {
   return typeof dPct === 'number' && dPct < 0 && Math.abs(dPct) > bandPct;
 }
+
+/** Median of a numeric array; null for empty/non-array input. */
+export function median(values) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+/**
+ * Descriptive stats for a numeric array (Phase 0 evidence collection).
+ * Returns { mean, sigma, cv, n } or null for empty input.
+ * cv (coefficient of variation) = sigma / |mean|; null when mean === 0.
+ */
+export function computeStats(values) {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const n = values.length;
+  const mean = values.reduce((s, v) => s + v, 0) / n;
+  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+  const sigma = Math.sqrt(variance);
+  const cv = mean !== 0 ? sigma / Math.abs(mean) : null;
+  return { mean: Math.round(mean * 1e6) / 1e6, sigma: Math.round(sigma * 1e6) / 1e6, cv: cv !== null ? Math.round(cv * 1e6) / 1e6 : null, n };
+}

@@ -310,8 +310,7 @@ Durability per host:
 ## 11. Out of scope for v1 (YAGNI; v2 candidates)
 
 - LLM-generated `critique` + SARIF-style machine-applicable `fixes`.
-- Per-PR MIR; rolling-window/median baselines; a trend-watcher that opens
-  "plateau" issues.
+- Per-PR MIR; a trend-watcher that opens "plateau" issues.
 - Auto-PR / auto-fix from a finding.
 - Extending perf samples to always retain `runId` (additive enhancement of evidence).
 

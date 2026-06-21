@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { METRICS, deltaPct, isRegression } from '../src/mesh-improvement/metrics.js';
+import { METRICS, deltaPct, isRegression, median, computeStats } from '../src/mesh-improvement/metrics.js';
 import { MIR_ID_RE } from '../src/config.js';
 
 test('higher_is_better: drop is a negative deltaPct', () => {
@@ -32,4 +32,43 @@ test('every registry metric has a direction; ids are validated', () => {
   }
   assert.ok(MIR_ID_RE.test('perf:6x-confusable:routing-precision'));
   assert.ok(!MIR_ID_RE.test('perf:<script>'));
+});
+
+test('median: odd-length array returns middle element', () => {
+  assert.equal(median([3, 1, 2]), 2);
+  assert.equal(median([0.9, 0.6, 0.8]), 0.8);
+});
+
+test('median: even-length array returns average of two middle elements', () => {
+  assert.equal(median([1, 2, 3, 4]), 2.5);
+  assert.equal(median([0.6, 0.9]), 0.75);
+});
+
+test('median: single element returns that element', () => {
+  assert.equal(median([0.42]), 0.42);
+});
+
+test('median: empty/null input returns null', () => {
+  assert.equal(median([]), null);
+  assert.equal(median(null), null);
+  assert.equal(median(undefined), null);
+});
+
+test('computeStats: mean, sigma, cv for stable values', () => {
+  const s = computeStats([1.0, 1.0, 1.0]);
+  assert.equal(s.mean, 1.0);
+  assert.equal(s.sigma, 0);
+  assert.equal(s.cv, 0);
+  assert.equal(s.n, 3);
+});
+
+test('computeStats: high-variance sequence has cv > 0', () => {
+  // values: 1.0, 1.316, 0.684  (one outlier -31.6%)
+  const s = computeStats([1.0, 1.316, 0.684]);
+  assert.ok(s.cv > 0.1, `expected high cv but got ${s.cv}`);
+});
+
+test('computeStats: empty input returns null', () => {
+  assert.equal(computeStats([]), null);
+  assert.equal(computeStats(null), null);
 });
