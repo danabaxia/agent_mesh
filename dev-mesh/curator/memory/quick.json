@@ -1212,5 +1212,49 @@
       "source": "PR #330: feat(mir): rolling-window median baseline for high-variance ratio metrics (closes #324)",
       "ts": "2026-06-21"
     }
+  },
+  "subtree-cost-rollup-a2a-tasks": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Thread subtree_cost_usd through A2A Task chain: own + Σ peer subtrees gives single-read full-chain cost.",
+    "l1": "In a multi-hop A→B→C chain, B's Task `agentmesh/metrics` carried only B's own cost — C's cost (incurred via delegate_to_peer) was invisible to A. Computing full-chain cost required correlating N separate run-log directories. PR #328 adds `subtree_cost_usd` = own `cost_usd` + Σ `subtree_cost_usd` of downstream peer Tasks. The peer bridge reads `subtree_cost_usd` (falling back to `cost_usd` for older peers) and logs it so the parent aggregates correctly. The L4 perf benchmark reads `subtree_cost_usd` from the root Task directly.",
+    "value": "Pattern for cross-hop cost rollup in A2A Task chains:\n\n1. Each Task's `agentmesh/metrics` carries two cost fields: `cost_usd` (own hop only) and `subtree_cost_usd` (own + Σ all downstream peer subtrees).\n\n2. The peer bridge accumulates downstream `subtree_cost_usd` (falling back to `cost_usd` for older peers) from each downstream Task before building the parent Task metrics block. Never treat absent as 0 without explicit fallback — silent undercounting corrupts budget math.\n\n3. Perf benchmarks and callers read the root Task's `subtree_cost_usd` directly — no need to correlate N run-log directories.\n\n4. Token/turn counts ride the run record (not Task metrics) — only cost fields are threaded through the Task chain. Whitelist `subtree_cost_usd` in `normalizeMetrics` (`src/a2a/protocol.js`).\n\n5. Budget enforcement (refuse delegation when subtree cost would exceed a cap) is a follow-on; v1 is observability only — the field enables it without blocking.\n\nProvenance: PR #328 (2026-06-21), closes Issue #315.",
+    "provenance": {
+      "source": "PR #328: feat: cross-hop delegation cost rollup — subtree_cost_usd in Task metadata",
+      "ts": "2026-06-21"
+    }
+  },
+  "cron-throttle-backstop-false-escalation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "GHA cron throttle cascades: backstop sweep sees slow-cron stage as 'broken' → false needs-human escalations.",
+    "l1": "PR #327: review-respond cron fired every 3-5h. The merge-sweep backstop treated unprocessed CHANGES_REQUESTED PRs as 'automators could not clear it' → PR #323 falsely escalated PR #321 as needs-human. Items weren't broken — they were waiting for a throttled upstream stage. Fix: review-respond-sweep daemon builtin (10min, maintainer schedule.json) dispatches the workflow only when CHANGES_REQUESTED non-draft PRs exist — final of four mesh pipeline drains on daemon cadence.",
+    "value": "When a pipelined system has a backstop sweep that escalates 'stuck' items, every upstream stage's actual cycle time must be shorter than the backstop staleMs. A throttled GHA cron (*/15 → 3-5h observed) creates items that sit past the stale threshold BEFORE they're ever processed — generating false needs-human escalations that hide real failures.\n\nFix: move all pipeline stages to daemon builtins at ≤10min cadence (see gh-actions-cron-throttled-daemon-dispatch). PR #327 (2026-06-21) completed the pattern: all four mesh pipeline drains (code-automerge, memory-automerge, issue-sweep, review-respond) are now daemon-driven.\n\nDiagnostic signal: needs-human escalations for items that are otherwise CLEAN (no conflict, no failing CI, no blocking label) → check for a cron-driven upstream stage whose observed fire interval exceeds backstop staleMs. The gate logic is not at fault; the cadence mismatch is.\n\nGate before dispatch: check open CHANGES_REQUESTED non-draft PRs exist before calling gh workflow run — avoids burning Actions minutes when queue is empty.",
+    "provenance": {
+      "source": "PR #327: feat(daemon): daemon-driven review-respond drain (beats throttled GitHub cron)",
+      "ts": "2026-06-21"
+    }
+  },
+  "evidence-gate-yagni-spec-amendment": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "YAGNI-deferred feature: gather variance evidence + amend governing spec before coding — skip either step = revert.",
+    "l1": "PR #321 added rolling-window/median MIR baseline without evidence (§11 of the MIR spec explicitly deferred it as YAGNI) — reverted (45d88c7). PR #326 (2026-06-21) formalises the gate: (1) ≥3 runs → compute CV + delta → classify triggering event as noise vs. regression → go/no-go + which lever; (2) amend §10/§11 with chosen lever + rationale (required before any code merges); (3) implement only the evidence-supported lever. Spec-conformance guard: a test/CI check asserts code and spec agree — rolling-window in code requires §11 to drop its deferred status.",
+    "value": "Three-step protocol for any YAGNI/deferred-v2 algorithmic change:\n\n(1) Evidence gate (Phase 0): collect ≥N runs of the affected metric. Compute mean/σ/CV and the delta distribution. Classify the triggering event (e.g. the -31.6% quality_per_1k_tokens drop) as noise vs. regression → decide go/no-go AND which lever. Document: if evidence shows noise, widen the band (Lever A); if it shows high-CV, use rolling-window median (Lever B). The gate selects exactly one; never ship both.\n\n(2) Governing spec amendment: amend the relevant §§ (here §10 baseline + §11 YAGNI-deferred) to promote the chosen mechanism to v1 with rationale. This artifact is REQUIRED before any implementation code merges. PR reviewers must check the amendment exists.\n\n(3) Implement only the evidence-supported lever: do not ship both, do not add adaptive/EWMA/per-metric tuning — those are still deferred.\n\n(4) Spec-conformance guard: add a test or CI check asserting that if the rolling-window algorithm is present in code, the governing spec §11 no longer lists it as deferred. This prevents re-introducing the PR #321 violation silently (code and spec must agree).\n\nKey failure modes caught by PR #326:\n- Implementing a YAGNI-deferred feature to fix what may be measurement noise, before gathering evidence.\n- Treating a single-run outlier as a confirmed regression without CV data from ≥3 runs.\n- Skipping spec amendment (leaving §11 contradicting the code).\n\nProvenance: PR #321 (reverted, commit 45d88c7) + PR #326 (2026-06-21, spec: rolling-window/median baseline for MIR).",
+    "provenance": {
+      "source": "PR #326 (2026-06-21): spec: rolling-window/median baseline for MIR high-variance ratio metrics (#324)",
+      "ts": "2026-06-21"
+    }
+  },
+  "devdep-tier-workflow-gap": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "devDep tests excluded from L0 aren't gated — a non-L0 workflow must also exist; 'missing dep' ≠ 'expected skip'.",
+    "l1": "PR #332: test/ui/*.component.test.js (jsdom+axe) and test/e2e/dashboard-smoke.spec.js (Playwright) had npm scripts (test:ui/test:e2e), devDeps, and playwright.config.js — but no CI workflow ran them. In node --test (L0) they fail with MODULE_NOT_FOUND — easy to mistake for 'correctly excluded' when they're actually ungated. The L0 isolation guard ensures devDep tests don't pollute L0; it does NOT guarantee a nightly tier runs them. Fix: ui-e2e.yml (dispatch + nightly, off ci.yml — npm ci + Chromium too heavy per-PR).",
+    "value": "Pattern: devDep tests require an explicit CI workflow file — test infra alone is not a gate.\n\nFailure mode: test/ui/ and test/e2e/ tests are excluded from L0 (correct). No nightly workflow exists (gap). They fail in `node --test` with MODULE_NOT_FOUND — identical to the L0 isolation guard doing its job. The coverage hole is invisible until someone investigates why tests 'always fail'.\n\nDetection: for any devDep test failing MODULE_NOT_FOUND in the zero-dep suite, grep .github/workflows/ for the npm script name (test:ui, test:e2e, playwright). No match = ungated.\n\nPrevention lint (add to hermetic suite):\n  const wfs = readdirSync('.github/workflows').map(f => readFileSync(join('.github/workflows', f), 'utf8'));\n  if (existsSync('test/ui'))  assert(wfs.some(w => w.includes('test:ui')),  'test:ui has no workflow');\n  if (existsSync('test/e2e')) assert(wfs.some(w => w.includes('test:e2e')), 'test:e2e has no workflow');\n\nui-e2e.yml pattern (PR #332):\n- Triggers: workflow_dispatch + schedule nightly (e.g. '0 3 * * *')\n- Off ci.yml: npm ci + Chromium download ~1-2min, too heavy per-PR\n- Runs: npm run test:ui (jsdom+axe-core) + npm run test:e2e (Playwright)\n- Linux CI: skip visual snapshot tests (platform-specific baseline); functional/a11y E2E suffices\n- Commit a visual baseline so local devs see all-pass on first run\n\nRelated: devdep-tier-isolation (three-tier structure; this lesson closes the 'tier 2 exists on paper' gap).\n\nProvenance: PR #332 (2026-06-21) — gap found via github-vs-local research.",
+    "provenance": {
+      "source": "PR #332: feat(ci): dedicated frontend-QA gate (ui-e2e.yml) — the suite was run nowhere",
+      "ts": "2026-06-21"
+    }
   }
 }
