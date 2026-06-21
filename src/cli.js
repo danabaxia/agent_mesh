@@ -19,6 +19,7 @@ function usage() {
     '  agent-mesh validate <mesh-root> [agent]',
     '  agent-mesh doctor <mesh-root> [agent] [--apply]',
     '  agent-mesh discover <scan-root> [--mesh <mesh-root>] [--depth N] [--json]   # recognize local agent folders',
+    '  agent-mesh deploy <scan-root> --mesh <mesh-root> [--modes ask,do] [--depth N] [--apply]   # one-click discover→add→doctor',
     '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat] [--no-replace]',
     '  agent-mesh shell <mesh-root> <agent>   # open native claude in an agent folder',
     '',
@@ -307,6 +308,72 @@ export async function main(argv, env = process.env) {
           }
           process.stdout.write(`  agent-mesh doctor ${meshRootOpt} --apply\n`);
         }
+      }
+    } catch (err) {
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (command === 'deploy') {
+    const [scanRootArg, ...rest] = argv.slice(1);
+    if (!scanRootArg) {
+      process.stderr.write(`${usage()}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    const scanRoot = resolve(scanRootArg);
+    let meshRootOpt;
+    let modes = ['ask'];
+    let depth;
+    let applyFlag = false;
+    for (let i = 0; i < rest.length; i++) {
+      const a = rest[i];
+      if (a === '--apply') applyFlag = true;
+      else if (a === '--mesh') meshRootOpt = rest[++i] ? resolve(rest[i]) : undefined;
+      else if (a === '--modes' && rest[i + 1]) modes = rest[++i].split(',').map((m) => m.trim());
+      else if (a === '--depth') depth = Number(rest[++i]);
+    }
+    if (!meshRootOpt) {
+      process.stderr.write('error: deploy requires --mesh <mesh-root>\n');
+      process.exitCode = 2;
+      return;
+    }
+
+    try {
+      const { deployMesh } = await import('./builder/deploy.js');
+      const opts = { meshRoot: meshRootOpt, modes, apply: applyFlag };
+      if (Number.isFinite(depth) && depth > 0) opts.maxDepth = depth;
+      const r = await deployMesh(scanRoot, opts);
+
+      if (r.dryRun) process.stdout.write('[dry-run] No files written. Pass --apply to execute.\n\n');
+      if (r.initialized === 'would-init') process.stdout.write(`Would initialize a new mesh at ${r.meshRoot}\n`);
+      else if (r.initialized === true) process.stdout.write(`Initialized a new mesh at ${r.meshRoot}\n`);
+
+      if (r.added.length) {
+        process.stdout.write(`\n${r.dryRun ? 'Would add' : 'Added'} ${r.added.length} agent(s):\n`);
+        for (const a of r.added) process.stdout.write(`  ${a.name}\n`);
+      }
+      if (r.alreadyInMesh.length) {
+        process.stdout.write(`\nAlready in mesh (skipped): ${r.alreadyInMesh.join(', ')}\n`);
+      }
+      if (r.skippedInTree.length) {
+        process.stdout.write('\nUnder the mesh root — use `join`, not copy:\n');
+        for (const s of r.skippedInTree) process.stdout.write(`  agent-mesh join ${r.meshRoot} ${s.name}\n`);
+      }
+      if (r.doctor) {
+        const d = r.doctor;
+        const counts = `fixed ${d.fixed.length}, seeded ${d.seeded.length}, proposed ${d.proposed.length}, flagged ${d.flagged.length}`;
+        process.stdout.write(`\nWiring (doctor): ${counts}\n`);
+      }
+      if (r.errors.length) {
+        process.stdout.write('\nErrors (other agents still processed):\n');
+        for (const e of r.errors) process.stdout.write(`  [${e.stage}] ${e.name ?? ''} ${e.error}\n`);
+        process.exitCode = 1;
+      }
+      if (!r.added.length && !r.alreadyInMesh.length && !r.skippedInTree.length) {
+        process.stdout.write(`\nNo agent candidates found under ${scanRoot}.\n`);
       }
     } catch (err) {
       process.stderr.write(`error: ${err.message}\n`);
