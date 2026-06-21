@@ -51,7 +51,7 @@ import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { mergeSweepReportPath } from '../src/merge-sweep/report.js';
 import { runRemediation, remediationPath } from '../src/merge-sweep/remediation-run.js';
-import { runResearchEscalation } from '../src/dev-society/research-escalation-run.js';
+import { runResearchEscalation, runMergedPrCleanup } from '../src/dev-society/research-escalation-run.js';
 import { runResearchFix } from '../src/dev-society/research-fix-run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
@@ -198,6 +198,12 @@ if (!once && !selftest) {
       cfg: { capPerRun: 2 },
       log: (...a) => log('research-escalation:', ...a),
     }).catch((e) => { log('research-escalation error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Close needs-human issues whose referenced PR already merged/closed (stale backstops).
+    'needs-human-cleanup': async () => runMergedPrCleanup({
+      gh: async (args) => (await sh('gh', args, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      log: (...a) => log('needs-human-cleanup:', ...a),
+    }).catch((e) => { log('needs-human-cleanup error:', e.message); return { status: 'fail', error: e.message }; }),
     // Daemon-driven prompt drain: merge CLEAN+APPROVED PRs on the daemon's reliable ~10min
     // cadence instead of waiting on GitHub Actions' throttled cron (which leaves ready PRs
     // idle ~1-2h). Reuses the gated, tested runSweep (AUTOMERGE_ENABLED + isAutoMergeable);
