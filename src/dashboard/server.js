@@ -720,32 +720,56 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     // When reached through an HTTPS proxy (Tailscale serve sets X-Forwarded-Proto),
     // mark the cookie Secure so it is only ever returned over TLS.
     const secure = req.headers['x-forwarded-proto'] === 'https' ? ' Secure;' : '';
-    // Set cookie and redirect to the clean URL (preserving the requested page).
+    // SameSite=Lax (not Strict): Strict cookies set during a redirect are dropped
+    // by some mobile browsers (iOS Safari), which then 403'd the page's own JS/CSS
+    // subrequests → "opens but won't fully load". Lax is sent on top-level nav +
+    // same-site subresources, which is exactly this same-origin PWA.
     res.setHeader(
       'Set-Cookie',
-      `${COOKIE_NAME}=${token}; SameSite=Strict; HttpOnly;${secure} Path=/`
+      `${COOKIE_NAME}=${token}; SameSite=Lax; HttpOnly;${secure} Path=/`
     );
-    res.writeHead(302, { Location: pathname });
-    res.end();
-    return;
+    // Desktop board ('/'): redirect to the clean URL (drops the token from the bar).
+    // Mobile ('/m'): serve the page DIRECTLY on this same 200 response so the cookie
+    // is present before the browser fetches /mobile/*.js|css — no fragile redirect
+    // hop where the cookie can be lost. Fall through to the static-serve block.
+    if (pathname === '/') {
+      res.writeHead(302, { Location: '/' });
+      res.end();
+      return;
+    }
+    // /m: fall through (cookie already set on res); same-origin gate below still
+    // applies, and the static shell is public so it serves without a cookie.
   }
 
   // -----------------------------------------------------------------------
-  // All other routes: require same-origin gate + cookie
+  // All other routes: require same-origin gate; cookie required EXCEPT for the
+  // public mobile UI shell (static HTML/CSS/JS — no data). Every /api/* data and
+  // action route still requires the token, so auth is never weakened.
   // -----------------------------------------------------------------------
 
-  // Same-origin gate
+  // Same-origin gate (applies to everything, including the public shell)
   if (!passesSameOriginGate(req, listenerPort, allowedHosts)) {
     send403(res, 'Cross-origin request denied');
     return;
   }
 
-  // Cookie auth
-  const cookies = parseCookies(req.headers['cookie']);
-  const cookieVal = cookies[COOKIE_NAME] ?? '';
-  if (!tokenEquals(cookieVal, token)) {
-    send403(res, 'Authentication required');
-    return;
+  // The mobile PWA shell is non-sensitive UI code; serving it without the token
+  // means the page always renders, and a cookie hiccup degrades to "data needs
+  // sign-in" instead of a blank/403 page. Data + actions stay gated below.
+  const isPublicShell = pathname === '/m' || pathname.startsWith('/mobile/');
+
+  // Token auth (skipped only for the public shell). Accept the token via the cookie
+  // OR an `X-Dashboard-Token` header — the header is a cookie-independent fallback
+  // for mobile browsers that drop the cookie; the mobile PWA captures `?t=` once and
+  // sends it as this header on every /api call. Same token, same strength.
+  if (!isPublicShell) {
+    const cookies = parseCookies(req.headers['cookie']);
+    const cookieVal = cookies[COOKIE_NAME] ?? '';
+    const headerVal = req.headers['x-dashboard-token'] ?? '';
+    if (!tokenEquals(cookieVal, token) && !tokenEquals(headerVal, token)) {
+      send403(res, 'Authentication required');
+      return;
+    }
   }
 
   // -----------------------------------------------------------------------
