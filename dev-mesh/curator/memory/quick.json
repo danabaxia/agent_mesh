@@ -1588,5 +1588,16 @@
       "source": "PR #416: spec: Persist a rolling perf baseline so mesh-improvement-report can actually detect drift (#412)",
       "ts": "2026-06-22"
     }
+  },
+  "infra-classify-http-529-overloaded": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "HTTP 529 / 'api overloaded' in CI log → add to INFRA_RE; else misclassified as !ranAnyTest not as infraError.",
+    "l1": "PR #419 (2026-06-22): INFRA_RE in src/dev-mesh/classify.js missed 'HTTP 529' and 'api overloaded'. When Claude API returns 529 (capacity overload), CI logs emit exactly these strings but neither matched INFRA_RE, so infraError stayed false. Classification fell through to the !ranAnyTest branch — technically the right label but via wrong code path, and without infraError=true the re-kick heuristic cannot trigger. Pattern: any new Claude API error string that appears verbatim in CI logs must have a corresponding INFRA_RE literal.",
+    "value": "When the Claude API returns HTTP 529 (overloaded), CI logs contain exactly the strings 'HTTP 529' and/or 'Claude API overloaded' (which includes 'api overloaded' case-insensitively). These MUST be present as literals in INFRA_RE inside src/dev-mesh/classify.js so that `infraError` is set true.\n\nWithout this, the classification logic falls through to the `!ranAnyTest` branch — a label that is arguably still correct but routes incorrectly, and critically: the re-kick-on-infra heuristic never fires because infraError stays false.\n\nChecklist when the Claude API introduces a new error response:\n1. Find the exact string that appears in CI logs for that error.\n2. Add it as a literal (or minimal regex) to INFRA_RE in src/dev-mesh/classify.js.\n3. Add a regression test using that exact log line, asserting infraError=true.\n\nProvenance: PR #419 (2026-06-22), closes #418. The two strings added were 'HTTP 529' and 'api overloaded'.",
+    "provenance": {
+      "source": "PR #419: fix(classify): add HTTP 529 / api-overloaded patterns to INFRA_RE (closes #418)",
+      "ts": "2026-06-22"
+    }
   }
 }
