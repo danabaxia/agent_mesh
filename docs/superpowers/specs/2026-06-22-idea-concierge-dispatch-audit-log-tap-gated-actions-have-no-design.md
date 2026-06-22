@@ -89,8 +89,8 @@ per-action rules:
 | Action | Fields preserved | Fields stripped / bounded |
 |---|---|---|
 | `file_issue` | `title`, `labels` | `body` bounded to 2 000 chars; any key matching `/token|secret|key|auth|pass/i` stripped |
-| `assign_task` | `to`, `brief` | `brief` bounded to 500 chars; secret-pattern keys stripped |
-| `ask_peer_rerun` | `peer`, `mode` | `task` bounded to 1 000 chars; secret-pattern keys stripped |
+| `assign_task` | `peer`, `title`, `objective` | `context` bounded to 1 000 chars; `requirements`, `pointers` each bounded to 500 chars; secret-pattern keys stripped |
+| `ask_peer_rerun` | `peer` | `task` bounded to 1 000 chars; secret-pattern keys stripped |
 
 Secret-pattern matching applies to all actions as a backstop: any top-level payload key
 matching `/token|secret|key|auth|pass/i` is replaced with `"[redacted]"`. This is in addition
