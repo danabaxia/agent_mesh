@@ -1,6 +1,6 @@
 {
-  "goal": "create the agent, it can talk to other mesh agents, operate through phone to monitor the system, perform user in the loop/over the loop monitoring for the mesh",
-  "context_note": "Promote the phone concierge from a dashboard-managed ask spawn (src/dashboard/concierge.js) into a FIRST-CLASS mesh agent: a real dev-mesh/agents/concierge/ folder with AGENT.md + agent.json, doctor-wired (registry.json + peer-bridge .mcp.json + mesh-health read MCP + board-notify hook), served:true, ask-mode only, listed in dev-mesh/mesh.json. It must (1) talk to other mesh agents via the peer bridge (delegate_to_peer / fanOutToPeers, ask-mode) and read mesh-health verbs (check_conformance/ping_agent/triage_logs/list_stale_tasks); (2) be operated from the phone — the /m PWA routes chat to the AGENT (via the console A2A broker), not the old spawn; (3) do BOTH in-the-loop (on-demand: you ask status, it asks peers+health and answers) AND over-the-loop (a daemon-scheduled autonomous monitoring sweep that escalates findings to a phone Alerts view, pull-based). Action boundary: ask-only agent; any action (file issue, assign a board task, ask a peer to re-run) requires the owner's explicit Confirm tap (framework-side write). Existing mesh invariants (ask-only peer bridge, single-writable-root, anti-spoof, token-gated dashboard, no public exposure) stay intact. Tailscale phone access already works (prior goal).",
+  "goal": "目前通过手机发起的a2a任务让mesh系统pick并且工作并且最终解决， 手机和电脑dash需要显示状态更新",
+  "context_note": "Close the loop: a phone-initiated A2A board ticket (concierge Confirm → assign_task to the orchestrator) is autonomously picked up and worked by the mesh as an AGENT TEAM and finally resolved, with status updates shown live on BOTH the phone PWA and the desktop dashboard. Design (spec 2026-06-22 orchestrator-board-pipeline): the orchestrator is the TEAM LEAD that owns its own board ticket; a thin daemon-scheduled board-drive delegate job triggers it; the orchestrator runs a CONDUCTOR WORKFLOW + PARALLEL FAN-OUT (owner-chosen, NOT a swarm) — dependency-ordered stages (e.g. analyst approach → coder plan) with fanOutToPeers where independent (tester/reviewer/security in parallel) — synthesizes, and advances its own ticket assigned→acknowledged→in-progress→done. Ask-only this round (specialists read-only; do-mode is deferred). Status: the Task Board (phone Tasks tab + desktop #view-tasks) auto-refreshes the ticket lifecycle, and the desktop graph view shows the live team A2A edges. Builds on the shipped concierge agent + A2A Task Board view. The work itself is LLM-agent behavior, verified live; code is wiring + prompts + auto-refresh, no swarm runtime.",
   "release_threshold": 0.85,
   "judge": { "transport": "subagent" },
   "dimensions": [
@@ -12,51 +12,51 @@
       "source": "topic-standard"
     },
     {
-      "key": "dedicated_agent",
-      "label": "Real, doctor-wired mesh agent",
-      "kind": "scored",
-      "weight": 0.18,
-      "descriptor": "The concierge is a genuine first-class mesh agent — its own folder + AGENT.md + agent.json, registered in mesh.json (served, ask-mode), wired by doctor (registry/peer-bridge/mesh-health/board hook), and visible in the mesh roster + dashboard graph + mesh-health like the other agents. Not a bolted-on dashboard spawn.",
-      "source": "stated"
-    },
-    {
-      "key": "talks_to_peers",
-      "label": "Talks to other mesh agents",
-      "kind": "scored",
-      "weight": 0.18,
-      "descriptor": "It genuinely converses with other agents to do its job — uses the peer bridge (delegate_to_peer / fanOutToPeers, ask-mode) to source answers from the right specialists (e.g. tester for test/MIR state, triager for blocked work, analyst for ideas) and reads mesh-health verbs, rather than only scraping files. Peer-sourced, multi-agent reasoning.",
-      "source": "stated"
-    },
-    {
-      "key": "phone_operate",
-      "label": "Operated through the phone",
+      "key": "phone_to_pickup",
+      "label": "Phone initiates → mesh autonomously picks up",
       "kind": "scored",
       "weight": 0.16,
-      "descriptor": "The owner drives the concierge agent from their phone — the /m PWA routes chat to the AGENT (via the A2A console broker), and the phone shows its monitoring output. Operating the mesh's monitor from the phone is real and works, not just a desktop path.",
+      "descriptor": "From the phone, an A2A task is created (concierge → board ticket to the orchestrator) and the mesh picks it up on its own (the daemon-triggered orchestrator), with no human running an agent session. The loop starts and is claimed autonomously.",
       "source": "stated"
     },
     {
-      "key": "monitoring_in_over_loop",
-      "label": "In-the-loop + over-the-loop monitoring",
+      "key": "team_works",
+      "label": "Worked by an agent TEAM (conductor workflow + parallel fan-out)",
       "kind": "scored",
-      "weight": 0.2,
-      "descriptor": "Both modes work: in-the-loop — on demand the owner asks 'is the mesh healthy / what's stuck' and gets a real, peer+health-sourced answer; over-the-loop — an autonomous periodic sweep runs without prompting and surfaces anomalies (failed health, stuck/stale tasks, test regressions) to a phone Alerts view the owner reviews. The owner can supervise without micromanaging.",
+      "weight": 0.24,
+      "descriptor": "The orchestrator works the task as a coordinated TEAM — not a single hand-off to one agent. It pulls in the right multiple specialists, ordering dependent stages and fanning out independent ones in parallel, then synthesizes. A real task (e.g. a code change) visibly involves several agents collaborating, with the orchestrator as conductor.",
       "source": "stated"
     },
     {
-      "key": "action_safety",
-      "label": "Observe-and-advise with confirm-gated actions",
+      "key": "resolves",
+      "label": "Ultimately resolved",
       "kind": "scored",
       "weight": 0.16,
-      "descriptor": "The agent observes and advises but never mutates the mesh on its own: it is ask-only, and every action it proposes (file an issue, assign a board task, ask a peer to re-run) happens only on the owner's explicit Confirm tap, framework-side. Existing invariants (ask-only peer bridge, single writable root, token-gated/no-public dashboard) are untouched.",
+      "descriptor": "The task actually reaches resolution — the ticket advances to done with a concrete synthesized result, not left stuck. The owner gets an answer/outcome, not just motion.",
+      "source": "stated"
+    },
+    {
+      "key": "status_updates_both",
+      "label": "Live status updates on phone AND desktop",
+      "kind": "scored",
+      "weight": 0.18,
+      "descriptor": "Both surfaces show the status updating without manual reload: the Task Board (phone Tasks tab + desktop view) reflects the ticket moving assigned→acknowledged→in-progress→done, and the desktop also surfaces the team's live activity (graph edges / activity). The owner can watch progress from either device.",
+      "source": "stated"
+    },
+    {
+      "key": "safety_agent_driven",
+      "label": "Safe + agent-driven",
+      "kind": "scored",
+      "weight": 0.12,
+      "descriptor": "Ask-only end to end (no autonomous repo writes); board invariant intact (orchestrator advances only its own ticket; identity framework-set); the daemon is a thin trigger while the agent does the reasoning/coordination; onward delegation stays within the depth guard. No new public exposure; dashboard stays bound + token-gated.",
       "source": "topic-standard"
     },
     {
       "key": "e2e_verified",
       "label": "End-to-end verified on the real device",
       "kind": "scored",
-      "weight": 0.12,
-      "descriptor": "Demonstrated working on the actual Mac+phone, not just merged code: the agent is live in the running mesh, the phone reaches it (chat answers are peer/health-sourced), and an over-the-loop alert appears on the phone — confirmed, not asserted. Owner setup steps handed off where unavoidable.",
+      "weight": 0.14,
+      "descriptor": "Demonstrated on the actual Mac+phone, not just merged code: a phone-created task is observed being picked up, worked by the team, and resolved, with the status visibly updating on both the phone and desktop. Confirmed, not asserted.",
       "source": "topic-standard"
     }
   ]
