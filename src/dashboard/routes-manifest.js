@@ -20,6 +20,7 @@ export const ROUTE_PATTERNS = [
   /^\/api\/concierge\/message$/, // POST /api/concierge/message  (mobile concierge)
   /^\/api\/concierge\/confirm$/, // POST /api/concierge/confirm  (mobile concierge)
   /^\/api\/concierge\/alerts$/,  // GET  /api/concierge/alerts   (over-the-loop findings)
+  /^\/api\/board\/tasks$/,       // GET  /api/board/tasks        (A2A task board)
   /^\/api\/concierge\/history$/, // GET  /api/concierge/history  (mobile concierge, issue #362)
   /^\/api\/daily$/,             // GET  /api/daily
   /^\/api\/daily\/refresh$/,    // POST /api/daily/refresh

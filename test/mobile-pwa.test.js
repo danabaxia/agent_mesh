@@ -5,7 +5,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime, summarizeAlerts } from '../src/dashboard/public/mobile/app.js';
+import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime, summarizeAlerts, summarizeTaskColumns } from '../src/dashboard/public/mobile/app.js';
+import { buildTaskBoard } from '../src/dashboard/public/tasks-model.js';
 import { resolveMagicHost, bootstrapUrl, serveArgs, run as serveRun } from '../scripts/mesh-mobile-serve.mjs';
 
 // ---- app.js pure helpers ----
@@ -94,6 +95,20 @@ test('summarizeAlerts ranks by severity with colour; empty → placeholder', () 
   assert.ok(card.rows[0].label.includes('conformance fail'));
   assert.equal(summarizeAlerts([]).rows[0].value, '—');
   assert.equal(summarizeAlerts(undefined).rows[0].cls, 'muted');
+});
+
+test('summarizeTaskColumns → one card per non-empty state with ticket rows', () => {
+  const board = buildTaskBoard([
+    { id: 'a-b-1', from: 'a', to: 'b', title: 'Run suite', state: 'assigned', history: [] },
+    { id: 'a-b-2', from: 'a', to: 'b', title: 'Done thing', state: 'done', result: 'ok', history: [] },
+  ]);
+  const cards = summarizeTaskColumns(board);
+  const assigned = cards.find((c) => c.title.startsWith('Assigned'));
+  assert.ok(assigned.rows.some((r) => r.label.includes('Run suite')));
+  const done = cards.find((c) => c.title.startsWith('Done'));
+  assert.ok(done && done.rows[0].value.includes('✓'));
+  // empty input → a single "no tasks" card
+  assert.equal(summarizeTaskColumns(buildTaskBoard([]))[0].rows[0].value, '—');
 });
 
 // ---- mesh-mobile-serve helpers ----

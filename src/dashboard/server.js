@@ -35,6 +35,7 @@ import { extractSkillSummary, listLocalSkills } from '../agent-context.js';
 import { createConsoleBroker, ConsoleError } from './console.js';
 import { createConcierge, ConciergeError } from './concierge.js';
 import { readAlerts } from '../concierge/alerts-store.js';
+import { listTasks } from '../board/store.js';
 import { createMeshWatcher } from './watcher.js';
 import { buildActivity } from './activity.js';
 import { buildActivityStats, rangeBounds } from './activity-stats.js';
@@ -2670,6 +2671,14 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
   if (pathname === '/api/concierge/alerts' && req.method === 'GET') {
     const { alerts } = await readAlerts(meshRoot);
     sendJson(res, 200, { ok: true, alerts });
+    return;
+  }
+
+  // Read-only A2A task board (the mesh's ticket system). listTasks is tolerant:
+  // returns [] when there is no board dir yet. Grouping is done client-side.
+  if (pathname === '/api/board/tasks' && req.method === 'GET') {
+    const tasks = await listTasks(meshRoot);
+    sendJson(res, 200, { ok: true, tasks });
     return;
   }
 

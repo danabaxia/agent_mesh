@@ -1,0 +1,21 @@
+/* tasks-view.css — A2A task board (read-only kanban) */
+#view-tasks { padding: 18px 22px; overflow: auto; }
+#view-tasks .tv-loading { color: #8a99b0; padding: 24px; }
+#view-tasks .tv-head h2 { margin: 0 0 14px; font-size: 18px; }
+#view-tasks .tv-sub { color: #8a99b0; font-size: 13px; font-weight: 400; }
+#view-tasks .tv-cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
+#view-tasks .tv-col { background: #f7f5ef; border: 1px solid #e4ddca; border-radius: 12px; padding: 10px; min-width: 0; }
+#view-tasks .tv-colhead { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; display: flex; justify-content: space-between; }
+#view-tasks .tv-count { color: #8a99b0; }
+#view-tasks .tv-card { background: #fff; border: 1px solid #e4ddca; border-radius: 9px; padding: 9px 11px; margin-bottom: 8px; cursor: pointer; }
+#view-tasks .tv-card:hover { border-color: #2bb89a; }
+#view-tasks .tv-title { font-weight: 600; font-size: 14px; margin-bottom: 5px; overflow-wrap: anywhere; }
+#view-tasks .tv-meta { display: flex; justify-content: space-between; gap: 8px; color: #8a99b0; font-size: 12px; }
+#view-tasks .tv-empty { color: #b9b09a; text-align: center; padding: 6px; }
+#view-tasks .tv-detail { margin-top: 16px; background: #fff; border: 1px solid #e4ddca; border-radius: 12px; padding: 14px 16px; }
+#view-tasks .tv-dhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+#view-tasks .tv-close { margin-left: auto; border: none; background: none; font-size: 20px; cursor: pointer; color: #8a99b0; }
+#view-tasks .tv-field { margin: 8px 0; }
+#view-tasks .tv-field span { font-size: 12px; color: #8a99b0; text-transform: uppercase; letter-spacing: .4px; }
+#view-tasks .tv-field p { margin: 3px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+#view-tasks .tv-hist { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: #4a5468; }
