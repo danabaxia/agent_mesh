@@ -111,6 +111,21 @@ export function summarizeAlerts(alerts) {
   return { title: 'Alerts', rows: list.map((a) => ({ label: a.summary || a.kind || a.id, value: a.severity, cls: sev[a.severity] || '' })) };
 }
 
+/**
+ * Build phone Task Board cards from a built board ({columns}). One card per non-empty
+ * state column; each ticket a row. Pure (no import) so the node test can load app.js.
+ */
+export function summarizeTaskColumns(board) {
+  const fmtAge = (ms) => { const s = Math.max(0, Math.round((ms || 0) / 1000));
+    return s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)}m` : s < 86400 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`; };
+  const cols = (board?.columns ?? []).filter((c) => c.cards.length);
+  if (!cols.length) return [{ title: 'Tasks', rows: [{ label: 'No tasks yet', value: '—', cls: 'muted' }] }];
+  return cols.map((c) => ({
+    title: `${c.label} (${c.cards.length})`,
+    rows: c.cards.map((card) => ({ label: `${card.title} · ${card.from}→${card.to}`, value: fmtAge(card.ageMs) + (card.hasResult ? ' ✓' : ''), cls: '' })),
+  }));
+}
+
 // --------------------------------------------------------------------------
 // DOM wiring (browser only)
 // --------------------------------------------------------------------------
@@ -256,8 +271,10 @@ function mount() {
       $('view-chat').classList.toggle('active', view === 'chat');
       $('view-status').classList.toggle('active', view === 'status');
       $('view-alerts').classList.toggle('active', view === 'alerts');
+      $('view-tasks').classList.toggle('active', view === 'tasks');
       if (view === 'status') loadStatus();
       if (view === 'alerts') loadAlerts();
+      if (view === 'tasks') loadTasks();
     };
   });
 
@@ -277,7 +294,15 @@ function mount() {
     renderCards(box, [summarizeAlerts(data?.alerts)]);
   };
 
-  $('refresh').onclick = () => { loadStatus(); loadAlerts(); };
+  const loadTasks = async () => {
+    const box = $('tasks');
+    box.innerHTML = '<div class="card muted">Loading…</div>';
+    const { buildTaskBoard } = await import('/tasks-model.js');   // browser-only; absolute path served by the dashboard
+    const data = await get('/api/board/tasks');
+    renderCards(box, summarizeTaskColumns(buildTaskBoard(data?.tasks ?? [])));
+  };
+
+  $('refresh').onclick = () => { loadStatus(); loadAlerts(); loadTasks(); };
 
   // Pre-hydrate from server-side history; show greeting only when starting fresh.
   loadThreadHistory(thread, addBubble, { limit: 40 }).then((loaded) => {
