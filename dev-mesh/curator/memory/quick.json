@@ -1422,6 +1422,17 @@
       "ts": "2026-06-21"
     }
   },
+  "dev-mesh-agent-path-convention": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New dev-mesh agents live at dev-mesh/<name>/ directly — not dev-mesh/agents/<name>/; wrong path breaks doctor wiring.",
+    "l1": "PR #377: concierge was first placed at dev-mesh/agents/concierge/ then moved to dev-mesh/concierge/ to match mesh root convention. All agents are direct subdirs of dev-mesh/ (not an agents/ intermediate dir). doctor's add/validate/doctor commands enumerate direct subdirs as agents; intermediate nesting breaks conformance checks, registry.json absolute spawn paths, peer-bridge .mcp.json MESH_ROOT stamps, and board-notify hook paths.",
+    "value": "Apply when adding any new dev-mesh agent role:\n\n(1) Path: create at dev-mesh/<name>/ (direct subdir of mesh root), NOT dev-mesh/agents/<name>/. doctor treats each direct subdir of the mesh root as a candidate agent directory; any deeper nesting makes it invisible to validate/add/doctor commands.\n\n(2) Implication: generated wiring files embed absolute paths including the agent root. An agent placed at dev-mesh/agents/concierge/ will have registry.json peer entries pointing to $MESH_ROOT/agents/concierge/ — not the canonical form. Re-running doctor --apply after moving fixes all generated wiring, but move rich content (AGENT.md, agent.json, prompts/) manually before running doctor so it does not overwrite.\n\n(3) Detection: run agent-mesh validate dev-mesh → Conformance: OK when all agents are at the correct depth. A 'directory not found' or conformance failure on a newly-added agent almost always means path depth is wrong.\n\n(4) Recovery: (a) cp -r dev-mesh/agents/<name> dev-mesh/<name>; (b) rm -rf dev-mesh/agents/ (or just the wrong subdir); (c) update mesh.json roster and wiring test paths; (d) re-run doctor --apply to regenerate absolute-path wiring.\n\n(5) Convention: the directory name (e.g. concierge) becomes the agent's canonical peer name in registry.json, mesh.json, and board identity. Keep it lowercase, no separators — matches all 10 existing dev-mesh agents (tester, triager, analyst, maintainer, orchestrator, coder, reviewer, curator, security, concierge).\n\nRelated: new-agent-scaffold-completeness (scaffold dirs), doctor-apply-on-framework-upgrade (re-run doctor after framework changes). Provenance: PR #377 (2026-06-22) — fix commit: 'agent lives at dev-mesh/concierge (not dev-mesh/agents/) — match mesh root convention'.",
+    "provenance": {
+      "source": "PR #377: feat(concierge): promote the concierge to a first-class mesh agent — fix commit corrected path convention",
+      "ts": "2026-06-22"
+    }
+  },
   "concurrent-api-form-unify": {
     "status": "active",
     "valid_to": null,
