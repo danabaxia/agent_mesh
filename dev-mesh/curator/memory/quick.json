@@ -1599,5 +1599,16 @@
       "source": "PR #419: fix(classify): add HTTP 529 / api-overloaded patterns to INFRA_RE (closes #418)",
       "ts": "2026-06-22"
     }
+  },
+  "ci-prompt-forbid-unqualified-bash": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "CI agent prompts: HARD RULE must forbid /fewer-permission-prompts + unqualified Bash on ephemeral runners.",
+    "l1": "On ephemeral CI runners, skills that shell out to read local state (e.g. /fewer-permission-prompts reads transcripts/settings via unqualified Bash) produce 8–12 permission denials per run when only Bash(gh:*)/Bash(git:*) is granted, and write a .claude/settings.json the runner discards. Accumulated denials fail the agent-postrun health gate (RED). Root: model reaches for the skill unprompted to reduce noise. Fix: HARD RULE in the prompt explicitly forbidding the skill and unqualified Bash, plus a YAML comment explaining why. Enforcement is prompt-level (soft). PR #422.",
+    "value": "For any CI workflow agent (intake, review, backlog, etc.) operating with restricted Bash grants (Bash(gh:*) + Bash(git:*)): add a named HARD RULE to the prompt explicitly prohibiting (1) the /fewer-permission-prompts skill and (2) unqualified Bash invocations.\n\nInclude a YAML comment above the allowedTools line explaining why — e.g. 'the skill shells out to read settings/transcript files (Bash beyond the gh/git grants) and writes an allowlist into .claude/settings.json that the ephemeral CI runner discards — so it only burns turns and accrues denials until the gate fails.'\n\nPattern: comment sits above the claude_args: block; HARD RULE sits in the prompt: block near the tool-grant section.\n\nThis is soft enforcement (prompt-level) — the model can still disobey. If denials recur after adding the HARD RULE, escalate to removing the skill from the allowed tool surface entirely (tool-grant removal = hard guarantee).\n\nGeneralizes: any skill that writes local filesystem state on an ephemeral runner wastes turns and accrues denials — enumerate and forbid by name in the prompt.\n\nProvenance: PR #422 (2026-06-22), fixing Issue #421 (8–12 denials per dev-mesh-intake run).",
+    "provenance": {
+      "source": "PR #422: bug: dev-mesh-intake failing with 8–12 Bash permission denials on every scheduled run",
+      "ts": "2026-06-22"
+    }
   }
 }
