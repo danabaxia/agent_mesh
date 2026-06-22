@@ -1544,5 +1544,16 @@
       "source": "PR #407: spec: idea: SSE streaming task progress for HTTP A2A peers (#401)",
       "ts": "2026-06-22"
     }
+  },
+  "prompt-nudge-unit-test-gap": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Tool-description nudge: unit test proves the string exists, not the regression — close perf issues on eval re-run.",
+    "l1": "PR #406 / #404: quality_per_1k_tokens -16.9% in 3x-disjoint cell — model broadcast fan_out_to_peers for single-owner queries. Fix: 4-line description nudge steering model to prefer delegate_to_peer. Unit test asserts /prefer delegate_to_peer/i — proves the lever (string) exists, not that the model now routes better. Real evidence: re-run the eval-matrix cell, read agentmesh/metrics quality_per_1k_tokens. Close perf issues on the eval re-run, not on green unit tests.",
+    "value": "Tool-description nudge pattern for model behavioral performance regressions:\n\n(1) Identify the over-routing anti-pattern\nWhen the model consistently uses a high-cost tool (fan_out_to_peers: spawns 1 worker per peer) for queries that a single targeted peer could answer, the result is N× token cost for no quality gain. Signal: drop in quality_per_1k_tokens in a disjoint routing eval cell.\n\n(2) Minimal lever: add guidance to the tool description\nA 3-5 sentence nudge in the tool's description string steers the model to the cheaper path without changing behavior, schema, or invariants. Example (PR #406): appended 'Prefer delegate_to_peer when ONE peer clearly owns the domain (see list_peers): fan-out spawns a worker per peer, so broadcasting a query only one peer can answer multiplies token cost for no quality gain. Reserve fan_out_to_peers for genuinely redundant/best-of-N, adversarial, or multi-domain queries where each peer adds value.'\n\n(3) Test what you can, but be honest about what the test proves\nWrite a unit test asserting the nudge string is present (e.g., assert.match(tool.description, /prefer delegate_to_peer/i)). This proves the lever exists and prevents accidental removal — it does NOT prove the regression is reversed. A passing unit test closes nothing.\n\n(4) Real evidence: eval-matrix re-run\nRe-run the affected eval-matrix cell (e.g. 3x-disjoint) and read agentmesh/metrics quality_per_1k_tokens from the run record. Only a recovered metric justifies closing the perf issue.\n\n(5) Issue lifecycle\nDo NOT close the perf issue on green CI. Close it on the eval re-run confirming the metric recovered. If the nudge is insufficient, escalate to a behavioral mechanism (e.g. a pre-flight warning or cap).\n\nProvenance: PR #406 (2026-06-22), closes #404 (quality_per_1k_tokens -16.9% in 3x-disjoint cell).",
+    "provenance": {
+      "source": "PR #406: [mesh-scan] perf-regression: quality_per_1k_tokens regressed (-16.9%) (#404)",
+      "ts": "2026-06-22"
+    }
   }
 }
