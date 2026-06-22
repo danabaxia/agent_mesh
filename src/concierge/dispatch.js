@@ -5,6 +5,8 @@
  *
  * Spec: docs/superpowers/specs/2026-06-21-concierge-mesh-agent-design.md
  */
+import { extractTaskText } from '../a2a/protocol.js';
+
 export class DispatchError extends Error {
   constructor(message, { status = 400 } = {}) { super(message); this.name = 'DispatchError'; this.status = status; }
 }
@@ -52,5 +54,5 @@ export async function dispatchAction({ action, payload = {}, meshRoot, deps }) {
   const task = String(payload.task ?? '').trim();
   if (!task) throw new DispatchError('task required', { status: 400 });
   const res = await broker.send({ agentName: peer, mode: 'ask', text: task });
-  return { ok: true, kind: 'ask_peer_rerun', peer, summary: res?.task?.summary ?? '' };
+  return { ok: true, kind: 'ask_peer_rerun', peer, summary: extractTaskText(res?.task) };
 }

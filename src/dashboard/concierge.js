@@ -29,6 +29,7 @@ import { spawnFile } from '../process.js';
 import { READ_TOOLS, DEFAULT_CONCIERGE_HISTORY_MAX, DEFAULT_CONCIERGE_CONTEXT_TURNS } from '../config.js';
 import { dispatchAction } from '../concierge/dispatch.js';
 import { createTask as boardCreateTask } from '../board/store.js';
+import { extractTaskText } from '../a2a/protocol.js';
 
 // The served mesh agent the dashboard routes phone chat to (when a broker is wired).
 const CONCIERGE_AGENT = 'concierge';
@@ -324,7 +325,8 @@ export function createConcierge({
         const agentText = turns ? `${turns}\nOwner: ${text.trim()}` : text.trim();
         try {
           const res = await broker.send({ agentName: CONCIERGE_AGENT, mode: 'ask', text: agentText, signal });
-          replyRaw = res?.task?.summary ?? '';
+          // The A2A Task carries the summary in artifacts[].parts[].text, not .summary.
+          replyRaw = extractTaskText(res?.task);
         } catch (e) {
           throw new ConciergeError(`concierge agent error: ${e.message}`, { status: 502 });
         }
