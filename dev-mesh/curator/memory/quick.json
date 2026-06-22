@@ -1454,5 +1454,16 @@
       "source": "PR #381: feat(taskboard): A2A Task Board view — read-only ticket kanban (desktop + phone)",
       "ts": "2026-06-22"
     }
+  },
+  "phone-board-orchestrator-team-lead": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Phone task → board ticket → orchestrator team-lead: daemon triggers, agent conducts team (ask-only fanOutToPeers).",
+    "l1": "PR #383: When a phone message requests substantive work, concierge routes via assign_task to the orchestrator (not a specialist). The orchestrator is the team lead — owns its board ticket (assigned→done) and coordinates specialists via a conductor workflow + parallel fanOutToPeers (ask-only). Daemon schedules board-drive (every 10min) as the trigger-only mechanism; the agent executes the workflow. Status reuses the existing Task Board surface — desktop board2 refresh() + phone pickPoll (15s, visibility-aware) — no new HTTP routes.",
+    "value": "Apply when wiring phone-initiated substantive tasks into an autonomous agent team:\n\n(1) Routing persona: update the concierge prompt to distinguish chat/status queries (answer inline) from substantive work/build/investigate requests. Substantive → assign_task to the orchestrator peer. Never route directly to specialists — the orchestrator is the coordination layer.\n\n(2) Team-lead board pickup: the orchestrator has a daemon-scheduled board-drive delegate job (kind:delegate, every:10, in schedule.json). Its prompt lists its tasks (list_my_tasks), acknowledges, runs a staged conductor workflow (analyst/coder/tester/reviewer phases), fans out to specialists via fanOutToPeers (ask-only), synthesizes results, and advances its OWN ticket (only the `to` agent may advance).\n\n(3) Daemon triggers, agent works: the scheduler fires board-drive on cadence (agent-driven autonomy); the agent decides what to do. This keeps the daemon thin — schedule.json contains only the firing cadence and prompt, not the logic.\n\n(4) Status reuse: No new API route needed. Desktop Task Board (board2.js) already has a refresh() loop (SSE+30s). Phone (mobile/app.js) uses pickPoll — polls the active data tab at 15s, paused on document.hidden. Add the Tasks tab to the poll targets and the board updates live.\n\n(5) Ask-only discipline: all specialist delegation is ask-only. do-mode for the orchestrator (running the team workflow) is valid; do-mode for the specialists is deferred. Board invariants unchanged: identity framework-set, only `to` advances, brief is data.\n\nRelated: task-board-interactive-handoff (board fundamentals), scheduler-builtin-for-native-jobs (kind:delegate vs kind:builtin). Provenance: PR #383 (2026-06-22).",
+    "provenance": {
+      "source": "PR #383: feat(board-pipeline): orchestrator team-lead — phone task → autonomous team workflow → live status",
+      "ts": "2026-06-22"
+    }
   }
 }
