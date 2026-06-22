@@ -174,6 +174,26 @@ test('MODEL: every workflow uses the DEV_MESH_MODEL repo variable (Sonnet fallba
   }
 });
 
+test('RETRY BACKOFF: every workflow using claude-code-action has the backoff step immediately before it', () => {
+  // The mesh-retry-backoff composite action sleeps 3–5 min with jitter when
+  // github.run_attempt > 1 — preventing a 529-overloaded re-run from hammering
+  // the API before back-off. It MUST precede the claude step so the delay fires
+  // before the invocation, not after. Assert both presence and ordering for all
+  // 11 workflows that use anthropics/claude-code-action.
+  let checked = 0;
+  for (const n of ALL_NAMES) {
+    const body = allWf[n];
+    if (!/anthropics\/claude-code-action/.test(body)) continue;
+    checked++;
+    assert.match(body, /mesh-retry-backoff/, `dev-mesh-${n}.yml: must include the mesh-retry-backoff step`);
+    const lines = body.split('\n');
+    const backoffIdx = lines.findIndex((l) => /mesh-retry-backoff/.test(l));
+    const claudeIdx = lines.findIndex((l) => /anthropics\/claude-code-action/.test(l));
+    assert.ok(backoffIdx < claudeIdx, `dev-mesh-${n}.yml: mesh-retry-backoff must precede anthropics/claude-code-action`);
+  }
+  assert.equal(checked, 11, `expected exactly 11 workflows with claude-code-action, saw ${checked}`);
+});
+
 test('HONESTY GATE: every agent workflow fails on an errored/no-op model run', () => {
   // green job != healthy run — each workflow must verify its agent actually worked
   // (claude-code-action reports success even when the model errored instantly).

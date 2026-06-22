@@ -66,6 +66,34 @@ test('gate: an errored run is fatal (exit 1)', () => {
   assert.match(r.stderr, /errored/);
 });
 
+test('gate: a 529-overloaded run emits infra_auth annotation and exits 1', () => {
+  const env = {
+    type: 'result',
+    is_error: true,
+    num_turns: 1,
+    total_cost_usd: 0,
+    result: 'error: HTTP 529 overloaded',
+  };
+  const r = runGate(env);
+  assert.equal(r.code, 1, '529 run must still be fatal');
+  assert.match(r.stderr, /infra_auth/, '529 must emit the infra_auth annotation');
+  assert.doesNotMatch(r.stderr, /\berror::agent run unhealthy\b/, '529 must not emit the generic errored message');
+});
+
+test('gate: overload_error in output emits infra_auth annotation and exits 1', () => {
+  const env = {
+    type: 'result',
+    is_error: true,
+    num_turns: 1,
+    total_cost_usd: 0,
+    result: 'Claude API error: overload_error — please retry',
+  };
+  const r = runGate(env);
+  assert.equal(r.code, 1, 'overload_error run must still be fatal');
+  assert.match(r.stderr, /infra_auth/, 'overload_error must emit the infra_auth annotation');
+  assert.doesNotMatch(r.stderr, /\berror::agent run unhealthy\b/, 'overload_error must not emit the generic errored message');
+});
+
 test('gate: a no-op run (0 turns) is fatal (exit 1)', () => {
   const r = runGate({ type: 'result', is_error: false, num_turns: 0, total_cost_usd: 0 });
   assert.equal(r.code, 1);
