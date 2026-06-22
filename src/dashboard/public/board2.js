@@ -75,6 +75,9 @@ export async function refresh() {
   USAGE = await usageP;
   setWorkspaceMesh(MESH);
   renderPills(); renderKpis(); renderCards(); renderLane(); renderTimeline(); renderNetwork();
+  // Keep the Task Board live: re-render it on each refresh while it's the active view.
+  const tasksEl = document.querySelector('#view-tasks');
+  if (tasksEl && tasksEl.classList.contains('on')) renderTasksView(tasksEl);
 }
 
 function renderPills() {
