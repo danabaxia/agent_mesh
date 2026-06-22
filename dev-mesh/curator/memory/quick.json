@@ -1488,5 +1488,16 @@
       "source": "PR #387: fix(concierge): route durable board tickets to the team lead — stop driverless stalls",
       "ts": "2026-06-22"
     }
+  },
+  "ios-tts-gesture-unlock": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "iOS Safari TTS: unlock with a silent utterance in a tap before async speak() — post-fetch callbacks silently drop TTS.",
+    "l1": "PR #391: concierge voice reply was silently dropped on iOS — `speechSynthesis.speak()` called in a post-`fetch` callback is outside a user gesture; iOS Safari discards it. Fix: `engine.unlock()` primes a silent (volume 0) utterance inside the mic tap, satisfying iOS's requirement. All subsequent async `speak()` calls work for the session. Idempotent — no-op where TTS is already unlocked. Also: a 🔊 'read replies aloud' toggle persists to localStorage, enabling voice-out on typed turns too. Spoken when `speakReplies || lastWasVoice`.",
+    "value": "Apply when adding TTS (Text-to-Speech) to a mobile PWA or web app that uses fetch-based async flows:\n\n(1) GESTURE-UNLOCK PATTERN: iOS Safari requires `speechSynthesis.speak()` to be triggered — directly or via a short chain — from a user gesture. A post-fetch callback is NOT a user gesture. Fix: call `engine.unlock()` inside a tap/click handler. `unlock()` primes a silent (volume 0) utterance in that gesture, satisfying iOS's requirement for the rest of the session. Make it idempotent (guard with `if (this._unlocked) return`).\n\n```js\nunlock() {\n  if (this._unlocked || !window.speechSynthesis) return;\n  const u = new SpeechSynthesisUtterance(' ');\n  u.volume = 0;\n  window.speechSynthesis.speak(u);\n  this._unlocked = true;\n}\n```\n\n(2) WHERE TO CALL UNLOCK: call on the user action that initiates voice (mic tap, voice-toggle click). This gives the engine its gesture budget before the async reply arrives. The unlock is a one-time session setup, not a per-utterance call.\n\n(3) READBACK TOGGLE: pair the gesture-unlock with a 🔊 'read replies aloud' toggle (persisted in `localStorage`). This makes reply-voice a first-class opt-in visible to users who don't know to tap the mic. When the toggle is on, ALL replies are read aloud (including typed turns). Read back when `speakReplies || lastWasVoice`.\n\n(4) TOGGLE OFF: cancel in-flight TTS with `window.speechSynthesis.cancel()` when the toggle is switched off mid-reply.\n\n(5) TEST IMPLICATIONS: the unlock is a behavior the test fake must model. In unit tests: assert `unlock()` calls `speak()` once with a silent utterance, is idempotent (second call is no-op), and is a no-op when `speechSynthesis` is absent.\n\n(6) PATTERN GENERALIZES: the gesture-budget trick applies to any browser API that requires a synchronous user-gesture touch before async use. `AudioContext` also requires `context.resume()` in a gesture before async playback. Prime in the tap handler; consume asynchronously.\n\nRelated: ios-cookie-redirect-drop (other iOS Safari async surprises), pwa-voice-swappable-adapter (the adapter interface this unlock slot into). Provenance: PR #391 (2026-06-22).",
+    "provenance": {
+      "source": "PR #391: fix(pwa): make the concierge reply actually speak — iOS TTS unlock + 🔊 readback toggle",
+      "ts": "2026-06-22"
+    }
   }
 }
