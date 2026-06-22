@@ -6,6 +6,7 @@ import { openWorkspace, closeWorkspace, selectTab, setWorkspaceMesh, launchTermi
 import { createNetGraph } from '/net-graph.js';
 import { renderGraphView } from '/graph-view.js';
 import { renderHealthView, stopHealthView } from '/health-view.js';
+import { renderTasksView } from '/tasks-view.js';
 import { seedRng, markRenderSettled } from '/e2e-mode.js';
 
 // e2e/visual determinism (Plan 3): no-op unless ?e2e=1. Seed Math.random BEFORE
@@ -36,6 +37,20 @@ function openHealthView() {
 function closeHealthView() {
   stopHealthView();
   document.querySelector('#view-health').classList.remove('on');
+  document.querySelector('#view-board').classList.add('on');
+}
+
+// ── top-level Task Board view (read-only A2A ticket kanban) ──────────────────
+function openTasksView() {
+  document.querySelector('#view-board').classList.remove('on');
+  document.querySelector('#view-ws').classList.remove('on');
+  document.querySelector('#view-graph').classList.remove('on');
+  document.querySelector('#view-health').classList.remove('on');
+  document.querySelector('#view-tasks').classList.add('on');
+  renderTasksView(document.querySelector('#view-tasks'));
+}
+function closeTasksView() {
+  document.querySelector('#view-tasks').classList.remove('on');
   document.querySelector('#view-board').classList.add('on');
 }
 
@@ -154,9 +169,10 @@ document.addEventListener('click', (e) => {
   const tv = e.target.closest('[data-topview]');
   if (tv) {
     const v = tv.dataset.topview;
-    closeGraphView(); closeHealthView();          // leave whichever top-view is open (idempotent)
+    closeGraphView(); closeHealthView(); closeTasksView();   // leave whichever top-view is open (idempotent)
     if (v === 'graph') openGraphView();
     else if (v === 'health') openHealthView();
+    else if (v === 'tasks') openTasksView();
     // v === 'board' → both closes already restored the board
     return;
   }

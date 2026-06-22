@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/board2-session.css">
 <link rel="stylesheet" href="/graph-view.css">
 <link rel="stylesheet" href="/health-view.css">
+<link rel="stylesheet" href="/tasks-view.css">
 </head>
 <body>
 
@@ -25,6 +26,7 @@
   <div class="bview"><span class="on" data-bv="cards">▦ cards</span><span data-bv="net">◉ network</span></div>
   <button class="hbtn" data-topview="graph" title="live graph view — mesh activity, tokens, issues/PRs">✦ graph</button>
   <button class="hbtn" data-topview="health" title="vital signs — liveness, activity history, health report">✚ health</button>
+  <button class="hbtn" data-topview="tasks" title="A2A task board — the mesh's ticket system">🎫 tasks</button>
   <button class="hbtn">＋ Add agent</button>
 </header>
 
@@ -88,6 +90,8 @@
 
 <!-- ═══════════════ VIEW 4: HEALTH (top-level vital-signs view) ═══════════════ -->
 <div class="view" id="view-health"></div>
+
+<div class="view" id="view-tasks"></div>
 
 <!-- session-log.js stays loaded: session-view.js imports transcriptWindowUrl/
      streamUrl from it (its only import-time side effect is window.mountSessionLog). -->
