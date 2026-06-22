@@ -61,3 +61,24 @@ config, trimmed-transcript delivery, `onend` reset / no double-start, stop, erro
 surfacing, TTS cancel-then-speak with inferred language, explicit-lang + empty-text
 guards, and the `sttLang` / `ttsLangFor` language maps. The DOM wiring follows the
 existing browser-only `mount()` pattern (guarded by `typeof document`).
+
+## 8. Addendum — reply readback actually fires (iOS fix + explicit toggle)
+
+The first cut read the reply aloud only on voice-initiated turns, and the readback
+ran **after the async reply** — so on **iOS Safari it was silently blocked**:
+`speechSynthesis.speak()` only works once it has fired inside a user gesture, and a
+post-`fetch` callback is not a gesture. Net effect: "voice reply missing."
+
+Fix:
+- **`engine.unlock()`** — primes a silent (`volume 0`) utterance; call it from a tap
+  handler to satisfy the iOS gesture requirement, after which later async `speak()`
+  calls work for the session. Idempotent; a no-op where unneeded.
+- It is called on the **🎤 mic tap** (so voice-in→voice-out speaks on iOS) and on the
+  new **🔊 readback toggle** tap.
+- **🔊 "read replies aloud" toggle** — makes reply-voice a first-class, discoverable
+  feature: when on, every reply is read aloud regardless of input method (so a *typed*
+  question can still be answered by voice). Persisted in `localStorage`; shown whenever
+  TTS is supported (decoupled from STT). A reply is spoken when `speakReplies ||
+  lastWasVoice`. Turning it off cancels any in-flight readback.
+
+Tests: `unlock` primes once / silently / idempotently, and is a no-op without TTS.

@@ -85,5 +85,23 @@ export function createVoiceEngine(env = (typeof globalThis !== 'undefined' ? glo
     if (ttsSupported) { try { synth.cancel(); } catch { /* idempotent */ } }
   }
 
-  return { sttSupported, ttsSupported, startListening, stopListening, isListening, speak, cancelSpeak };
+  // iOS Safari blocks speechSynthesis.speak() unless it has fired once inside a
+  // user gesture. Our reply readback runs AFTER an async fetch (not a gesture), so
+  // without this it silently never speaks. Call unlock() from a tap handler (mic /
+  // readback toggle) to prime a silent utterance — then later async speak() works
+  // for the session. Idempotent; harmless on browsers that don't need it.
+  let unlocked = false;
+  function unlock() {
+    if (!ttsSupported || unlocked) return false;
+    try {
+      const u = new Utter('');
+      u.volume = 0;
+      synth.speak(u);
+      unlocked = true;
+      return true;
+    } catch { return false; }
+  }
+  function isUnlocked() { return unlocked; }
+
+  return { sttSupported, ttsSupported, startListening, stopListening, isListening, speak, cancelSpeak, unlock, isUnlocked };
 }
