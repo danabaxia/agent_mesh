@@ -1476,5 +1476,17 @@
       "source": "PR #388: feat(pwa): bidirectional voice for the mobile concierge — mic STT + reply TTS",
       "ts": "2026-06-22"
     }
+  },
+  "board-ticket-daemon-driver-only": {
+    "status": "active",
+    "valid_to": null,
+    "core": false,
+    "l0": "Only daemon-driver agents reliably pick up board tickets in headless — session-hook specialists stall at acknowledged.",
+    "l1": "PR #387: concierge's assign_task routed to 'analyst' — a session-hook-only specialist. The board-notify SessionStart hook fires only in interactive sessions; silent in headless deploy. Only the orchestrator has a daemon-scheduled board-drive job (every 10min in schedule.json). Ticket stuck ~3h at 'acknowledged'. Health Vitals flags this CRITICAL, but prevent-at-source beats detect-after-stall.",
+    "value": "Gate assign_task (dispatch.js) to board lead only (orchestrator/deps.boardLead). Reject other peers with an error naming ask_peer_rerun for synchronous one-off asks. Invariant: board tickets go only to agents with a daemon board-drive cadence in schedule.json — never session-hook-only agents. Tests: lead-accept, specialist-reject, configurable boardLead dep. Provenance: PR #387 (2026-06-22).",
+    "provenance": {
+      "source": "PR #387: fix(concierge): route durable board tickets to the team lead — stop driverless stalls",
+      "ts": "2026-06-22"
+    }
   }
 }
