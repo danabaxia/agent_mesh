@@ -1466,6 +1466,17 @@
       "ts": "2026-06-22"
     }
   },
+  "pwa-voice-swappable-adapter": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "PWA voice: put STT+TTS behind a fixed adapter interface — swap cloud vs native without touching UI.",
+    "l1": "PR #388: `createVoiceEngine` wraps Web Speech API (STT+TTS) in a stable interface; a cloud engine (OpenAI/ElevenLabs) replaces only this module without UI changes. DOM-free + injectable → zero-dep L0 tests with fake SpeechRecognition/speechSynthesis. Voice-in → voice-out auto-read; typed turns stay silent. TTS language auto-inferred from content (CJK→zh-CN, else en-US); STT language is a manual toggle (native engines weak on mixed zh/en).",
+    "value": "Apply when adding voice to a browser PWA or web app:\n\n(1) Adapter interface: define `createVoiceEngine(opts)` returning `{ start(), stop(), sttSupported, onresult, onerror, onend }`. Back it with native Web Speech API on first ship. The stable interface means a cloud engine (OpenAI Whisper/TTS, ElevenLabs) can replace only this module later — UI, app.js, and tests never change.\n\n(2) DOM-free + injectable: the adapter must not access DOM directly; inject any needed DOM refs as opts. This makes it testable with a fake: set `global.SpeechRecognition` / `global.speechSynthesis` in tests, covering support detection (incl. `webkitSpeechRecognition` for iOS Safari), single-utterance config, trimmed transcript, `onend` reset, stop, error surfacing, TTS cancel-then-speak, and language inference. Zero deps needed.\n\n(3) Voice-in → voice-out only: only voice-initiated turns trigger TTS readback; typed turns stay silent. Prevents unwanted audio for users who type into a voice-enabled UI. Implement by flagging whether the last send was voice-triggered.\n\n(4) Language handling: native STT engines are weak at mixed-language input (e.g. zh/en code-switching). Use a manual lang chip/toggle for STT. TTS can be auto-inferred from the reply text: if CJK characters present → `zh-CN`, else `en-US` (or primary locale). Keep inference as a pure function for easy unit testing.\n\n(5) Feature gating: hide mic UI (button + lang chip) when `sttSupported` is false. Never hard-fail when speech APIs are absent — degrade gracefully to text-only.\n\n(6) Auth path unchanged: voice fills the existing text input and sends via the existing message API. No new server permissions required beyond the browser's own mic prompt.\n\nProvenance: PR #388 (2026-06-22) — feat(pwa): bidirectional voice for the mobile concierge.",
+    "provenance": {
+      "source": "PR #388: feat(pwa): bidirectional voice for the mobile concierge — mic STT + reply TTS",
+      "ts": "2026-06-22"
+    }
+  },
   "board-ticket-daemon-driver-only": {
     "status": "active",
     "valid_to": null,
