@@ -1577,5 +1577,16 @@
       "source": "PR #414: spec: Add a fast-path for unambiguous (disjoint) routing — 3x-disjoint burns ~30s for a perfect route (#413)",
       "ts": "2026-06-22"
     }
+  },
+  "perf-baseline-compare-before-update": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Baseline drift detection: compare against old baseline before rolling forward; cold-start → info, never warning.",
+    "l1": "PR #416 fixes 9 false-positive perf-cell warnings (baseline: null on first run). Two invariants: (1) Cold-start gate — no prior baseline → emit info, establish baseline, no warning. (2) Compare-then-update — evaluate current run against old baseline THEN roll forward; a regressing run cannot self-mask. (3) Direction-aware: latency/cost increase adverse; quality decrease adverse; improvements never flag.",
+    "value": "Apply whenever adding baseline-comparison drift detection to any metric store:\n\n(1) Cold-start guard:\n  if (!baseline[cell]) {\n    baseline[cell] = currentP50;  // establish\n    emit({ severity: \"info\", msg: \"baseline established\" });\n    return;  // no regression finding on first observation\n  }\n\n(2) Compare-then-update ordering (mandatory sequencing):\n  const delta = (current - baseline[cell]) / baseline[cell];  // compare first\n  if (isAdverse(metric, delta) && Math.abs(delta) > warnBudget) emit(finding);\n  baseline[cell] = rollingP50([...history, current]);  // update AFTER\n\n(3) Direction-aware adversity:\n  function isAdverse(metric, delta) {\n    return higherIsBetter(metric) ? delta < 0 : delta > 0;\n  }\n\nComplements mir-rolling-window-median-baseline (noise-resistant median selection) and mir-slow-drift-trend-gate (slow cumulative drift). The three lessons are additive: robust median → compare → trend trend-check.\n\nProvenance: PR #416 (2026-06-22), closes #412.",
+    "provenance": {
+      "source": "PR #416: spec: Persist a rolling perf baseline so mesh-improvement-report can actually detect drift (#412)",
+      "ts": "2026-06-22"
+    }
   }
 }
