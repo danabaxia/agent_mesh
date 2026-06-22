@@ -172,14 +172,16 @@ function mount() {
   const send = $('send');
   const micBtn = $('mic');
   const langBtn = $('lang');
+  const readBtn = $('readback');
   const history = [];   // {role, text} — pre-populated from server history on load
 
   // Voice I/O (mic STT → auto-send, reply auto-read TTS). Native Web Speech via the
-  // swappable voice-engine adapter. `lastWasVoice` makes auto-read fire only for a
-  // voice-initiated turn, so typed turns stay silent.
+  // swappable voice-engine adapter. A reply is read aloud when the 🔊 readback
+  // toggle is on (any input) OR the turn was voice-initiated (voice in → voice out).
   const voice = createVoiceEngine();
   let uiLang = 'en';
   let lastWasVoice = false;
+  let speakReplies = (() => { try { return localStorage.getItem('mesh_readback') === '1'; } catch { return false; } })();
 
   // Capture the bootstrap token from ?t= once and persist it, then send it as a
   // header on every API call. This makes auth work even if the device drops the
@@ -263,7 +265,7 @@ function mount() {
       typing.remove();
       addBubble('assistant', data.reply || '(no reply)');
       history.push({ role: 'assistant', text: data.reply || '' });
-      if (lastWasVoice) voice.speak(data.reply || '');   // voice in → voice out (screen still shows text)
+      if (speakReplies || lastWasVoice) voice.speak(data.reply || '');   // read reply aloud (screen still shows text)
       if (data.proposal) addProposalCard(data.proposal);
     } catch (err) {
       typing.remove();
@@ -278,6 +280,23 @@ function mount() {
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + 'px'; });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) submit(e); });
 
+  // 🔊 readback toggle — read every reply aloud (independent of mic input). Shown
+  // whenever TTS is supported. The tap is a user gesture, so it ALSO unlocks iOS
+  // speechSynthesis (which otherwise blocks the post-fetch readback — the "voice
+  // reply missing" bug). Persisted across sessions.
+  if (readBtn && voice.ttsSupported) {
+    readBtn.hidden = false;
+    const paintRead = () => { readBtn.classList.toggle('on', speakReplies); readBtn.setAttribute('aria-pressed', String(speakReplies)); };
+    paintRead();
+    readBtn.onclick = () => {
+      speakReplies = !speakReplies;
+      try { localStorage.setItem('mesh_readback', speakReplies ? '1' : '0'); } catch { /* private mode */ }
+      voice.unlock();                            // prime TTS within this gesture (iOS)
+      if (!speakReplies) voice.cancelSpeak();    // turning off stops any current readback
+      paintRead();
+    };
+  }
+
   // Voice controls: only shown when the browser supports speech recognition
   // (Chrome/Edge/Safari). The mic taps start/stop a single utterance; the lang
   // chip toggles the recognition language (native engines are weak at mixed zh/en).
@@ -289,6 +308,7 @@ function mount() {
     micBtn.onclick = () => {
       if (voice.isListening()) { voice.stopListening(); return; }
       voice.cancelSpeak();                       // stop any ongoing readback before listening
+      voice.unlock();                            // prime TTS in this gesture so voice-in→voice-out speaks on iOS
       micBtn.classList.add('listening');
       const started = voice.startListening({
         lang: sttLang(uiLang),

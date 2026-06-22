@@ -126,3 +126,23 @@ test('speak honors an explicit lang and ignores empty text', () => {
   e.speak('hi', { lang: 'en-GB' });
   assert.equal(f.spoken[0].lang, 'en-GB');
 });
+
+// ---- iOS readback unlock (the "voice reply missing" fix) ----
+
+test('unlock primes a silent utterance once so post-async readback works on iOS', () => {
+  const f = fakeSynth();
+  const e = createVoiceEngine({ speechSynthesis: f.speechSynthesis, SpeechSynthesisUtterance: f.SpeechSynthesisUtterance });
+  assert.equal(e.isUnlocked(), false);
+  assert.equal(e.unlock(), true);
+  assert.equal(f.spoken.length, 1, 'spoke a priming utterance');
+  assert.equal(f.spoken[0].volume, 0, 'silently (volume 0)');
+  assert.equal(e.isUnlocked(), true);
+  assert.equal(e.unlock(), false, 'idempotent — primes only once');
+  assert.equal(f.spoken.length, 1);
+});
+
+test('unlock is a no-op without TTS support', () => {
+  const e = createVoiceEngine({});
+  assert.equal(e.unlock(), false);
+  assert.equal(e.isUnlocked(), false);
+});
