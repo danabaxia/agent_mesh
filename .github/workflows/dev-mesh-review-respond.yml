@@ -91,6 +91,9 @@ jobs:
       - name: Check out the PR branch for the Coder
         if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
         run: git checkout "$PR_BRANCH" && git reset --hard "origin/$PR_BRANCH"
+      - name: Back-off on retry (jitter for 529 recovery)
+        if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
+        uses: ./.github/actions/mesh-retry-backoff
       - name: Drive Coder (address the review feedback)
         if: steps.pick.outputs.none != 'true' && env.BUDGET_EXHAUSTED != 'true'
         uses: anthropics/claude-code-action@v1

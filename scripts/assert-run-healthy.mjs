@@ -62,7 +62,22 @@ const health = classifyRunHealth(envelope);
 const FATAL = new Set(['errored', 'noop', 'unknown']);
 if (!advisoryBlocked) FATAL.add('blocked');
 if (!health.healthy && FATAL.has(health.status)) {
-  console.error(`::error::agent run unhealthy (${health.status}): ${health.reason}`);
+  // Detect transient Claude API 529 overload before emitting the generic error.
+  // A 529 shows as is_error:true with "529" or "overloaded" anywhere in the output
+  // (the CLI embeds the HTTP status in its error stream). Emit a distinct infra_auth
+  // annotation so the Triager classifies it correctly (not as a code/config bug),
+  // and add a hint to re-run with back-off via .github/actions/mesh-retry-backoff.
+  const raw = JSON.stringify(parsed).toLowerCase();
+  const is529 = raw.includes('529') || raw.includes('overloaded') || raw.includes('overload_error');
+  if (is529) {
+    console.error(
+      `::error title=infra_auth::Claude API overloaded (HTTP 529) — transient; re-run with back-off ` +
+      `(attempt ${ process.env.GITHUB_RUN_ATTEMPT || '?' }). ` +
+      `Use "Re-run failed jobs" in the Actions UI; .github/actions/mesh-retry-backoff adds jitter delay.`,
+    );
+  } else {
+    console.error(`::error::agent run unhealthy (${health.status}): ${health.reason}`);
+  }
   // Surface the captured run output for diagnosis (secrets are already masked by the
   // runner; this is the agent's own stream, the only place an error detail survives).
   const dump = JSON.stringify(parsed, null, 2);

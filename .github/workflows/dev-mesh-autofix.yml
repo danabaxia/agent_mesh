@@ -84,6 +84,9 @@ jobs:
           if [ -z "$CLEAN" ]; then echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required for autofix"; exit 1; fi
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
+      - name: Back-off on retry (jitter for 529 recovery)
+        if: env.BUDGET_EXHAUSTED != 'true'
+        uses: ./.github/actions/mesh-retry-backoff
       - name: Drive Triager + Coder (classify → fix the failing PR)
         if: env.BUDGET_EXHAUSTED != 'true'
         uses: anthropics/claude-code-action@v1
