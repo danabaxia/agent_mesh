@@ -217,6 +217,22 @@ function extractText(parts) {
     .trim();
 }
 
+/**
+ * Extract the human-readable summary text from a returned A2A Task. The delegate
+ * summary lives in `task.artifacts[].parts[].text` (artifact name 'summary'), NOT
+ * `task.summary` — callers that read `task.summary` get nothing. Returns '' if absent.
+ * @param {object} task  A2A Task
+ * @returns {string}
+ */
+export function extractTaskText(task) {
+  const artifacts = Array.isArray(task?.artifacts) ? task.artifacts : [];
+  for (const a of artifacts) {
+    const text = extractText(a?.parts);
+    if (text) return text;
+  }
+  return '';
+}
+
 function delegateStatusToTaskState(status) {
   if (status === 'done') return 'TASK_STATE_COMPLETED';
   if (status === 'refused') return 'TASK_STATE_REJECTED';

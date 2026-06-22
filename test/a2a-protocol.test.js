@@ -4,8 +4,17 @@ import {
   buildAgentCard,
   buildRejectedTask,
   buildTaskFromDelegateResult,
-  validateMessageSendParams
+  validateMessageSendParams,
+  extractTaskText
 } from '../src/a2a/protocol.js';
+
+test('extractTaskText reads the summary from artifacts[].parts[].text (not task.summary)', () => {
+  const task = buildTaskFromDelegateResult({ result: { status: 'done', summary: 'all good' }, message: { parts: [{ text: 'q' }] } });
+  assert.equal(extractTaskText(task), 'all good');
+  assert.equal(extractTaskText({ summary: 'ignored' }), '', 'task.summary is NOT the source');
+  assert.equal(extractTaskText(null), '');
+  assert.equal(extractTaskText({ artifacts: [] }), '');
+});
 
 test('buildTaskFromDelegateResult: timeout results carry agentmesh/error_code=timeout (a2a audit gap 2026-06-12)', () => {
   // A 613s timeout logged status=failed with error_code=null — timeouts have

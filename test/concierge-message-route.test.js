@@ -7,9 +7,12 @@ import { createConcierge } from '../src/dashboard/concierge.js';
 
 async function root() { return mkdtemp(join(tmpdir(), 'cmsg-')); }
 
+// A2A Task carries the summary in artifacts[].parts[].text (not .summary).
+const taskWith = (text) => ({ task: { artifacts: [{ name: 'summary', parts: [{ text }] }] } });
+
 test('message routes to the concierge AGENT via the broker (ask, lean text)', async () => {
   let sent = null;
-  const broker = { send: async (a) => { sent = a; return { task: { summary: 'Health is green.' } }; } };
+  const broker = { send: async (a) => { sent = a; return taskWith('Health is green.'); } };
   const c = createConcierge({ meshRoot: await root(), broker, peers: ['tester'] });
   const out = await c.message({ text: 'is the mesh healthy?' });
   assert.equal(sent.agentName, 'concierge');

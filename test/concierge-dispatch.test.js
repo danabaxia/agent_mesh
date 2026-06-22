@@ -51,8 +51,8 @@ test('ask_peer_rerun sends ask via broker to an allowlisted peer', async () => {
   const out = await dispatchAction({ action: 'ask_peer_rerun',
     payload: { peer: 'tester', task: 're-run the suite' }, meshRoot: '/x',
     deps: { runGh: async () => {}, createTask: async () => {},
-      broker: { send: async (a) => { sent = a; return { task: { summary: 'done' } }; } }, peers } });
+      broker: { send: async (a) => { sent = a; return { task: { artifacts: [{ name: 'summary', parts: [{ text: 'done' }] }] } }; } }, peers } });
   assert.equal(sent.agentName, 'tester');
   assert.equal(sent.mode, 'ask');
-  assert.ok(out.summary.includes('done') || out.ok);
+  assert.equal(out.summary, 'done', 'reads the Task artifact text, not task.summary');
 });
