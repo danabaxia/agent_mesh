@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime, summarizeAlerts, summarizeTaskColumns } from '../src/dashboard/public/mobile/app.js';
+import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime, summarizeAlerts, summarizeTaskColumns, pickPoll } from '../src/dashboard/public/mobile/app.js';
 import { buildTaskBoard } from '../src/dashboard/public/tasks-model.js';
 import { resolveMagicHost, bootstrapUrl, serveArgs, run as serveRun } from '../scripts/mesh-mobile-serve.mjs';
 
@@ -109,6 +109,14 @@ test('summarizeTaskColumns → one card per non-empty state with ticket rows', (
   assert.ok(done && done.rows[0].value.includes('✓'));
   // empty input → a single "no tasks" card
   assert.equal(summarizeTaskColumns(buildTaskBoard([]))[0].rows[0].value, '—');
+});
+
+test('pickPoll returns the active data tab to refresh, never chat, never when hidden', () => {
+  assert.equal(pickPoll('status', { hidden: false }), 'status');
+  assert.equal(pickPoll('alerts', { hidden: false }), 'alerts');
+  assert.equal(pickPoll('tasks', { hidden: false }), 'tasks');
+  assert.equal(pickPoll('chat', { hidden: false }), null);   // chat is never auto-polled
+  assert.equal(pickPoll('tasks', { hidden: true }), null);    // paused when backgrounded
 });
 
 // ---- mesh-mobile-serve helpers ----
