@@ -126,6 +126,16 @@ export function summarizeTaskColumns(board) {
   }));
 }
 
+const POLLABLE = new Set(['status', 'alerts', 'tasks']);
+/**
+ * Which data tab to auto-refresh on a poll tick: the active data tab, or null.
+ * Chat is never auto-polled; nothing polls while the document is hidden.
+ */
+export function pickPoll(view, { hidden = false } = {}) {
+  if (hidden) return null;
+  return POLLABLE.has(view) ? view : null;
+}
+
 // --------------------------------------------------------------------------
 // DOM wiring (browser only)
 // --------------------------------------------------------------------------
@@ -264,10 +274,13 @@ function mount() {
   };
 
   // Tabs
+  let activeView = 'chat';
+  const loading = (box) => { if (!box.querySelector('.card')) box.innerHTML = '<div class="card muted">Loading…</div>'; };
   document.querySelectorAll('.tab').forEach((tab) => {
     tab.onclick = () => {
       document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
       const view = tab.dataset.view;
+      activeView = view;
       $('view-chat').classList.toggle('active', view === 'chat');
       $('view-status').classList.toggle('active', view === 'status');
       $('view-alerts').classList.toggle('active', view === 'alerts');
@@ -279,8 +292,7 @@ function mount() {
   });
 
   const loadStatus = async () => {
-    const box = $('status');
-    box.innerHTML = '<div class="card muted">Loading…</div>';
+    const box = $('status'); loading(box);
     const [health, daily, activity] = await Promise.all([get('/api/health'), get('/api/daily'), get('/api/activity-log?limit=20')]);
     const cards = summarizeStatus({ health, daily: daily?.report ?? daily });
     cards.push(summarizeActivity(activity?.events));
@@ -288,21 +300,27 @@ function mount() {
   };
 
   const loadAlerts = async () => {
-    const box = $('alerts');
-    box.innerHTML = '<div class="card muted">Loading…</div>';
+    const box = $('alerts'); loading(box);
     const data = await get('/api/concierge/alerts');
     renderCards(box, [summarizeAlerts(data?.alerts)]);
   };
 
   const loadTasks = async () => {
-    const box = $('tasks');
-    box.innerHTML = '<div class="card muted">Loading…</div>';
+    const box = $('tasks'); loading(box);
     const { buildTaskBoard } = await import('/tasks-model.js');   // browser-only; absolute path served by the dashboard
     const data = await get('/api/board/tasks');
     renderCards(box, summarizeTaskColumns(buildTaskBoard(data?.tasks ?? [])));
   };
 
   $('refresh').onclick = () => { loadStatus(); loadAlerts(); loadTasks(); };
+
+  // Auto-refresh the active data tab every 15s (paused on chat / when backgrounded),
+  // so phone-side status updates appear without a manual refresh.
+  const loaders = { status: loadStatus, alerts: loadAlerts, tasks: loadTasks };
+  setInterval(() => {
+    const v = pickPoll(activeView, { hidden: document.visibilityState === 'hidden' });
+    if (v && loaders[v]) loaders[v]();
+  }, 15000);
 
   // Pre-hydrate from server-side history; show greeting only when starting fresh.
   loadThreadHistory(thread, addBubble, { limit: 40 }).then((loaded) => {

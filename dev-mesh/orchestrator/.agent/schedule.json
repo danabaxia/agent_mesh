@@ -17,6 +17,15 @@
       "builtin": "daily-report-refresh",
       "cadence": { "kind": "daily", "at": "00:10" },
       "enabled": true
+    },
+    {
+      "id": "board-drive",
+      "name": "board-drive — pick up own tickets + coordinate the team",
+      "description": "Pick up board tickets assigned to the orchestrator and coordinate the specialist team to resolve them",
+      "kind": "delegate",
+      "cadence": { "kind": "every", "minutes": 10 },
+      "enabled": true,
+      "prompt": "You are the team lead. Call list_my_tasks. For EACH ticket not yet 'done': call update_my_task to mark it 'acknowledged', then 'in-progress'. Decide which specialists the task needs — it usually needs MORE THAN ONE (e.g. a code task needs analyst for approach, coder for the change plan, tester for test impact, reviewer for risks). Work as a CONDUCTOR: do dependent stages in order (e.g. approach before plan), and use fanOutToPeers (mode 'ask') to run independent reviews in parallel; use delegate_to_peer (mode 'ask') for a single specialist. Synthesize all specialist outputs into one concise result, then call update_my_task to mark the ticket 'done' with that synthesis. Do not advance any ticket that is not your own. If list_my_tasks is empty, do nothing."
     }
   ]
 }

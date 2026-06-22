@@ -67,7 +67,7 @@
       "card": "agent.json",
       "served": true,
       "enabledModes": ["ask"],
-      "peers": []
+      "peers": ["analyst", "tester", "triager", "coder", "reviewer", "curator", "security", "maintainer"]
     },
     {
       "name": "security",

@@ -30,7 +30,7 @@ test('committed mesh.json is a valid manifest with the right roles/modes/peers',
   assert.deepEqual(byName('security').enabledModes, ['ask']);
   assert.deepEqual(byName('tester').enabledModes, ['ask']);   // reclassified ask (spec §4.1)
   assert.deepEqual(byName('orchestrator').enabledModes, ['ask']); // ops/observability, ask-only
-  assert.deepEqual(byName('orchestrator').peers, []);             // standalone: owns the gh-activity-poll builtin, no onward delegation
+  assert.deepEqual(byName('orchestrator').peers.sort(), ['analyst', 'coder', 'curator', 'maintainer', 'reviewer', 'security', 'tester', 'triager']); // team lead: coordinates the specialist team for board tickets
   // peering
   assert.deepEqual(byName('maintainer').peers.sort(), ['analyst', 'coder', 'curator', 'reviewer', 'security', 'triager']);
   assert.deepEqual(byName('coder').peers, ['tester']);
