@@ -1,0 +1,13 @@
+{
+  "completeness": 0,
+  "done": false,
+  "reason": "gate",
+  "escalate": true,
+  "gates": {
+    "tests": {
+      "pass": false,
+      "note": "exit null: PASS a2a-protocol.test.js pass=? fail=? 0s PASS a2a-stdio-client.test.js pass=? fail=? 1s PASS a2a-stdio-server.test.js pass=? fail=? 1s PASS absorption-promotion.test.js pass=? fail=? 0s PASS absorpt"
+    }
+  },
+  "scored": {}
+}

@@ -37,14 +37,14 @@ test('confirm delegates to the dispatcher (file_issue)', async () => {
   assert.deepEqual(gh.labels, ['idea']);
 });
 
-test('confirm assign_task routes to the board for an allowlisted peer (from=concierge)', async () => {
+test('confirm assign_task routes a durable ticket to the board lead (orchestrator), from=concierge', async () => {
   let created = null;
   const c = createConcierge({ meshRoot: await root(), broker: { send: async () => ({}) },
-    createTask: async (mr, t) => { created = t; return { id: 'tester-1' }; }, peers: ['tester'] });
-  const out = await c.confirm({ action: 'assign_task', payload: { peer: 'tester', title: 'rerun', objective: 'run suite' } });
+    createTask: async (mr, t) => { created = t; return { id: 'orchestrator-1' }; }, peers: ['tester', 'orchestrator'] });
+  const out = await c.confirm({ action: 'assign_task', payload: { peer: 'orchestrator', title: 'build X', objective: 'do it' } });
   assert.equal(created.from, 'concierge');
-  assert.equal(created.to, 'tester');
-  assert.equal(out.task_id, 'tester-1');
+  assert.equal(created.to, 'orchestrator');
+  assert.equal(out.task_id, 'orchestrator-1');
 });
 
 test('parseProposal carries action types', async () => {
