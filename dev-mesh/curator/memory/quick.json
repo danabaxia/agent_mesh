@@ -1533,6 +1533,18 @@
       "ts": "2026-06-22"
     }
   },
+  "http-a2a-sse-streaming-opt-in": {
+    "status": "active",
+    "valid_to": null,
+    "core": false,
+    "l0": "HTTP A2A SSE streaming is opt-in via Accept: text/event-stream — batch path unchanged, stdio transport untouched.",
+    "l1": "spec 2026-06-22 (#401 → PR #407): http-server.js optionally streams task progress as SSE when caller sends Accept: text/event-stream. Negotiation happens after auth. Emits in-progress → partial stdout chunks → heartbeat (AGENT_MESH_A2A_SSE_HEARTBEAT_MS) → terminal TaskCompleted. TaskCompleted payload is identical to the batch response. stdio-server.js stays batch-only; callers without the header are unaffected.",
+    "value": "Implement HTTP A2A SSE streaming in http-server.js:\n\n(1) NEGOTIATION — after the existing auth gate, inspect Accept: if it includes 'text/event-stream' and SSE is not disabled (config flag), switch to SSE mode; else fall through to the unchanged batch path.\n\n(2) RESPONSE FRAMING — set Content-Type: text/event-stream and flush headers immediately (before claude starts). Do not buffer the response start.\n\n(3) EVENT SEQUENCE — in order:\n  a. Emit TaskStatusUpdateEvent { state: 'in-progress' } when claude -p spawns.\n  b. Forward stdout chunks as partial events while running.\n  c. Emit heartbeat events every AGENT_MESH_A2A_SSE_HEARTBEAT_MS seconds regardless of output.\n  d. On exit: emit TaskCompleted with content identical to the batch result → close stream.\n  e. On failure/timeout: emit terminal error event → close stream. Never a silent hang; failure-as-data invariant applies.\n\n(4) BATCH EQUIVALENCE — the TaskCompleted payload must equal what batch returns for the same task. Tests must assert this explicitly (same task → same content, different delivery).\n\n(5) STDIO UNTOUCHED — stdio-server.js has no SSE code path and must not be given one.\n\n(6) NON-GOALS — do not scope-creep: WebSocket transport; Last-Event-ID resumption; cross-hop streaming (each HTTP hop streams its own response independently); cancellation-on-disconnect semantics; dashboard/concierge UI rendering (server-side delivery only).\n\n(7) REQUIRED TESTS: SSE vs batch negotiation (with/without Accept header); event ordering (in-progress → partials → terminal); result equivalence (TaskCompleted payload = batch); heartbeat fires before any output; failure emits terminal error event; auth gate rejects unauthenticated SSE; config disable flag forces batch even with Accept header; client-disconnect triggers cleanup; stdio-server has no SSE path.\n\nProvenance: spec PR #407 (2026-06-22), idea issue #401.",
+    "provenance": {
+      "source": "PR #407: spec: idea: SSE streaming task progress for HTTP A2A peers (#401)",
+      "ts": "2026-06-22"
+    }
+  },
   "prompt-nudge-unit-test-gap": {
     "status": "active",
     "valid_to": null,
