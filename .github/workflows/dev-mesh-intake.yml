@@ -65,6 +65,10 @@ jobs:
           # WebSearch,WebFetch: the Analyst's research-landscape skill runs deep research
           # (fan-out search → fetch → verify). Without these, scheduled polls that hit the
           # research path accumulate permission denials until the postrun gate fails (#266).
+          # The prompt also forbids /fewer-permission-prompts: that skill shells out to read
+          # settings/transcript files (Bash beyond the gh/git grants) and writes an allowlist
+          # into a project .claude/settings.json that the ephemeral CI runner discards — so it
+          # only burns turns and accrues denials until the gate fails (#421).
           claude_args: |
             --model ${{ vars.DEV_MESH_MODEL || 'sonnet' }}
             --allowedTools "Read,Grep,Glob,Edit,Write,WebSearch,WebFetch,Bash(gh:*),Bash(git:*)"
@@ -95,6 +99,14 @@ jobs:
             on a new branch (`spec/issue-<N>`), push with `git push`, and open a spec PR
             with `gh pr create`. ONLY touch `docs/superpowers/specs/` — never modify source
             code, tests, workflows, or any file outside that directory.
+
+            HARD RULE (permissions, #421): do NOT invoke the `/fewer-permission-prompts`
+            skill or otherwise try to edit `.claude/settings.json`. This runs on an ephemeral
+            CI runner whose settings are discarded after the job, so that skill changes nothing
+            and only shells out to filesystem reads outside your tool grants — every such call
+            is a permission denial that ultimately fails the run's health gate. Your granted
+            tools (Read/Grep/Glob for inspection, `gh`/`git` for backlog + spec PRs) are all
+            you need; never reach for unqualified Bash.
 
             HARD RULE (approval gate, §5.3): do NOT implement anything. No code edits, no
             code branch, NEVER set `approved` — only a human grants approval. You produce
