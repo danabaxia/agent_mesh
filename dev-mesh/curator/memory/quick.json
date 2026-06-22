@@ -1511,6 +1511,17 @@
       "ts": "2026-06-22"
     }
   },
+  "flat-store-archive-sweep": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Flat-dir task stores accumulate done records — add an archive sweep or listTasks and health triage inflate unboundedly.",
+    "l1": "PR #399 / #396: mesh/board/tasks/ grows forever — every task, every state. Weeks of daemon + concierge activity → hundreds of stale done files; listTasks() scans all, health triage inflates, Done column clutters. Fix: pure planner (select terminal tasks past age threshold → archive/YYYY-MM/) + thin applier (atomic write then remove from tasks/). ID-collision trap: the nextTaskId scan must also walk archive/**/ or archived IDs recycle. Backward compat: default listTasks() reads tasks/ only; { includeArchived: true } for forensic queries.",
+    "value": "Apply when any flat-directory store accumulates terminal records unboundedly:\n\n1. **Pure planner + thin applier**\n   Planner (pure fn): input = task list + age threshold + clock; output = [{ task, destPath }]. destPath = archive/YYYY-MM/ from completion month.\n   Applier: atomicWrite(dest) then unlink(src). One file per task, atomic write-before-delete.\n\n2. **Age gate** (default 7 days)\n   Only terminal tasks older than threshold are moved. Config: AGENT_MESH_BOARD_ARCHIVE_AGE_MS (default 604800000 ms). Disable: AGENT_MESH_BOARD_ARCHIVE_DISABLED.\n\n3. **ID-collision trap (critical)**\n   The nextTaskId scan for a <from>-<to> pair walks active tasks/ only. Once a task is archived its ID disappears from that scan — the next task for the same pair recycles the counter. Fix: extend nextTaskId to also walk archive/**/ so archived IDs stay in the collision-avoidance set.\n\n4. **Backward compatibility**\n   listTasks({ includeArchived: false }) — default, reads tasks/ only. Existing consumers (Task Board, health-collect.js, triage_logs) see only the lean active set automatically.\n   listTasks({ includeArchived: true }) — also reads archive/**/ for forensic queries.\n\n5. **Crash safety / idempotency**\n   Write-before-delete: a crash after write leaves a duplicate in tasks/. Re-run detects the archive file already exists and skips (no-op). Never a data loss.\n\n6. **Test cases to cover**\n   Aged done → archived; recent done → kept; in-flight never archived. Move integrity: byte-identical, present in archive/, absent from tasks/. nextTaskId no recycling: create → archive → create same pair → distinct counters. listTasks default excludes archive; includeArchived:true returns both. Idempotency: re-run after archive is a no-op.\n\nProvenance: spec PR #399 (2026-06-22), closes Issue #396.",
+    "provenance": {
+      "source": "PR #399: spec: board task archive — done tasks accumulate forever, clutter active view (#396)",
+      "ts": "2026-06-22"
+    }
+  },
   "confirm-gated-dispatch-audit-log": {
     "status": "active",
     "valid_to": null,
