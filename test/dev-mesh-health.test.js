@@ -3,7 +3,7 @@
 // run, so health is judged on the result ENVELOPE, not the job conclusion.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyRunHealth, assessMesh, renderHealthReport, extractResultEnvelope } from '../src/dev-mesh/health.js';
+import { classifyRunHealth, assessMesh, renderHealthReport, extractResultEnvelope, isTransientOverload } from '../src/dev-mesh/health.js';
 
 test('extractResultEnvelope: finds the result in a stream-json array, object, or wrapper', () => {
   // stream-json array (claude-code-action's saved output): pick the last result event.
@@ -28,6 +28,34 @@ test('classifyRunHealth: the real masking bug — is_error despite "success" sub
   const h = classifyRunHealth(env);
   assert.equal(h.healthy, false);
   assert.equal(h.status, 'errored');
+});
+
+test('classifyRunHealth: a transient 529 overload is retryable, not a hard error (#386)', () => {
+  // claude-code-action exhausts its internal retries on a brief API saturation and
+  // reports is_error with api_error_status:"overloaded_error". That must classify as a
+  // distinct, retryable 'overloaded' — so the gate can soft-pass it (no false-red).
+  const env = { type: 'result', subtype: 'success', is_error: true, api_error_status: 'overloaded_error', duration_ms: 300000, num_turns: 0, total_cost_usd: 0 };
+  const h = classifyRunHealth(env);
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'overloaded');
+  assert.equal(h.retryable, true);
+});
+
+test('classifyRunHealth: a non-overload is_error stays a hard error (not retryable)', () => {
+  const h = classifyRunHealth({ type: 'result', is_error: true, api_error_status: null, duration_ms: 218, num_turns: 1, total_cost_usd: 0 });
+  assert.equal(h.status, 'errored');
+  assert.notEqual(h.retryable, true);
+});
+
+test('isTransientOverload: detects 529/overloaded across schema variants, only when is_error', () => {
+  assert.equal(isTransientOverload({ is_error: true, api_error_status: 'overloaded_error' }), true);
+  assert.equal(isTransientOverload({ is_error: true, result: 'API Error: 529 Overloaded' }), true);
+  assert.equal(isTransientOverload({ is_error: true, error: 'overloaded' }), true);
+  // a success envelope (no is_error) is never an overload, even if text mentions 529
+  assert.equal(isTransientOverload({ is_error: false, result: '529 mentioned in passing' }), false);
+  // a real error without an overload marker is not transient
+  assert.equal(isTransientOverload({ is_error: true, api_error_status: 'authentication_error' }), false);
+  assert.equal(isTransientOverload(null), false);
 });
 
 test('classifyRunHealth: zero turns is a no-op (nothing ran)', () => {

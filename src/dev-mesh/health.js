@@ -19,12 +19,34 @@
 // while tolerating a couple of incidental denials from an agent probing a tool.
 export const BLOCKED_DENIALS_THRESHOLD = 5;
 
+// A transient HTTP 529 "overloaded" from the Claude API is NOT a real failure: the model
+// never got to do the work because the API was briefly saturated. claude-code-action burns
+// its internal retries (~5 min) then reports {is_error:true, api_error_status:"overloaded_error"}.
+// We classify that distinctly (status:'overloaded', retryable) so the per-workflow honesty
+// gate can soft-pass it — no false-red on the run history, no human escalation — and let the
+// workflow's scheduled cadence re-run it on the next tick. (#385/#386)
+const OVERLOAD_RE = /overload|\b529\b/i;
+
+/** True when an errored envelope's failure is a transient API overload (HTTP 529). */
+export function isTransientOverload(envelope) {
+  if (!envelope || typeof envelope !== 'object' || envelope.is_error !== true) return false;
+  // The overload signal lands in api_error_status ("overloaded_error") in real envelopes;
+  // tolerate it surfacing in the result/error/subtype text too across schema variants.
+  for (const f of [envelope.api_error_status, envelope.result, envelope.error, envelope.subtype]) {
+    if (typeof f === 'string' && OVERLOAD_RE.test(f)) return true;
+  }
+  return false;
+}
+
 export function classifyRunHealth(envelope) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     return { healthy: false, status: 'unknown', reason: 'no result envelope to inspect' };
   }
   if (envelope.is_error === true) {
     const ms = envelope.duration_ms ?? '?';
+    if (isTransientOverload(envelope)) {
+      return { healthy: false, status: 'overloaded', retryable: true, reason: `transient API overload (529) after ${ms}ms — retryable` };
+    }
     return { healthy: false, status: 'errored', reason: `model run errored (is_error) after ${ms}ms` };
   }
   const cost = Number(envelope.total_cost_usd ?? 0);

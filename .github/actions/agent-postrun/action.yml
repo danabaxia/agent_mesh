@@ -12,10 +12,18 @@ inputs:
     description: Pass --advisory-blocked (light ask/comment roles)
     required: false
     default: "false"
+outputs:
+  retryable_overload:
+    # "true" when the run failed only on a transient API overload (HTTP 529). The job is
+    # NOT failed in that case (no false-red); a workflow MAY read this to re-dispatch, but
+    # the default outer retry loop is simply each workflow's own scheduled cadence. (#386)
+    description: "true" if the run hit a transient API overload and should be retried later
+    value: ${{ steps.gate.outputs.retryable_overload }}
 runs:
   using: composite
   steps:
     - name: Verify the agent worked + capture usage (best-effort)
+      id: gate
       if: always()
       shell: bash
       env:

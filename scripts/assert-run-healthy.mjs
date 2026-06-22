@@ -53,6 +53,24 @@ if (process.env.MESH_USAGE_OUT) {
 }
 const health = classifyRunHealth(envelope);
 
+// Transient API overload (HTTP 529): the model never got to run because the API was
+// briefly saturated (claude-code-action exhausted its internal retries then reported
+// is_error). This is NOT a real failure — hard-failing it wastes Actions minutes and
+// shows a false-red on the run history (#385/#386). Soft-pass with a loud advisory and
+// flag it `retryable_overload` so the workflow's scheduled cadence (or an explicit
+// re-dispatch) re-runs it on the next tick, instead of an immediate failure.
+if (health.retryable) {
+  console.warn(`::warning::agent run hit a transient API overload (529) — ${health.reason}; not failing the job, the scheduled cadence will retry`);
+  if (process.env.GITHUB_OUTPUT) {
+    try {
+      writeFileSync(process.env.GITHUB_OUTPUT, 'retryable_overload=true\n', { flag: 'a' });
+    } catch (e) {
+      console.warn(`::warning::could not write retryable_overload output (non-fatal): ${e.message}`);
+    }
+  }
+  process.exit(0);
+}
+
 // errored/noop/unknown are always fatal (a run that errored, did nothing, or wrote
 // unreadable output). 'blocked' (>= denial threshold) is fatal ONLY in the strict
 // default; with --advisory-blocked it's downgraded to a warning for the light comment/

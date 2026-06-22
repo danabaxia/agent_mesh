@@ -66,6 +66,25 @@ test('gate: an errored run is fatal (exit 1)', () => {
   assert.match(r.stderr, /errored/);
 });
 
+test('gate: a transient 529 overload soft-passes (exit 0) and flags retryable_overload (#386)', () => {
+  // The overload run never did real work, but it is a known-transient infra blip — the
+  // gate must NOT false-red it; it warns, exits 0, and writes the retryable flag so the
+  // scheduled cadence (or a re-dispatch) retries it instead of an immediate failure.
+  const dir = mkdtempSync(join(tmpdir(), 'agentmesh-gate-ovl-'));
+  const file = join(dir, 'claude-execution-output.json');
+  const out = join(dir, 'gh-output');
+  writeFileSync(file, JSON.stringify({ type: 'result', is_error: true, api_error_status: 'overloaded_error', duration_ms: 300000, num_turns: 0, total_cost_usd: 0 }));
+  try {
+    const r = spawnSync(process.execPath, [gate, file], { encoding: 'utf8', env: { ...process.env, GITHUB_OUTPUT: out } });
+    assert.equal(r.status ?? 1, 0, 'a transient overload must not hard-fail the job');
+    assert.match((r.stderr ?? '') + (r.stdout ?? ''), /::warning::/);
+    assert.match((r.stderr ?? '') + (r.stdout ?? ''), /overload/i);
+    assert.match(readFileSync(out, 'utf8'), /retryable_overload=true/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('gate: a no-op run (0 turns) is fatal (exit 1)', () => {
   const r = runGate({ type: 'result', is_error: false, num_turns: 0, total_cost_usd: 0 });
   assert.equal(r.code, 1);
