@@ -126,6 +126,13 @@ if (!once && !selftest) {
         return { status: 'fail', error: e?.message || String(e) };
       }
     },
+    // Concierge-owned: over-the-loop, read-only mesh health sweep → alerts store
+    // (the phone Alerts view reads it). No LLM spawn; imports mesh-health core directly.
+    'concierge-monitor-sweep': async () => {
+      const { createMeshHealth } = await import('../src/mesh-health/core.js');
+      const { runSweep } = await import('../src/concierge/sweep.js');
+      return runSweep({ meshRoot: SCHED_MESH_ROOT, health: createMeshHealth({ meshRoot: SCHED_MESH_ROOT }), now: new Date().toISOString() });
+    },
     // Tester-owned: run the suites + emit mir.json/mir.md and sync backlog issues.
     'tester-suite-run': async () => {
       const res = await runMir({

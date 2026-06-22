@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime } from '../src/dashboard/public/mobile/app.js';
+import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime, summarizeAlerts } from '../src/dashboard/public/mobile/app.js';
 import { resolveMagicHost, bootstrapUrl, serveArgs, run as serveRun } from '../scripts/mesh-mobile-serve.mjs';
 
 // ---- app.js pure helpers ----
@@ -82,6 +82,18 @@ test('summarizeActivity handles empty/missing feed', () => {
 test('summarizeActivity caps to max rows', () => {
   const many = Array.from({ length: 30 }, (_, i) => ({ ts: '2026-06-21T11:00:00Z', summary: `e${i}` }));
   assert.equal(summarizeActivity(many, { max: 12 }).rows.length, 12);
+});
+
+test('summarizeAlerts ranks by severity with colour; empty → placeholder', () => {
+  const card = summarizeAlerts([
+    { id: 'a', severity: 'warn', summary: 'stale task t1' },
+    { id: 'b', severity: 'critical', summary: 'conformance fail' }
+  ]);
+  assert.equal(card.title, 'Alerts');
+  assert.equal(card.rows[0].cls, 'bad');                      // critical first
+  assert.ok(card.rows[0].label.includes('conformance fail'));
+  assert.equal(summarizeAlerts([]).rows[0].value, '—');
+  assert.equal(summarizeAlerts(undefined).rows[0].cls, 'muted');
 });
 
 // ---- mesh-mobile-serve helpers ----

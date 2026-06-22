@@ -16,7 +16,7 @@ import { validateManifest } from '../src/builder/manifest.js';
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
 const srcMesh = join(repoRoot, 'dev-mesh');
 
-const ROLES = ['maintainer', 'analyst', 'triager', 'coder', 'tester', 'reviewer', 'curator', 'orchestrator', 'security'];
+const ROLES = ['maintainer', 'analyst', 'triager', 'coder', 'tester', 'reviewer', 'curator', 'orchestrator', 'security', 'concierge'];
 
 test('committed mesh.json is a valid manifest with the right roles/modes/peers', () => {
   const manifest = JSON.parse(readFileSync(join(srcMesh, 'mesh.json'), 'utf8'));
@@ -36,6 +36,9 @@ test('committed mesh.json is a valid manifest with the right roles/modes/peers',
   assert.deepEqual(byName('coder').peers, ['tester']);
   assert.deepEqual(byName('analyst').peers, ['tester']); // analyst now peers with tester for daily MIR review (analyst-daily-review feature)
   assert.deepEqual(byName('security').peers, []);
+  // concierge: phone-side monitor, ask-only, peers with the monitoring-relevant agents
+  assert.deepEqual(byName('concierge').enabledModes, ['ask']);
+  assert.deepEqual(byName('concierge').peers.sort(), ['analyst', 'maintainer', 'orchestrator', 'tester', 'triager']);
 });
 
 test('each agent folder has AGENT.md + agent.json (card name matches role)', () => {

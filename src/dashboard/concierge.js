@@ -27,6 +27,12 @@ import { join, dirname } from 'node:path';
 
 import { spawnFile } from '../process.js';
 import { READ_TOOLS, DEFAULT_CONCIERGE_HISTORY_MAX, DEFAULT_CONCIERGE_CONTEXT_TURNS } from '../config.js';
+import { dispatchAction } from '../concierge/dispatch.js';
+import { createTask as boardCreateTask } from '../board/store.js';
+
+// The served mesh agent the dashboard routes phone chat to (when a broker is wired).
+const CONCIERGE_AGENT = 'concierge';
+const PROPOSAL_ACTIONS = new Set(['file_issue', 'assign_task', 'ask_peer_rerun']);
 
 // ── Pure history helpers (exported for tests) ─────────────────────────────
 
@@ -91,6 +97,27 @@ export function parseProposal(replyText) {
     return null;
   }
   if (!obj || typeof obj !== 'object') return null;
+  // Action type — defaults to file_issue (back-compat with title/body/labels proposals).
+  const action = (typeof obj.action === 'string' && PROPOSAL_ACTIONS.has(obj.action)) ? obj.action : 'file_issue';
+
+  if (action === 'assign_task') {
+    const peer = typeof obj.peer === 'string' ? obj.peer.trim() : '';
+    const title = typeof obj.title === 'string' ? obj.title.trim() : '';
+    const objective = typeof obj.objective === 'string' ? obj.objective : '';
+    if (!peer || !title || !objective) return null;
+    return { action, peer, title, objective,
+      context: typeof obj.context === 'string' ? obj.context : '',
+      requirements: typeof obj.requirements === 'string' ? obj.requirements : '',
+      pointers: typeof obj.pointers === 'string' ? obj.pointers : '' };
+  }
+  if (action === 'ask_peer_rerun') {
+    const peer = typeof obj.peer === 'string' ? obj.peer.trim() : '';
+    const task = typeof obj.task === 'string' ? obj.task.trim() : '';
+    if (!peer || !task) return null;
+    return { action, peer, task };
+  }
+
+  // file_issue (default)
   const title = typeof obj.title === 'string' ? obj.title.trim() : '';
   const body = typeof obj.body === 'string' ? obj.body : '';
   if (!title) return null;
@@ -98,7 +125,7 @@ export function parseProposal(replyText) {
     ? obj.labels.filter((l) => typeof l === 'string' && CONFIRM_LABELS.has(l))
     : [];
   if (labels.length === 0) labels = ['idea'];   // default to triage
-  return { title, body, labels };
+  return { action, title, body, labels };
 }
 
 /**
@@ -244,8 +271,11 @@ async function defaultRunGh({ title, body, labels, meshRoot }) {
  */
 export function createConcierge({
   meshRoot,
+  broker,                       // when set, message() routes to the served concierge AGENT (A2A)
+  peers = [],                   // the concierge agent's mesh peers (for the action dispatcher)
   runAsk = defaultRunAsk,
   runGh = defaultRunGh,
+  createTask = boardCreateTask,
   persona = PERSONA,
   historyPath,
   historyMax,
@@ -280,12 +310,30 @@ export function createConcierge({
         throw new ConciergeError('Message too long', { status: 400 });
       }
       const userTs = new Date().toISOString();
-      const statusDigest = await readStatusDigest(meshRoot);
       // Load server-side history for continuity — the model sees the last _contextTurns
       // turns regardless of whether the client kept them in memory.
       const serverHistory = await _doLoad(_contextTurns).catch(() => []);
-      const prompt = buildPrompt({ persona, statusDigest, history: serverHistory, text: text.trim() });
-      const replyRaw = await runAsk({ prompt, meshRoot, signal });
+      let replyRaw;
+      if (broker) {
+        // Route to the served concierge AGENT. Its AGENT.md carries the persona and it
+        // reads status itself via its peer bridge + mesh-health tools, so we send a LEAN
+        // text (history + the owner's question) — no embedded persona/status digest.
+        const turns = serverHistory
+          .map((m) => `${m.role === 'assistant' ? 'Concierge' : 'Owner'}: ${String(m.reply ?? m.text ?? '').slice(0, MAX_TEXT_CHARS)}`)
+          .join('\n');
+        const agentText = turns ? `${turns}\nOwner: ${text.trim()}` : text.trim();
+        try {
+          const res = await broker.send({ agentName: CONCIERGE_AGENT, mode: 'ask', text: agentText, signal });
+          replyRaw = res?.task?.summary ?? '';
+        } catch (e) {
+          throw new ConciergeError(`concierge agent error: ${e.message}`, { status: 502 });
+        }
+      } else {
+        // Fallback (no agent wired / tests): the local read-only ask spawn.
+        const statusDigest = await readStatusDigest(meshRoot);
+        const prompt = buildPrompt({ persona, statusDigest, history: serverHistory, text: text.trim() });
+        replyRaw = await runAsk({ prompt, meshRoot, signal });
+      }
       const proposal = parseProposal(replyRaw);
       const reply = stripProposalFence(replyRaw) || replyRaw;
       // Persist this turn (best-effort: never fail the response on a log write error).
@@ -315,17 +363,15 @@ export function createConcierge({
     },
 
     /**
-     * Land a reviewed proposal as a GitHub issue. The ONLY write surface, fired
-     * only on the owner's explicit Confirm tap.
-     * @returns {Promise<{url:string, title:string, labels:string[]}>}
+     * Perform a reviewed action — the ONLY write surface, fired only on the owner's
+     * Confirm tap. Validates the action + allowlists BEFORE any side effect.
+     * Back-compat: a bare `{ title, body, labels }` (no `action`) means `file_issue`.
+     * @returns {Promise<object>}  dispatcher result (issue URL / task id / peer summary)
      */
-    async confirm({ title, body = '', labels } = {}) {
-      if (typeof title !== 'string' || !title.trim()) {
-        throw new ConciergeError('A title is required', { status: 400 });
-      }
-      const safeLabels = validateLabels(labels);   // throws on disallowed label, pre-spawn
-      const { url } = await runGh({ title: title.trim(), body: String(body), labels: safeLabels, meshRoot });
-      return { url, title: title.trim(), labels: safeLabels };
+    async confirm({ action, payload, title, body, labels, peer, objective, task, context, requirements, pointers } = {}) {
+      const a = action ?? 'file_issue';
+      const p = payload ?? { title, body, labels, peer, objective, task, context, requirements, pointers };
+      return dispatchAction({ action: a, payload: p, meshRoot, deps: { runGh, broker, createTask, peers } });
     }
   };
 }

@@ -76,6 +76,14 @@
       "served": true,
       "enabledModes": ["ask"],
       "peers": []
+    },
+    {
+      "name": "concierge",
+      "root": "./concierge",
+      "card": "agent.json",
+      "served": true,
+      "enabledModes": ["ask"],
+      "peers": ["tester", "triager", "analyst", "maintainer", "orchestrator"]
     }
   ]
 }

@@ -34,6 +34,7 @@ import {
 import { extractSkillSummary, listLocalSkills } from '../agent-context.js';
 import { createConsoleBroker, ConsoleError } from './console.js';
 import { createConcierge, ConciergeError } from './concierge.js';
+import { readAlerts } from '../concierge/alerts-store.js';
 import { createMeshWatcher } from './watcher.js';
 import { buildActivity } from './activity.js';
 import { buildActivityStats, rangeBounds } from './activity-stats.js';
@@ -2652,12 +2653,23 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     try { payload = JSON.parse((await readBodyCapped(req, 64 * 1024)) || '{}'); }
     catch (err) { sendJson(res, err.tooLarge ? 413 : 400, { ok: false, error: { code: 'bad_input' } }); return; }
     try {
-      const out = await concierge.confirm({ title: payload.title, body: payload.body, labels: payload.labels });
+      // Pass the action + its payload (back-compat: bare title/body/labels → file_issue).
+      const out = await concierge.confirm({ action: payload.action, payload: payload.payload,
+        title: payload.title, body: payload.body, labels: payload.labels,
+        peer: payload.peer, objective: payload.objective, task: payload.task,
+        context: payload.context, requirements: payload.requirements, pointers: payload.pointers });
       sendJson(res, 200, { ok: true, ...out });
     } catch (err) {
-      if (err instanceof ConciergeError) sendJson(res, err.status, { ok: false, error: { code: 'concierge', message: err.message, detail: err.detail } });
+      // ConciergeError + the dispatcher's DispatchError both carry a numeric .status.
+      if (err && Number.isFinite(err.status)) sendJson(res, err.status, { ok: false, error: { code: 'concierge', message: err.message, detail: err.detail } });
       else sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
     }
+    return;
+  }
+
+  if (pathname === '/api/concierge/alerts' && req.method === 'GET') {
+    const { alerts } = await readAlerts(meshRoot);
+    sendJson(res, 200, { ok: true, alerts });
     return;
   }
 
@@ -2892,9 +2904,8 @@ export function createDashboardServer({ meshRoot, port = 7077, token, allowedHos
   // Host allowlist for the same-origin gate. Defaults from env; *.ts.net is always
   // accepted (Tailscale serve). Injectable for tests.
   const resolvedAllowedHosts = allowedHosts ?? readDashboardAllowedHosts(process.env.AGENT_MESH_DASHBOARD_ALLOWED_HOSTS);
-  // Concierge (mobile phone front-door): ask-only chat + tap-gated issue creation.
-  // Injectable for tests; defaults to a real concierge bound to this mesh root.
-  const conciergeApi = concierge ?? createConcierge({ meshRoot });
+  // Concierge is constructed after the console broker below — it routes phone chat to
+  // the served concierge AGENT via that broker (its peers power the action dispatcher).
   // Shared in-flight guard so concurrent POST /api/daily/refresh coalesce onto one run.
   const dailyRefresh = { fn: regenerateDaily ?? defaultRegenerateDaily, inflight: null };
   // Resolve auth token. Precedence:
@@ -2917,6 +2928,16 @@ export function createDashboardServer({ meshRoot, port = 7077, token, allowedHos
   // The Desk console broker (ask-only A2A). Injectable for tests; defaults to a
   // real broker bound to this mesh root.
   const broker = consoleBroker ?? createConsoleBroker({ meshRoot });
+
+  // Concierge (phone front-door): routes chat to the served concierge AGENT via the
+  // broker; its mesh peers (from mesh.json) power the Confirm-gated action dispatcher.
+  // Injectable for tests; the agent may not be in the mesh yet → peers default to [].
+  let conciergePeers = [];
+  try {
+    const mj = JSON.parse(readFileSync(join(meshRoot, 'mesh.json'), 'utf8'));
+    conciergePeers = (mj.agents || []).find((a) => a.name === 'concierge')?.peers ?? [];
+  } catch { /* concierge not registered yet */ }
+  const conciergeApi = concierge ?? createConcierge({ meshRoot, broker, peers: conciergePeers });
 
   // SSE hub for /api/events change notifications.
   const autoSyncEnabled = process.env.AGENT_MESH_NO_AUTOSYNC !== '1';
