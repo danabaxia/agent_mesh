@@ -52,9 +52,10 @@ Each archived file has the same JSON format as its source — no schema changes.
 ### Key components
 
 - **`src/board/store.js` — `listTasks({ includeArchived = false })`**: default reads `tasks/`; with the flag, also reads `archive/**/`. Add an archive-path resolver alongside the existing `boardDir`. Reuse `atomicWriteFile` for the destination write.
+- **`src/board/store.js` — `nextTaskId` must scan archive**: the existing `nextTaskId` scans only `tasks/` to find the highest counter for a `<from>-<to>` pair. Once a task is archived (moved to `archive/YYYY-MM/`), its ID disappears from that scan, and a subsequent task for the same pair would receive a **recycled counter** — a data-integrity violation when `listTasks({ includeArchived: true })` returns both records with the same ID. Fix: extend `existingIds` (or the `nextTaskId` scan) to also walk `archive/**/` so archived IDs remain in the collision-avoidance set. This keeps the existing ID format, requires no counter file, and is the minimal correct change.
 - **Daemon hook** — register the daily archive sweep in the dev-society/orchestrator daemon alongside existing scheduled sweeps; no new protocol surface.
 - **Config (`src/config.js`)** — `AGENT_MESH_BOARD_ARCHIVE_AGE_MS` (default 7 days) and a disable flag (e.g. `AGENT_MESH_BOARD_ARCHIVE_DISABLED`).
-- **Completion-age evaluator (pure)** — given a task record, returns its terminal-transition timestamp (max terminal `history.at`, fallback `created_at`) and age; shared by the planner.
+- **Completion-age evaluator (pure)** — given a task record, returns the terminal state's `history.at` timestamp (fallback `created_at`) and age; shared by the planner.
 
 ## Data flow
 
@@ -81,6 +82,7 @@ Pure-planner and store-level tests (hermetic, temp board dir):
 - **`includeArchived: true` reads both:** forensic call returns active + archived tasks.
 - **Config:** lowering `AGENT_MESH_BOARD_ARCHIVE_AGE_MS` archives more aggressively; disable flag → sweep no-ops.
 - **Resilience:** a malformed task file is skipped (not archived, not fatal); missing `archive/` directory is created on first write.
+- **`nextTaskId` no collision after archive:** create a task for a `from`/`to` pair, archive it, then create a second task for the same pair — the second task's ID must have a higher counter (e.g. `-002`) and must not match the archived task's ID. Verify that `listTasks({ includeArchived: true })` returns both records with distinct IDs.
 
 ## Out of scope
 
