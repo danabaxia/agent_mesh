@@ -1566,5 +1566,16 @@
       "source": "PR #408: spec: idea: board task dependency sequencing — dependsOn gate for framework-enforced task ordering (#400)",
       "ts": "2026-06-22"
     }
+  },
+  "routing-disjoint-fastpath-skip-deliberation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Disjoint routing over-spends on LLM turns — score peers first, skip deliberation for clear winners (30s→0s, lossless).",
+    "l1": "PR #414 / #413: the 3x-disjoint cell burned ~30s/call ($0.1457) despite precision=recall=1.0 — the deliberative router paid a full LLM turn for a structurally obvious answer. Fix: score each peer by longest matching intent phrase length (case-insensitive substring). Fast-path predicate: leader score > 0 AND (leader − runner-up) ≥ margin (default = leader, so runner-up must be 0 — perfectly disjoint only). Falls through to deliberation on any ambiguity. Tag route_via: 'fastpath' | 'deliberation' in every run/metrics record.",
+    "value": "Apply when adding a routing pre-pass before any LLM deliberation step:\n\n(1) SCORING — scorePeers(task, peers): for each peer, find the longest intent phrase (from peer's declared intents) that is a case-insensitive substring of the task. Score = phrase.length, 0 if none match. Rank peers by score descending. Reuses the same includes() test as routeByRules — no new algorithm.\n\n(2) PREDICATE — fastPathPeer(task, peers, margin): leader score > 0 AND (leader.score − runnerUp.score) ≥ margin. Default: margin = leader.score (runner-up must be 0 — perfectly disjoint). Conservative: fires only when structurally unambiguous. Configurable via AGENT_MESH_ROUTE_FASTPATH_MARGIN to widen to near-disjoint once the default is validated.\n\n(3) INTEGRATION — in orchestrator.js, call fastPathPeer before spawning claude -p for deliberation. If it returns a target, construct the route decision immediately and skip the LLM turn. Tag route_via: 'fastpath' in metrics. Otherwise fall through unchanged and tag route_via: 'deliberation'.\n\n(4) TELEMETRY — route_via must be recorded in the run/metrics record for every routing decision so the perf benchmark can attribute wins and detect drift (a confusable cell going fastpath = regression).\n\n(5) REQUIRED TESTS — (a) disjoint fires: one clear match → fastpath selects that peer; (b) confusable does not fire: close scores → deliberation; (c) margin boundary: exact-at-margin semantics locked; (d) equivalence: fastpath selects the same peer deliberation would; (e) downstream identity: fastpath delegation produces same metrics shape as deliberative; (f) disable flag: AGENT_MESH_ROUTE_FASTPATH_DISABLED forces deliberation; (g) perf assertion: 3x-disjoint latency/cost drop, precision/recall unchanged.\n\n(6) OUT OF SCOPE — no new model call for confidence scoring (defeats the purpose); no changes to the deliberative router itself; no multi-peer fan-out interaction; no dynamic threshold learning.\n\nProvenance: PR #414 / spec Issue #413 (2026-06-22).",
+    "provenance": {
+      "source": "PR #414: spec: Add a fast-path for unambiguous (disjoint) routing — 3x-disjoint burns ~30s for a perfect route (#413)",
+      "ts": "2026-06-22"
+    }
   }
 }
