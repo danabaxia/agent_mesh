@@ -136,6 +136,9 @@ jobs:
               exit 1
             fi
           fi
+      - name: Back-off on retry (jitter for 529 recovery)
+        if: steps.pick.outputs.none != 'true' && env.CONFLICTS_FOUND == 'true' && env.BUDGET_EXHAUSTED != 'true' && github.event_name != 'push'
+        uses: ./.github/actions/mesh-retry-backoff
       - name: Drive Coder (resolve the conflict with main)
         if: steps.pick.outputs.none != 'true' && env.CONFLICTS_FOUND == 'true' && env.BUDGET_EXHAUSTED != 'true' && github.event_name != 'push'
         uses: anthropics/claude-code-action@v1

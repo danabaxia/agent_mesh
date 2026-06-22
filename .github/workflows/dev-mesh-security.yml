@@ -35,6 +35,8 @@ jobs:
           if [ -z "$CLEAN" ]; then echo "::error::CLAUDE_CODE_OAUTH_TOKEN secret is required"; exit 1; fi
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
+      - name: Back-off on retry (jitter for 529 recovery)
+        uses: ./.github/actions/mesh-retry-backoff
       - name: Drive Security (injection, identity/auth, token budget)
         uses: anthropics/claude-code-action@v1
         id: claude

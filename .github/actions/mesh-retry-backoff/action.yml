@@ -1,0 +1,20 @@
+# .github/actions/mesh-retry-backoff/action.yml
+# Jitter back-off for dev-mesh Claude Code action workflows.
+# On a re-run attempt (run_attempt > 1) this sleeps 3–5 minutes before the
+# Claude step fires, giving the API time to clear a transient 529 overload.
+# Usage: add `uses: ./.github/actions/mesh-retry-backoff` immediately before
+# the `anthropics/claude-code-action` step in every affected workflow.
+name: mesh-retry-backoff
+description: >
+  Jitter sleep on retry attempts (run_attempt > 1) so a transient Claude API
+  529 overload clears before the next invocation.
+runs:
+  using: composite
+  steps:
+    - name: Back-off on retry (529 jitter)
+      if: ${{ github.run_attempt > 1 }}
+      shell: bash
+      run: |
+        secs=$(( 180 + RANDOM % 120 ))
+        echo "Retry attempt ${{ github.run_attempt }}: sleeping ${secs}s before calling Claude (529 back-off)"
+        sleep "$secs"
