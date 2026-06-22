@@ -1,4 +1,57 @@
-Tasks({ includeArchived = false })`: default reads `tasks/`; with the flag, also reads `archive/**/`. Add an archive-path resolver alongside the existing `boardDir`. Reuse `atomicWriteFile` for the destination write.
+# Board task archive — done tasks accumulate forever, clutter active view
+
+**Date:** 2026-06-22
+**Status:** Design (pending review)
+**Builds on:** the mesh task board ([src/board/*](../../../src/board/), spec 2026-06-15-mesh-task-handoff-design.md) and the A2A Task Board view (spec 2026-06-22-a2a-task-board-view-design.md).
+
+## Problem
+
+The mesh task board stores one JSON file per task under `<mesh-root>/mesh/board/tasks/`. All tasks — regardless of state — live in that flat directory forever. `listTasks()` in `src/board/store.js` reads every `.json` in the directory, so the Task Board view and health triage always scan the full set.
+
+With the orchestrator `board-drive` daemon running every 10 minutes and the concierge `assign_task` available from the phone, this directory grows unbounded. After a few weeks of normal operation: hundreds of `done` task files, every `listTasks()` call reads them all, and the Task Board "Done" column renders a growing tail of stale entries from days or weeks ago.
+
+**Impact:**
+- Task Board UX: the Done column becomes a chronological dump, not a meaningful in-flight view.
+- Performance: `health-collect.js` and `tasks-model.js` process every task on each request/render.
+- Health triage (`triage_logs`): stale-task detection must walk all tasks including archived ones, inflating signal with noise.
+
+## Goal
+
+An **archive sweep** that moves terminal (e.g. `done`) tasks past a configurable age threshold (default 7 days) to `<mesh-root>/mesh/board/archive/YYYY-MM/`. The active `tasks/` directory stays lean. Archived tasks remain on disk for audit but are excluded from the default `listTasks()` call. The daemon schedules the sweep daily. The board store gains an optional `{ includeArchived }` flag for forensic queries.
+
+### Decisions
+
+1. **Archive, never delete.** All completed tasks are preserved on disk for audit; the sweep only *relocates* files from `tasks/` to `archive/YYYY-MM/` (completion month).
+2. **Terminal-only.** Only tasks in a terminal state (e.g. `done`) are eligible; in-flight tasks are never moved.
+3. **Age-gated.** A configurable threshold (default 7 days since terminal transition) prevents moving tasks that just finished; recent completions stay visible in the Task Board.
+4. **Pure planner, thin applier.** The planner is a pure function (input: task list + threshold → archive plan); the applier does the I/O. Follows the existing `atomicWriteFile`/`boardDir` conventions.
+5. **Backward-compatible.** Default consumers (`listTasks()`, Task Board, `health-collect.js`, `tasks-model.js`, `triage_logs`) see only the leaner active set automatically; forensic callers opt in with `{ includeArchived: true }`.
+
+### Non-goals
+
+- Deleting tasks — the archive preserves everything.
+- Archiving non-terminal stale in-flight tasks (staleness/escalation is a separate concern).
+- Compaction/compression of the archive directory.
+- Archive retention/purge policy (no eventual deletion in v1).
+- A UI for browsing the archive (forensic access is via `includeArchived` at the store/API layer).
+
+## Implementation
+
+### Archive directory layout
+
+```
+<mesh-root>/mesh/board/
+  tasks/          ← active + recently-completed tasks (default listTasks view)
+  archive/
+    2026-05/      ← tasks completed in May 2026
+    2026-06/      ← tasks completed in June 2026
+```
+
+Each archived file has the same JSON format as its source — no schema changes.
+
+### Key components
+
+- **`src/board/store.js` — `listTasks({ includeArchived = false })`**: default reads `tasks/`; with the flag, also reads `archive/**/`. Add an archive-path resolver alongside the existing `boardDir`. Reuse `atomicWriteFile` for the destination write.
 - **Daemon hook** — register the daily archive sweep in the dev-society/orchestrator daemon alongside existing scheduled sweeps; no new protocol surface.
 - **Config (`src/config.js`)** — `AGENT_MESH_BOARD_ARCHIVE_AGE_MS` (default 7 days) and a disable flag (e.g. `AGENT_MESH_BOARD_ARCHIVE_DISABLED`).
 - **Completion-age evaluator (pure)** — given a task record, returns its terminal-transition timestamp (max terminal `history.at`, fallback `created_at`) and age; shared by the planner.
