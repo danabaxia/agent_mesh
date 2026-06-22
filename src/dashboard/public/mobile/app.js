@@ -6,6 +6,8 @@
  * cookie auth already set by the /m?t=<token> bootstrap).
  */
 
+import { createVoiceEngine, sttLang, LANGS } from './voice-engine.js';
+
 const CONFIRM_LABELS = ['idea', 'approved', 'route:a2a'];
 
 export function escapeHtml(s) {
@@ -168,7 +170,16 @@ function mount() {
   const input = $('input');
   const composer = $('composer');
   const send = $('send');
+  const micBtn = $('mic');
+  const langBtn = $('lang');
   const history = [];   // {role, text} — pre-populated from server history on load
+
+  // Voice I/O (mic STT → auto-send, reply auto-read TTS). Native Web Speech via the
+  // swappable voice-engine adapter. `lastWasVoice` makes auto-read fire only for a
+  // voice-initiated turn, so typed turns stay silent.
+  const voice = createVoiceEngine();
+  let uiLang = 'en';
+  let lastWasVoice = false;
 
   // Capture the bootstrap token from ?t= once and persist it, then send it as a
   // header on every API call. This makes auth work even if the device drops the
@@ -252,11 +263,13 @@ function mount() {
       typing.remove();
       addBubble('assistant', data.reply || '(no reply)');
       history.push({ role: 'assistant', text: data.reply || '' });
+      if (lastWasVoice) voice.speak(data.reply || '');   // voice in → voice out (screen still shows text)
       if (data.proposal) addProposalCard(data.proposal);
     } catch (err) {
       typing.remove();
       addBubble('error', err.message);
     } finally {
+      lastWasVoice = false;
       send.disabled = false;
     }
   };
@@ -264,6 +277,28 @@ function mount() {
   composer.addEventListener('submit', submit);
   input.addEventListener('input', () => { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + 'px'; });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) submit(e); });
+
+  // Voice controls: only shown when the browser supports speech recognition
+  // (Chrome/Edge/Safari). The mic taps start/stop a single utterance; the lang
+  // chip toggles the recognition language (native engines are weak at mixed zh/en).
+  if (micBtn && langBtn && voice.sttSupported) {
+    micBtn.hidden = false;
+    langBtn.hidden = false;
+    langBtn.textContent = LANGS[uiLang].label;
+    langBtn.onclick = () => { uiLang = uiLang === 'en' ? 'zh' : 'en'; langBtn.textContent = LANGS[uiLang].label; };
+    micBtn.onclick = () => {
+      if (voice.isListening()) { voice.stopListening(); return; }
+      voice.cancelSpeak();                       // stop any ongoing readback before listening
+      micBtn.classList.add('listening');
+      const started = voice.startListening({
+        lang: sttLang(uiLang),
+        onResult: (t) => { if (t) { input.value = t; lastWasVoice = true; submit(); } },
+        onEnd: () => micBtn.classList.remove('listening'),
+        onError: () => micBtn.classList.remove('listening'),
+      });
+      if (!started) micBtn.classList.remove('listening');
+    };
+  }
 
   const get = async (p) => { try { const r = await fetch(p, { headers: authHeaders() }); return r.ok ? await r.json() : null; } catch { return null; } };
   const renderCards = (box, cards) => {
