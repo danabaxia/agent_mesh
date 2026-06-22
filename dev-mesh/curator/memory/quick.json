@@ -1543,5 +1543,16 @@
       "source": "PR #406: [mesh-scan] perf-regression: quality_per_1k_tokens regressed (-16.9%) (#404)",
       "ts": "2026-06-22"
     }
+  },
+  "board-task-dep-gate-at-pickup": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Board task dep ordering: gate-at-pickup only; blocked is not a state; blockedBy is derived; dependsOn immutable.",
+    "l1": "PR #408 / Issue #400: orchestrator board-drive fans out tasks (analyze→implement→review) with no framework-enforced ordering. Fix: optional dependsOn:[taskId] stamped at creation, immutable (anti-spoof). Gate fires only at assigned→acknowledged: if any dep not done, acknowledge returns {error:blocked, blockedBy:[...]}, task stays assigned. Blocked is NOT a new state. blockedBy is derived at read time from live dep states, never stored. Backward-compat: dependsOn:[] = today.",
+    "value": "Apply when extending the board state machine with task ordering guarantees:\n\n(1) GATE-AT-PICKUP only\nEnforce ordering at the assigned→acknowledged transition exclusively. Gates at later transitions create false blocking after the dep resolves. Gates at creation cannot know future dep state. The pickup gate is the earliest and most useful enforcement point.\n\n(2) Framework-stamp, immutable\ndependsOn is set by create_task_for_peer and cannot be modified post-creation — same anti-spoof rule as from/to/id. Any attempt to update or clear dependsOn after creation has no effect.\n\n(3) Blocked is NOT a state\nThe state machine stays assigned→acknowledged→in-progress→done. Blocked = assigned + unresolved deps. Do NOT add a blocked state — it creates invalid transitions and complicates the lifecycle. Visibility comes from the blockedBy badge, not from a new state.\n\n(4) blockedBy is derived, never stored\nCompute (task, resolveState) → [taskId] at read time from live dep states. Never persist a blockedBy array in the task record — it becomes stale and requires cache invalidation. Return it only from list_my_tasks as a computed read-only field.\n\n(5) Failure-is-data\nA blocked acknowledge returns { error: blocked, blockedBy: [...] } — not a throw. The task stays assigned, visible on the board badge, and eligible for stale-task detection (#219).\n\n(6) Acyclicity at creation\nOn create_task_for_peer, validate: dep task exists on the same board, is not the task being created (no self-ref), and introducing this dep does not create a cycle. Any violation → structured error returned, task not created.\n\n(7) done-only resolution\nA dep is resolved only when its task reaches done. No partial, soft, or in-progress resolution in v1.\n\n(8) Gate ordering: dep check precedes identity check\nA blocked task reports blocked even when called by the wrong identity — check deps first. A dep-resolved but wrong-identity call still fails on the identity gate. This ordering is intentional: an agent should know its task is blocked before learning it is unauthorized.\n\n(9) Backward-compat\nTasks with dependsOn:[] (or field absent) behave exactly as today. The gate is purely additive.\n\nProvenance: spec PR #408 (2026-06-22), closes Issue #400.",
+    "provenance": {
+      "source": "PR #408: spec: idea: board task dependency sequencing — dependsOn gate for framework-enforced task ordering (#400)",
+      "ts": "2026-06-22"
+    }
   }
 }
