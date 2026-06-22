@@ -1443,5 +1443,16 @@
       "source": "PR #369: feat(concierge): server-side conversation history — mergefix unified two competing API designs",
       "ts": "2026-06-21"
     }
+  },
+  "dashboard-pure-model-dual-surface": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New dashboard view: DOM-free pure model → route → view. One model serves desktop + phone; escape user content at view.",
+    "l1": "PR #381 (A2A Task Board): `buildTaskBoard(tasks)` — DOM-free pure function grouping tasks into state columns, fully unit-tested with zero imports. Route `GET /api/board/tasks` reads store + auth-gates like every /api/*; returns `{ok,tasks}` with tolerant [] fallback. Desktop (`tasks-view.js`) and phone tab (`mobile/app.js`) both import the same model. Agent-authored task briefs are HTML-escaped at the view layer — never injected raw. Result: 3 separate test files, zero jsdom, full coverage. Read-only enforced by omission: no write route = no write possible.",
+    "value": "Pattern for adding a new read-only data-backed dashboard view:\n\n1. DOM-free pure model (`src/dashboard/public/<noun>-model.js`): one export `buildXxx(rawData)` → groups/summaries. No fetch, no document, zero imports. Test with hand-computed expected values — no jsdom needed.\n\n2. Route (`GET /api/<noun>/data`): reads storage, auth+host-gates like every `/api/*`, returns `{ok, data}` with tolerant empty fallback `[]`. Unit-tested with the server fake-auth pattern.\n\n3. View file (`<noun>-view.js`): imports the model, renders via DOM or string concat. Escape all user-controlled content (agent briefs, external labels) — never `.innerHTML = untrustedString`. Phone tab reuses the same model via browser-only dynamic import.\n\n4. Read-only safety by omission: no write route + no write button = no mutation possible. Prefer this over per-route write guards for display-only features.\n\n5. Naming: `build<Noun>` → `<noun>-model.js`; `<noun>-view.js`; `GET /api/<area>/<noun>`. Consistent naming aids discovery.\n\nProvenance: PR #381 (2026-06-22) — A2A Task Board kanban view (desktop + phone).",
+    "provenance": {
+      "source": "PR #381: feat(taskboard): A2A Task Board view — read-only ticket kanban (desktop + phone)",
+      "ts": "2026-06-22"
+    }
   }
 }
