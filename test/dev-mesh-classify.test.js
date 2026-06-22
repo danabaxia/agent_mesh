@@ -85,6 +85,18 @@ test('extractSignals: api_error_status with a real error string triggers infraEr
   assert.equal(s.infraError, true);
 });
 
+test('infra_auth: HTTP 529 overload in CI log triggers infraError (not ranAnyTest fallthrough)', () => {
+  // The real CI log line from the 2026-06-22 529 failures; must hit infraError=true
+  // via the explicit INFRA_RE match, not the !ranAnyTest fallthrough path.
+  const log = "##[error]Claude API overloaded (HTTP 529) — transient; re-run with back-off (attempt 1).";
+  const s = extractSignals(log);
+  assert.equal(s.infraError, true);
+  assert.equal(s.ranAnyTest, false);
+  const r = classifyFromLog(log);
+  assert.equal(r.label, LABELS.INFRA_AUTH);
+  assert.equal(r.reason, 'auth/infra signature in log');
+});
+
 
 test('end-to-end: the real Windows process-tree flake classifies as flake', () => {
   const log = [
