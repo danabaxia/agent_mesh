@@ -66,6 +66,20 @@ test('maintainer schedule runs review-respond-sweep every ~10min (beats throttle
   assert.ok(job.cadence.minutes <= 10, 'cadence must be <=10min to beat GitHub cron throttling');
 });
 
+test('daemon registers the mergefix-sweep builtin (daemon-driven conflict resolution)', () => {
+  assert.match(src, /'mergefix-sweep'\s*:/);
+  assert.match(src, /dispatchMergefix/);
+});
+
+test('maintainer schedule runs mergefix-sweep every ~10min (beats throttled GH cron)', () => {
+  const job = maintainerSchedule.jobs.find((j) => j.builtin === 'mergefix-sweep');
+  assert.ok(job, 'mergefix-sweep job must be scheduled on the maintainer');
+  assert.equal(job.kind, 'builtin');
+  assert.equal(job.enabled, true);
+  assert.equal(job.cadence.kind, 'every');
+  assert.ok(job.cadence.minutes <= 10, 'cadence must be <=10min to beat GitHub cron throttling');
+});
+
 test('daemon registers the post-merge-reconcile builtin (closes merged-but-open issues)', () => {
   assert.match(src, /'post-merge-reconcile'\s*:/);
   assert.match(src, /planPostMergeReconcile/);

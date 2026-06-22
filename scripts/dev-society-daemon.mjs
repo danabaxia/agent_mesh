@@ -52,6 +52,7 @@ import { runSweep as runAutomergeSweep } from '../src/automerge/sweep.js';
 import { resolveAutomergeEnabled } from '../src/automerge/enabled.js';
 import { dispatchMemoryAutomerge } from '../src/automerge/memory-dispatch.js';
 import { dispatchReviewRespond } from '../src/automerge/review-respond-dispatch.js';
+import { dispatchMergefix } from '../src/automerge/mergefix-dispatch.js';
 import { runMergeSweep } from '../src/merge-sweep/run.js';
 import { mergeSweepReportPath } from '../src/merge-sweep/report.js';
 import { runRemediation, remediationPath } from '../src/merge-sweep/remediation-run.js';
@@ -265,6 +266,20 @@ if (!once && !selftest) {
     })
       .then((r) => ({ status: 'ok', output: r.dispatched ? `dispatched for ${r.pendingCount} CHANGES_REQUESTED PR(s)` : (r.error ? `list failed: ${r.error}` : 'no CHANGES_REQUESTED PRs') }))
       .catch((e) => { log('review-respond-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Daemon-driven mergefix: dev-mesh-mergefix.yml resolves a DIRTY (conflicting) PR by driving
+    // the Coder to merge main in, but its resolve steps are gated to NON-push events; the only
+    // unattended trigger is throttled GH cron (~hourly), so an APPROVED PR that goes DIRTY sits
+    // for hours and gets falsely escalated needs-human (live: #376 escalated approved-but-DIRTY
+    // #364). The daemon's ~10min cadence dispatches mergefix (workflow_dispatch => non-push =>
+    // resolves) when — and only when — an open non-draft same-repo DIRTY PR exists. Mirrors the
+    // memory-automerge / review-respond daemon drains; the resolution logic stays in the workflow.
+    'mergefix-sweep': () => dispatchMergefix({
+      gh: async (a) => (await sh('gh', a, { maxBuffer: 1 << 24 })).stdout,
+      repo: cfg.repo,
+      log: (...a) => log('mergefix:', ...a),
+    })
+      .then((r) => ({ status: 'ok', output: r.dispatched ? `dispatched for ${r.dirtyCount} DIRTY PR(s)` : (r.error ? `list failed: ${r.error}` : 'no DIRTY PRs') }))
+      .catch((e) => { log('mergefix-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
     // Post-merge reconciler: close OPEN issues whose closing PR ("Closes #N") has merged
     // but GitHub's keyword auto-close missed, add `done`, and clear the orphaned state label
     // (pr:in-review/in-progress, or `approved` for issues never claimed in-progress — #248/#251).
