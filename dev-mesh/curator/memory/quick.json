@@ -1499,5 +1499,16 @@
       "source": "PR #391: fix(pwa): make the concierge reply actually speak — iOS TTS unlock + 🔊 readback toggle",
       "ts": "2026-06-22"
     }
+  },
+  "claude-api-529-retry-resilience": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Claude API 529 overload → jitter sleep on re-run (composite action) + annotate infra_auth in assert-run-healthy.",
+    "l1": "PR #393 / Issue #386: Claude API 529 'overloaded' burns 3-4 internal retries (~5min) then exits 1 — false-red on run history. Two fixes: (1) .github/actions/mesh-retry-backoff composite action sleeps 3-5min (180 + RANDOM%120 s) when github.run_attempt > 1; added before the claude step in all 11 dev-mesh workflows with matching if: guard. (2) assert-run-healthy.mjs detects '529'/'overloaded'/'overload_error' in error output and emits ::error title=infra_auth:: with a 'Re-run failed jobs' hint — Triager classifies as infra, not code bug.",
+    "value": "Two-part pattern for making Claude Code action workflows resilient to transient API 529 overload errors:\n\n(1) Back-off on re-run — composite action:\nCreate .github/actions/mesh-retry-backoff/action.yml:\n  runs:\n    using: composite\n    steps:\n      - if: ${{ github.run_attempt > 1 }}\n        shell: bash\n        run: |\n          secs=$(( 180 + RANDOM % 120 ))\n          sleep \"$secs\"\nAdd as a single step immediately before the anthropics/claude-code-action step in every affected workflow. Carry the same if: condition guard as the claude step so the sleep fires only when claude would have run (e.g. conditional workflows like autofix/mergefix need the same guard or the sleep step always fires).\n\nWhy jitter: RANDOM%120 spreads retried runs across a 2-min window, avoiding re-collision on a still-overloaded slot. Fixed sleeps all hit the same point.\n\n(2) Classify 529 in assert-run-healthy.mjs:\nDetect before general error checks:\n  const looksOverloaded = /529|overloaded|overload_error/i.test(output);\n  if (isError && looksOverloaded) {\n    core.error('Claude API overloaded (529). Re-run failed jobs.', { title: 'infra_auth' });\n    process.exit(1);\n  }\nEmit ::error title=infra_auth:: so the Triager classifies the run as infrastructure failure, not a code bug. Run history shows a clear actionable reason instead of a generic exit-1.\n\n(3) Scope: apply composite action + 529 detection to ALL workflows calling anthropics/claude-code-action that pass through assert-run-healthy.mjs — never just a subset. A 529 can hit any role.\n\n(4) Max retries: 2 attempts × 3–5 min jitter, on top of the CLI's own 3–4 internal retries. Total recovery window per attempt: ~5–10 min.\n\n(5) No auto-rerun: back-off fires only on manual 'Re-run failed jobs'. No actions:write permission change needed. The infra_auth annotation tells the operator exactly what action to take.\n\n(6) Test coverage: assert 529/overloaded/overload_error in is_error output → infra_auth annotation + exit 1; existing errored/noop/blocked tests unchanged. Workflow structural test: assert mesh-retry-backoff step appears before the claude step in all 11 target workflows.\n\nProvenance: PR #393 (2026-06-22), closes Issue #386.",
+    "provenance": {
+      "source": "PR #393: feat(dev-mesh): 529-retry resilience — composite back-off action + infra_auth annotation",
+      "ts": "2026-06-22"
+    }
   }
 }
