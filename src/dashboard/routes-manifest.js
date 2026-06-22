@@ -16,8 +16,11 @@ export const ROUTE_PATTERNS = [
   /^\/api\/activity-log$/,      // GET  /api/activity-log
   /^\/api\/ci-schedules$/,      // GET  /api/ci-schedules
   /^\/api\/collab$/,            // GET  /api/collab
+  /^\/api\/concierge\/history$/, // GET  /api/concierge/history  (mobile concierge history)
   /^\/api\/concierge\/message$/, // POST /api/concierge/message  (mobile concierge)
   /^\/api\/concierge\/confirm$/, // POST /api/concierge/confirm  (mobile concierge)
+  /^\/api\/concierge\/alerts$/,  // GET  /api/concierge/alerts   (over-the-loop findings)
+  /^\/api\/concierge\/history$/, // GET  /api/concierge/history  (mobile concierge, issue #362)
   /^\/api\/daily$/,             // GET  /api/daily
   /^\/api\/daily\/refresh$/,    // POST /api/daily/refresh
   /^\/api\/events$/,            // GET  /api/events  (SSE)

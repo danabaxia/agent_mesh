@@ -1,120 +1,96 @@
-// src/mesh-health/health-alert.js — pure heart of the health-alert sweep.
+// src/mesh-health/health-alert.js — PURE planner for the proactive health-alert
+// sweep (issue #361). Given a HealthReport (the organ-level model from
+// buildHealthReport) plus the prior sweep's state, decide which `needs-human`
+// issues to OPEN (an organ just went critical) and which to CLOSE (an organ
+// recovered). NO I/O — the daemon shell owns collectHealth + the `gh` calls.
 //
-// Given a health report (from buildHealthReport) and prior alert state,
-// returns the set of GitHub issues to open and to close, plus the new state
-// to persist. No I/O — the daemon shell owns all file reads/writes and gh calls.
+// Why per-organ critical and not the bare `overall` verdict: the overall verdict
+// is critical iff some organ is critical, so alerting per organ is the same signal
+// at finer grain — and a dead/stuck agent already rolls its organ (Agents) to
+// critical via livenessStatus(). One issue per organ keeps each alert actionable.
 //
-// State schema (mesh/health-alert-state.json):
-//   { open: { [key]: number } }   — key → open GitHub issue number
+// The honesty rule of health-model.js is inherited unchanged: this planner only
+// reacts to what the model already classified as critical (it never re-judges), so
+// an idle on-demand agent is never alerted on.
 //
-// Keys:
-//   "overall:critical"            — overall verdict is critical
-//   "organ:<name>:<status>"       — specific organ transitioned to critical
-//
-// Spec: GitHub issue #361
+//   planHealthAlerts({ report, prev, now }) =>
+//     { opens:[{key,organ,title,body}], closes:[{key,organ,body}], state:{generatedAt,openAlerts:[key]} }
 
-// Organs we alert on individually when they hit critical.
-const ALERT_ORGANS = ['agents', 'jobs', 'board', 'pipeline', 'cognition'];
+// Marker prefix embedded in every alert body — the daemon dedups open issues by
+// searching for the key, and the planner dedups across sweeps via `prev.openAlerts`.
+export const HEALTH_ALERT_PREFIX = 'mesh-health-alert';
 
-// The set of organ statuses that trigger an alert.
-const ALERT_STATUSES = new Set(['critical']);
+// The five organs, worst-status-bearing, in the model's render order.
+const ORGAN_LABEL = {
+  agents: 'Agents',
+  jobs: 'Jobs & Daemon',
+  board: 'Task Board',
+  pipeline: 'Pipeline & Conformance',
+  cognition: 'Cognition',
+};
 
-/**
- * Derive the alert key set for a given health report.
- * Returns a Set<string> of keys that are currently "alert-worthy".
- */
-export function alertKeysFor(report) {
-  const keys = new Set();
-  if (!report || typeof report !== 'object') return keys;
-  if (report.overall === 'critical') keys.add('overall:critical');
-  const organs = report.organs || {};
-  for (const name of ALERT_ORGANS) {
-    const organ = organs[name];
-    if (organ && ALERT_STATUSES.has(organ.status)) {
-      keys.add(`organ:${name}:${organ.status}`);
-    }
-  }
-  return keys;
-}
+export function organAlertKey(organ) { return `${HEALTH_ALERT_PREFIX}:${organ}/critical`; }
 
-/**
- * Build a GitHub issue title for an alert key.
- */
-export function alertTitle(key) {
-  if (key === 'overall:critical') {
-    return '[mesh-health] Overall mesh health is CRITICAL';
-  }
-  const m = key.match(/^organ:(\w+):(\w+)$/);
-  if (m) {
-    const labels = { agents: 'Agents', jobs: 'Jobs & Daemon', board: 'Task Board', pipeline: 'Pipeline & Conformance', cognition: 'Cognition' };
-    return `[mesh-health] ${labels[m[1]] || m[1]} organ is ${m[2].toUpperCase()}`;
-  }
-  return `[mesh-health] ${key}`;
-}
+function organOf(key) { return String(key).slice(HEALTH_ALERT_PREFIX.length + 1).split('/')[0]; }
 
-/**
- * Build a GitHub issue body for an alert key, including the rendered health report.
- */
-export function alertBody(key, report) {
-  const reportMd = (report && report.report && report.report.markdown) ? report.report.markdown : '_no health report available_';
-  const ts = (report && report.generatedAt) ? report.generatedAt : new Date().toISOString();
+function openBody({ label, key, report }) {
+  const md = report?.report?.markdown || '_(health report unavailable)_';
   return [
-    `**Mesh health alert**: \`${key}\` — detected at ${ts}`,
+    `🔴 **${label} transitioned to CRITICAL** — the mesh health model flagged a dead/stuck mechanism in this organ.`,
     '',
-    'The health sweep found a critical condition. See the rendered report below.',
+    'This issue was filed automatically by the dev-society health-alert sweep so the owner is paged instead of having to open the dashboard. It auto-closes when the organ recovers.',
     '',
-    `<!-- mesh-health-alert-key: ${key} -->`,
+    '---',
     '',
-    reportMd,
+    md.trimEnd(),
+    '',
+    `<!-- ${key} -->`,
+  ].join('\n');
+}
+
+function closeBody({ label, status, key }) {
+  return [
+    `🟢 **${label} recovered** — the organ is no longer critical (now \`${status}\`).`,
+    '',
+    'Auto-closed by the dev-society health-alert sweep.',
+    '',
+    `<!-- ${key} -->`,
   ].join('\n');
 }
 
 /**
- * Build a GitHub issue close comment for a recovered key.
+ * @param {object}   args
+ * @param {object}   args.report  a HealthReport from buildHealthReport (organs + report.markdown)
+ * @param {object|null} args.prev  prior state { openAlerts: string[] } (or null on first sweep)
+ * @param {Date|number} [args.now]
  */
-export function recoveryComment(key, report) {
-  const ts = (report && report.generatedAt) ? report.generatedAt : new Date().toISOString();
-  return `**Mesh health recovered**: \`${key}\` resolved at ${ts}. Overall verdict: ${report && report.overall ? report.overall : 'unknown'}.`;
-}
+export function planHealthAlerts({ report, prev = null, now = new Date() } = {}) {
+  const nowIso = (now instanceof Date ? now : new Date(now)).toISOString();
+  const organs = (report && report.organs) || {};
+  const prevOpen = new Set(Array.isArray(prev?.openAlerts) ? prev.openAlerts : []);
 
-/**
- * computeAlertActions(report, priorState) → { toOpen, toClose, nextState }
- *
- * Pure: given the current health report and the persisted state,
- * returns what actions the shell should take and the new state to write.
- *
- * toOpen:  [{ key, title, body }]        — new issues to file
- * toClose: [{ key, number, comment }]    — existing issues to close
- * nextState: { open: { [key]: number } } — to persist after gh calls succeed
- *
- * The shell MUST update nextState.open[key] with the real issue number after
- * opening (toOpen entries carry no number yet).
- */
-export function computeAlertActions(report, priorState) {
-  const prior = (priorState && priorState.open != null && typeof priorState.open === 'object') ? priorState.open : {};
-  const activeKeys = alertKeysFor(report);
+  const opens = [];
+  const nextOpen = new Set();
 
-  const toOpen = [];
-  const toClose = [];
-  const nextOpen = { ...prior };
-
-  // Keys that are now critical but not yet open (or prior open failed, leaving null) → open.
-  for (const key of activeKeys) {
-    if (!(key in nextOpen) || nextOpen[key] === null) {
-      toOpen.push({ key, title: alertTitle(key), body: alertBody(key, report) });
-      // Shell fills in the issue number after creating; mark pending with null.
-      nextOpen[key] = null;
-    }
-    // else: already open with a real issue number, nothing to do (dedup).
-  }
-
-  // Keys that were open but are no longer critical → close.
-  for (const [key, number] of Object.entries(prior)) {
-    if (!activeKeys.has(key)) {
-      toClose.push({ key, number, comment: recoveryComment(key, report) });
-      delete nextOpen[key];
+  for (const [organ, label] of Object.entries(ORGAN_LABEL)) {
+    const o = organs[organ];
+    if (!o || o.status !== 'critical') continue;
+    const key = organAlertKey(organ);
+    nextOpen.add(key);
+    if (!prevOpen.has(key)) {          // dedup: only file once per critical episode
+      opens.push({ key, organ, title: `[mesh-health] ${label} is CRITICAL — needs human`, body: openBody({ label, key, report }) });
     }
   }
 
-  return { toOpen, toClose, nextState: { open: nextOpen } };
+  // Anything previously open that is no longer critical → recovered → close.
+  const closes = [];
+  for (const key of prevOpen) {
+    if (nextOpen.has(key)) continue;
+    const organ = organOf(key);
+    const label = ORGAN_LABEL[organ] || organ;
+    const status = organs[organ]?.status || 'unknown';
+    closes.push({ key, organ, body: closeBody({ label, status, key }) });
+  }
+
+  return { opens, closes, state: { generatedAt: nowIso, openAlerts: [...nextOpen] } };
 }

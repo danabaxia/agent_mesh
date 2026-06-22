@@ -1,0 +1,63 @@
+{
+  "goal": "create the agent, it can talk to other mesh agents, operate through phone to monitor the system, perform user in the loop/over the loop monitoring for the mesh",
+  "context_note": "Promote the phone concierge from a dashboard-managed ask spawn (src/dashboard/concierge.js) into a FIRST-CLASS mesh agent: a real dev-mesh/agents/concierge/ folder with AGENT.md + agent.json, doctor-wired (registry.json + peer-bridge .mcp.json + mesh-health read MCP + board-notify hook), served:true, ask-mode only, listed in dev-mesh/mesh.json. It must (1) talk to other mesh agents via the peer bridge (delegate_to_peer / fanOutToPeers, ask-mode) and read mesh-health verbs (check_conformance/ping_agent/triage_logs/list_stale_tasks); (2) be operated from the phone — the /m PWA routes chat to the AGENT (via the console A2A broker), not the old spawn; (3) do BOTH in-the-loop (on-demand: you ask status, it asks peers+health and answers) AND over-the-loop (a daemon-scheduled autonomous monitoring sweep that escalates findings to a phone Alerts view, pull-based). Action boundary: ask-only agent; any action (file issue, assign a board task, ask a peer to re-run) requires the owner's explicit Confirm tap (framework-side write). Existing mesh invariants (ask-only peer bridge, single-writable-root, anti-spoof, token-gated dashboard, no public exposure) stay intact. Tailscale phone access already works (prior goal).",
+  "release_threshold": 0.85,
+  "judge": { "transport": "subagent" },
+  "dimensions": [
+    {
+      "key": "tests",
+      "label": "Verification / tests pass",
+      "kind": "gate",
+      "cmd": "node run-all-tests.mjs",
+      "source": "topic-standard"
+    },
+    {
+      "key": "dedicated_agent",
+      "label": "Real, doctor-wired mesh agent",
+      "kind": "scored",
+      "weight": 0.18,
+      "descriptor": "The concierge is a genuine first-class mesh agent — its own folder + AGENT.md + agent.json, registered in mesh.json (served, ask-mode), wired by doctor (registry/peer-bridge/mesh-health/board hook), and visible in the mesh roster + dashboard graph + mesh-health like the other agents. Not a bolted-on dashboard spawn.",
+      "source": "stated"
+    },
+    {
+      "key": "talks_to_peers",
+      "label": "Talks to other mesh agents",
+      "kind": "scored",
+      "weight": 0.18,
+      "descriptor": "It genuinely converses with other agents to do its job — uses the peer bridge (delegate_to_peer / fanOutToPeers, ask-mode) to source answers from the right specialists (e.g. tester for test/MIR state, triager for blocked work, analyst for ideas) and reads mesh-health verbs, rather than only scraping files. Peer-sourced, multi-agent reasoning.",
+      "source": "stated"
+    },
+    {
+      "key": "phone_operate",
+      "label": "Operated through the phone",
+      "kind": "scored",
+      "weight": 0.16,
+      "descriptor": "The owner drives the concierge agent from their phone — the /m PWA routes chat to the AGENT (via the A2A console broker), and the phone shows its monitoring output. Operating the mesh's monitor from the phone is real and works, not just a desktop path.",
+      "source": "stated"
+    },
+    {
+      "key": "monitoring_in_over_loop",
+      "label": "In-the-loop + over-the-loop monitoring",
+      "kind": "scored",
+      "weight": 0.2,
+      "descriptor": "Both modes work: in-the-loop — on demand the owner asks 'is the mesh healthy / what's stuck' and gets a real, peer+health-sourced answer; over-the-loop — an autonomous periodic sweep runs without prompting and surfaces anomalies (failed health, stuck/stale tasks, test regressions) to a phone Alerts view the owner reviews. The owner can supervise without micromanaging.",
+      "source": "stated"
+    },
+    {
+      "key": "action_safety",
+      "label": "Observe-and-advise with confirm-gated actions",
+      "kind": "scored",
+      "weight": 0.16,
+      "descriptor": "The agent observes and advises but never mutates the mesh on its own: it is ask-only, and every action it proposes (file an issue, assign a board task, ask a peer to re-run) happens only on the owner's explicit Confirm tap, framework-side. Existing invariants (ask-only peer bridge, single writable root, token-gated/no-public dashboard) are untouched.",
+      "source": "topic-standard"
+    },
+    {
+      "key": "e2e_verified",
+      "label": "End-to-end verified on the real device",
+      "kind": "scored",
+      "weight": 0.12,
+      "descriptor": "Demonstrated working on the actual Mac+phone, not just merged code: the agent is live in the running mesh, the phone reaches it (chat answers are peer/health-sourced), and an over-the-loop alert appears on the phone — confirmed, not asserted. Owner setup steps handed off where unavoidable.",
+      "source": "topic-standard"
+    }
+  ]
+}

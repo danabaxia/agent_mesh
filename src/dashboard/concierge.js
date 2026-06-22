@@ -22,11 +22,44 @@
  *    surfaced to the UI as an error bubble — nothing is silently lost or filed.
  */
 
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, appendFile, writeFile, mkdir } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 
 import { spawnFile } from '../process.js';
-import { READ_TOOLS } from '../config.js';
+import { READ_TOOLS, DEFAULT_CONCIERGE_HISTORY_MAX, DEFAULT_CONCIERGE_CONTEXT_TURNS } from '../config.js';
+import { dispatchAction } from '../concierge/dispatch.js';
+import { createTask as boardCreateTask } from '../board/store.js';
+
+// The served mesh agent the dashboard routes phone chat to (when a broker is wired).
+const CONCIERGE_AGENT = 'concierge';
+const PROPOSAL_ACTIONS = new Set(['file_issue', 'assign_task', 'ask_peer_rerun']);
+
+// ── Pure history helpers (exported for tests) ─────────────────────────────
+
+export function parseHistoryLines(text) {
+  if (!text || typeof text !== 'string') return [];
+  return text.split('\n').flatMap((line) => {
+    const l = line.trim();
+    if (!l) return [];
+    try { return [JSON.parse(l)]; } catch { return []; }
+  });
+}
+
+export function serializeHistoryLines(entries) {
+  return entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : '');
+}
+
+export function trimEntries(entries, max) {
+  return entries.length <= max ? entries : entries.slice(entries.length - max);
+}
+
+export function normalizeEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const text = entry.role === 'assistant'
+    ? (entry.reply ?? entry.text ?? '')
+    : (entry.text ?? '');
+  return { role: entry.role, text: String(text), ts: entry.ts ?? null };
+}
 
 export class ConciergeError extends Error {
   constructor(message, { status = 500, detail } = {}) {
@@ -44,6 +77,7 @@ export const CONFIRM_LABELS = new Set(['idea', 'approved', 'route:a2a']);
 const PROPOSAL_FENCE = /```concierge-proposal\s*\n([\s\S]*?)\n```/;
 const MAX_TEXT_CHARS = 8_000;     // per owner message
 const MAX_HISTORY_TURNS = 40;     // bound the embedded transcript
+const MAX_HISTORY_CONTEXT = 10;   // server-side turns loaded into buildPrompt for continuity
 const ASK_TIMEOUT_MS = 120_000;
 
 /**
@@ -63,6 +97,27 @@ export function parseProposal(replyText) {
     return null;
   }
   if (!obj || typeof obj !== 'object') return null;
+  // Action type — defaults to file_issue (back-compat with title/body/labels proposals).
+  const action = (typeof obj.action === 'string' && PROPOSAL_ACTIONS.has(obj.action)) ? obj.action : 'file_issue';
+
+  if (action === 'assign_task') {
+    const peer = typeof obj.peer === 'string' ? obj.peer.trim() : '';
+    const title = typeof obj.title === 'string' ? obj.title.trim() : '';
+    const objective = typeof obj.objective === 'string' ? obj.objective : '';
+    if (!peer || !title || !objective) return null;
+    return { action, peer, title, objective,
+      context: typeof obj.context === 'string' ? obj.context : '',
+      requirements: typeof obj.requirements === 'string' ? obj.requirements : '',
+      pointers: typeof obj.pointers === 'string' ? obj.pointers : '' };
+  }
+  if (action === 'ask_peer_rerun') {
+    const peer = typeof obj.peer === 'string' ? obj.peer.trim() : '';
+    const task = typeof obj.task === 'string' ? obj.task.trim() : '';
+    if (!peer || !task) return null;
+    return { action, peer, task };
+  }
+
+  // file_issue (default)
   const title = typeof obj.title === 'string' ? obj.title.trim() : '';
   const body = typeof obj.body === 'string' ? obj.body : '';
   if (!title) return null;
@@ -70,7 +125,7 @@ export function parseProposal(replyText) {
     ? obj.labels.filter((l) => typeof l === 'string' && CONFIRM_LABELS.has(l))
     : [];
   if (labels.length === 0) labels = ['idea'];   // default to triage
-  return { title, body, labels };
+  return { action, title, body, labels };
 }
 
 /**
@@ -92,6 +147,33 @@ export function validateLabels(labels) {
 // Strip the reply's proposal fence so the chat bubble shows prose, not raw JSON.
 function stripProposalFence(replyText) {
   return typeof replyText === 'string' ? replyText.replace(PROPOSAL_FENCE, '').trim() : '';
+}
+
+// --------------------------------------------------------------------------
+// Server-side conversation history (spec issue #362).
+// Stored as newline-delimited JSON under <meshRoot>/mesh/concierge/history.jsonl.
+// Pure read/write helpers — best-effort; any failure must not break message().
+// --------------------------------------------------------------------------
+
+async function readHistory(historyPath, { limit = 20 } = {}) {
+  try {
+    const raw = await readFile(historyPath, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    return lines.slice(-limit).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  } catch { return []; }
+}
+
+async function appendHistory(historyPath, entries, { max = DEFAULT_CONCIERGE_HISTORY_MAX } = {}) {
+  await mkdir(dirname(historyPath), { recursive: true });
+  await appendFile(historyPath, entries.map((e) => JSON.stringify(e)).join('\n') + '\n', 'utf8');
+  // LRU trim: keep at most `max` entries. Read → slice → atomic-ish rewrite.
+  try {
+    const raw = await readFile(historyPath, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    if (lines.length > max) {
+      await writeFile(historyPath, lines.slice(-max).join('\n') + '\n', 'utf8');
+    }
+  } catch { /* trim failure is non-fatal */ }
 }
 
 // Build a compact status digest from the dev-society status files (best-effort —
@@ -177,43 +259,119 @@ async function defaultRunGh({ title, body, labels, meshRoot }) {
 /**
  * Create a concierge bound to one mesh root.
  * @param {object} opts
- * @param {string} opts.meshRoot
- * @param {Function} [opts.runAsk]   injectable ask runner (tests)
- * @param {Function} [opts.runGh]    injectable gh runner (tests)
+ * @param {string}   opts.meshRoot
+ * @param {Function} [opts.runAsk]          injectable ask runner (tests)
+ * @param {Function} [opts.runGh]           injectable gh runner (tests)
  * @param {string}   [opts.persona]
+ * @param {string}   [opts.historyPath]     override the JSONL path (tests)
+ * @param {number}   [opts.historyMax]      override entry cap (tests)
+ * @param {Function} [opts.appendHistory]   injectable appender (root, entries, max) — tests
+ * @param {Function} [opts.loadHistory]     injectable loader (root, limit) → entries — tests
+ * @param {number}   [opts.contextTurns]    turns injected into each prompt (tests)
  */
-export function createConcierge({ meshRoot, runAsk = defaultRunAsk, runGh = defaultRunGh, persona = PERSONA } = {}) {
+export function createConcierge({
+  meshRoot,
+  broker,                       // when set, message() routes to the served concierge AGENT (A2A)
+  peers = [],                   // the concierge agent's mesh peers (for the action dispatcher)
+  runAsk = defaultRunAsk,
+  runGh = defaultRunGh,
+  createTask = boardCreateTask,
+  persona = PERSONA,
+  historyPath,
+  historyMax,
+  appendHistory: _appendHistoryFn,
+  loadHistory: _loadHistoryFn,
+  contextTurns,
+} = {}) {
+  const _historyPath = historyPath ?? join(meshRoot, 'mesh', 'concierge', 'history.jsonl');
+  const _historyMax = historyMax ?? (Number(process.env.AGENT_MESH_CONCIERGE_HISTORY_MAX) || DEFAULT_CONCIERGE_HISTORY_MAX);
+  const _contextTurns = contextTurns ?? (Number(process.env.AGENT_MESH_CONCIERGE_CONTEXT_TURNS) || DEFAULT_CONCIERGE_CONTEXT_TURNS);
+
+  // Dispatch: use injectable I/O when provided (unit tests), else file-based (integration).
+  const _doAppend = _appendHistoryFn
+    ? (entries) => _appendHistoryFn(meshRoot, entries, _historyMax)
+    : (entries) => appendHistory(_historyPath, entries, { max: _historyMax });
+  const _doLoad = _loadHistoryFn
+    ? (limit) => _loadHistoryFn(meshRoot, limit)
+    : (limit) => readHistory(_historyPath, { limit });
+
   return {
     /**
      * One conversational turn. Read-only — never files anything.
+     * Loads the last `_contextTurns` turns from server-side storage into the
+     * prompt for cross-session continuity, and appends the new exchange after reply.
      * @returns {Promise<{reply:string, proposal:object|null}>}
      */
-    async message({ history = [], text, signal } = {}) {
+    async message({ text, signal } = {}) {
       if (typeof text !== 'string' || !text.trim()) {
         throw new ConciergeError('Empty message', { status: 400 });
       }
       if (text.length > MAX_TEXT_CHARS) {
         throw new ConciergeError('Message too long', { status: 400 });
       }
-      const statusDigest = await readStatusDigest(meshRoot);
-      const prompt = buildPrompt({ persona, statusDigest, history, text: text.trim() });
-      const replyRaw = await runAsk({ prompt, meshRoot, signal });
+      const userTs = new Date().toISOString();
+      // Load server-side history for continuity — the model sees the last _contextTurns
+      // turns regardless of whether the client kept them in memory.
+      const serverHistory = await _doLoad(_contextTurns).catch(() => []);
+      let replyRaw;
+      if (broker) {
+        // Route to the served concierge AGENT. Its AGENT.md carries the persona and it
+        // reads status itself via its peer bridge + mesh-health tools, so we send a LEAN
+        // text (history + the owner's question) — no embedded persona/status digest.
+        const turns = serverHistory
+          .map((m) => `${m.role === 'assistant' ? 'Concierge' : 'Owner'}: ${String(m.reply ?? m.text ?? '').slice(0, MAX_TEXT_CHARS)}`)
+          .join('\n');
+        const agentText = turns ? `${turns}\nOwner: ${text.trim()}` : text.trim();
+        try {
+          const res = await broker.send({ agentName: CONCIERGE_AGENT, mode: 'ask', text: agentText, signal });
+          replyRaw = res?.task?.summary ?? '';
+        } catch (e) {
+          throw new ConciergeError(`concierge agent error: ${e.message}`, { status: 502 });
+        }
+      } else {
+        // Fallback (no agent wired / tests): the local read-only ask spawn.
+        const statusDigest = await readStatusDigest(meshRoot);
+        const prompt = buildPrompt({ persona, statusDigest, history: serverHistory, text: text.trim() });
+        replyRaw = await runAsk({ prompt, meshRoot, signal });
+      }
       const proposal = parseProposal(replyRaw);
-      return { reply: stripProposalFence(replyRaw) || replyRaw, proposal };
+      const reply = stripProposalFence(replyRaw) || replyRaw;
+      // Persist this turn (best-effort: never fail the response on a log write error).
+      // Store assistant entries with both `text` and `reply` for cross-API compatibility.
+      // Awaited so callers can read getHistory() immediately after message() completes.
+      await _doAppend([
+        { role: 'user', text: text.trim(), ts: userTs },
+        { role: 'assistant', text: reply, reply, ts: new Date().toISOString() },
+      ]).catch(() => {});
+      return { reply, proposal };
     },
 
     /**
-     * Land a reviewed proposal as a GitHub issue. The ONLY write surface, fired
-     * only on the owner's explicit Confirm tap.
-     * @returns {Promise<{url:string, title:string, labels:string[]}>}
+     * Return the last `limit` history entries from the server-side log (raw entries).
+     * @returns {Promise<Array<{role:string,text:string,reply?:string,ts:string}>>}
      */
-    async confirm({ title, body = '', labels } = {}) {
-      if (typeof title !== 'string' || !title.trim()) {
-        throw new ConciergeError('A title is required', { status: 400 });
-      }
-      const safeLabels = validateLabels(labels);   // throws on disallowed label, pre-spawn
-      const { url } = await runGh({ title: title.trim(), body: String(body), labels: safeLabels, meshRoot });
-      return { url, title: title.trim(), labels: safeLabels };
+    async getHistory({ limit = 20 } = {}) {
+      return readHistory(_historyPath, { limit: Math.max(1, Math.min(limit, 200)) });
+    },
+
+    /**
+     * Return the last `limit` history entries from the server-side log (normalized).
+     * @returns {Promise<Array<{role:string,text:string,ts:string}>>}
+     */
+    async history({ limit = 20 } = {}) {
+      return readHistory(_historyPath, { limit: Math.max(1, Math.min(limit, 200)) });
+    },
+
+    /**
+     * Perform a reviewed action — the ONLY write surface, fired only on the owner's
+     * Confirm tap. Validates the action + allowlists BEFORE any side effect.
+     * Back-compat: a bare `{ title, body, labels }` (no `action`) means `file_issue`.
+     * @returns {Promise<object>}  dispatcher result (issue URL / task id / peer summary)
+     */
+    async confirm({ action, payload, title, body, labels, peer, objective, task, context, requirements, pointers } = {}) {
+      const a = action ?? 'file_issue';
+      const p = payload ?? { title, body, labels, peer, objective, task, context, requirements, pointers };
+      return dispatchAction({ action: a, payload: p, meshRoot, deps: { runGh, broker, createTask, peers } });
     }
   };
 }

@@ -1,249 +1,78 @@
-// test/health-alert.test.js — hermetic tests for the health-alert pure module.
-// Zero I/O: inject built health reports, assert on toOpen/toClose/nextState.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  alertKeysFor,
-  alertTitle,
-  alertBody,
-  recoveryComment,
-  computeAlertActions,
-} from '../src/mesh-health/health-alert.js';
+import { planHealthAlerts, organAlertKey } from '../src/mesh-health/health-alert.js';
 
-// Minimal health report factories.
-function nominalReport(overrides = {}) {
-  return {
-    overall: 'nominal',
-    generatedAt: '2026-06-21T12:00:00.000Z',
-    organs: {
-      agents:   { status: 'ok' },
-      jobs:     { status: 'ok' },
-      board:    { status: 'ok' },
-      pipeline: { status: 'ok' },
-      cognition:{ status: 'ok' },
-    },
-    report: { markdown: '# Mesh Vital Signs — 🟢 All systems nominal\n' },
-    ...overrides,
-  };
+const NOW = new Date('2026-06-21T03:00:00Z');
+
+// Minimal HealthReport shape the planner reads: organs[*].status + report.markdown.
+function report(organStatuses = {}, markdown = '# Mesh Vital Signs\n\nbody\n') {
+  const organs = {};
+  for (const [k, status] of Object.entries(organStatuses)) organs[k] = { status };
+  return { organs, report: { markdown } };
 }
 
-function criticalReport(organOverrides = {}) {
-  return nominalReport({
-    overall: 'critical',
-    organs: {
-      agents:   { status: 'critical' },
-      jobs:     { status: 'ok' },
-      board:    { status: 'ok' },
-      pipeline: { status: 'ok' },
-      cognition:{ status: 'ok' },
-      ...organOverrides,
-    },
-    report: { markdown: '# Mesh Vital Signs — 🔴 CRITICAL — dead mechanism(s) detected\n' },
-  });
-}
-
-// ── alertKeysFor ──────────────────────────────────────────────────────────────
-
-test('alertKeysFor: nominal report → no keys', () => {
-  const keys = alertKeysFor(nominalReport());
-  assert.equal(keys.size, 0);
+test('organ → critical files a needs-human open with the rendered report attached', () => {
+  const r = report({ agents: 'critical', jobs: 'ok' }, '# Mesh Vital Signs — CRITICAL\n');
+  const { opens, closes, state } = planHealthAlerts({ report: r, prev: null, now: NOW });
+  assert.equal(opens.length, 1);
+  assert.equal(closes.length, 0);
+  assert.equal(opens[0].organ, 'agents');
+  assert.equal(opens[0].key, organAlertKey('agents'));
+  assert.match(opens[0].title, /Agents is CRITICAL/);
+  assert.match(opens[0].body, /Mesh Vital Signs — CRITICAL/);     // renderHealthReport text attached
+  assert.match(opens[0].body, new RegExp(`<!-- ${organAlertKey('agents')} -->`));
+  assert.deepEqual(state.openAlerts, [organAlertKey('agents')]);
 });
 
-test('alertKeysFor: null/missing report → no keys (never throws)', () => {
-  assert.equal(alertKeysFor(null).size, 0);
-  assert.equal(alertKeysFor(undefined).size, 0);
-  assert.equal(alertKeysFor({}).size, 0);
+test('dedup: an already-open critical organ does not re-file', () => {
+  const r = report({ agents: 'critical' });
+  const prev = { openAlerts: [organAlertKey('agents')] };
+  const { opens, closes, state } = planHealthAlerts({ report: r, prev, now: NOW });
+  assert.equal(opens.length, 0);
+  assert.equal(closes.length, 0);
+  assert.deepEqual(state.openAlerts, [organAlertKey('agents')]);   // stays open
 });
 
-test('alertKeysFor: critical overall + critical agents organ → two keys', () => {
-  const keys = alertKeysFor(criticalReport());
-  assert.ok(keys.has('overall:critical'), 'overall:critical missing');
-  assert.ok(keys.has('organ:agents:critical'), 'organ:agents:critical missing');
-  assert.equal(keys.size, 2);
+test('recovery: a previously-open organ now ok/idle gets closed with a comment', () => {
+  const r = report({ agents: 'ok' });
+  const prev = { openAlerts: [organAlertKey('agents')] };
+  const { opens, closes, state } = planHealthAlerts({ report: r, prev, now: NOW });
+  assert.equal(opens.length, 0);
+  assert.equal(closes.length, 1);
+  assert.equal(closes[0].organ, 'agents');
+  assert.match(closes[0].body, /recovered/);
+  assert.match(closes[0].body, /now `ok`/);
+  assert.deepEqual(state.openAlerts, []);
 });
 
-test('alertKeysFor: only jobs organ critical (not overall) → organ key only', () => {
-  const report = nominalReport({
-    organs: {
-      agents:   { status: 'ok' },
-      jobs:     { status: 'critical' },
-      board:    { status: 'ok' },
-      pipeline: { status: 'ok' },
-      cognition:{ status: 'ok' },
-    },
-  });
-  const keys = alertKeysFor(report);
-  assert.ok(keys.has('organ:jobs:critical'));
-  assert.ok(!keys.has('overall:critical'));
-  assert.equal(keys.size, 1);
+test('re-open: after recovery, a fresh critical files again', () => {
+  const r = report({ agents: 'critical' });
+  const prev = { openAlerts: [] };   // recovered last sweep → not open
+  const { opens } = planHealthAlerts({ report: r, prev, now: NOW });
+  assert.equal(opens.length, 1);
+  assert.equal(opens[0].organ, 'agents');
 });
 
-test('alertKeysFor: warn organs are NOT alerted (only critical)', () => {
-  const report = nominalReport({
-    organs: {
-      agents:   { status: 'warn' },
-      jobs:     { status: 'ok' },
-      board:    { status: 'ok' },
-      pipeline: { status: 'ok' },
-      cognition:{ status: 'ok' },
-    },
-  });
-  const keys = alertKeysFor(report);
-  assert.equal(keys.size, 0);
+test('warn is not critical: a warn organ neither opens nor closes', () => {
+  const r = report({ agents: 'warn', cognition: 'warn' });
+  const { opens, closes } = planHealthAlerts({ report: r, prev: null, now: NOW });
+  assert.equal(opens.length, 0);
+  assert.equal(closes.length, 0);
 });
 
-// ── alertTitle / alertBody / recoveryComment ───────────────────────────────────
-
-test('alertTitle: overall:critical has a descriptive title', () => {
-  const t = alertTitle('overall:critical');
-  assert.match(t, /CRITICAL/i);
-  assert.match(t, /mesh-health/i);
+test('multiple critical organs each file their own alert; one recovers independently', () => {
+  const r = report({ agents: 'critical', jobs: 'critical', board: 'ok' });
+  const prev = { openAlerts: [organAlertKey('board')] };   // board was critical, now recovered
+  const { opens, closes, state } = planHealthAlerts({ report: r, prev, now: NOW });
+  assert.deepEqual(opens.map((o) => o.organ).sort(), ['agents', 'jobs']);
+  assert.deepEqual(closes.map((c) => c.organ), ['board']);
+  assert.deepEqual(state.openAlerts.sort(), [organAlertKey('agents'), organAlertKey('jobs')].sort());
 });
 
-test('alertTitle: organ key uses the organ label', () => {
-  assert.match(alertTitle('organ:agents:critical'), /Agents/);
-  assert.match(alertTitle('organ:jobs:critical'), /Jobs/);
-  assert.match(alertTitle('organ:board:critical'), /Task Board/);
-});
-
-test('alertBody: contains the key, timestamp, and rendered report', () => {
-  const report = criticalReport();
-  const body = alertBody('overall:critical', report);
-  assert.match(body, /overall:critical/);
-  assert.match(body, /2026-06-21/);
-  assert.match(body, /CRITICAL/);
-  // contains the unique dedup comment so gh search can find it
-  assert.match(body, /mesh-health-alert-key: overall:critical/);
-});
-
-test('alertBody: works with null report (degrades, never throws)', () => {
-  const body = alertBody('overall:critical', null);
-  assert.match(body, /overall:critical/);
-  assert.ok(typeof body === 'string');
-});
-
-test('recoveryComment: includes key and resolution', () => {
-  const comment = recoveryComment('overall:critical', nominalReport());
-  assert.match(comment, /overall:critical/);
-  assert.match(comment, /recovered/i);
-  assert.match(comment, /nominal/);
-});
-
-// ── computeAlertActions ────────────────────────────────────────────────────────
-
-test('computeAlertActions: nominal report + empty state → no actions', () => {
-  const { toOpen, toClose, nextState } = computeAlertActions(nominalReport(), {});
-  assert.deepEqual(toOpen, []);
-  assert.deepEqual(toClose, []);
-  assert.deepEqual(nextState.open, {});
-});
-
-test('computeAlertActions: first critical → opens new issues', () => {
-  const report = criticalReport();
-  const { toOpen, toClose, nextState } = computeAlertActions(report, {});
-  assert.ok(toOpen.length >= 1, 'should open at least one issue');
-  assert.deepEqual(toClose, []);
-  // nextState marks them pending (null) until the shell fills in the real number
-  for (const o of toOpen) {
-    assert.equal(nextState.open[o.key], null);
-  }
-  assert.ok('overall:critical' in nextState.open || 'organ:agents:critical' in nextState.open);
-});
-
-test('computeAlertActions: dedup — already-open key is NOT re-opened', () => {
-  const report = criticalReport();
-  // Simulate prior state where overall:critical is already open as issue #42.
-  const prior = { open: { 'overall:critical': 42, 'organ:agents:critical': 43 } };
-  const { toOpen, toClose, nextState } = computeAlertActions(report, prior);
-  // No new opens — both keys are already tracked.
-  assert.deepEqual(toOpen, []);
-  assert.deepEqual(toClose, []);
-  assert.equal(nextState.open['overall:critical'], 42);
-  assert.equal(nextState.open['organ:agents:critical'], 43);
-});
-
-test('computeAlertActions: recovery — open issue is closed when organ recovers', () => {
-  const recovered = nominalReport(); // no longer critical
-  const prior = { open: { 'overall:critical': 42, 'organ:agents:critical': 43 } };
-  const { toOpen, toClose, nextState } = computeAlertActions(recovered, prior);
-  assert.deepEqual(toOpen, []);
-  assert.equal(toClose.length, 2);
-  const closedKeys = toClose.map((c) => c.key).sort();
-  assert.deepEqual(closedKeys, ['organ:agents:critical', 'overall:critical']);
-  // Issue numbers match prior state
-  const byKey = Object.fromEntries(toClose.map((c) => [c.key, c.number]));
-  assert.equal(byKey['overall:critical'], 42);
-  assert.equal(byKey['organ:agents:critical'], 43);
-  // nextState no longer tracks those keys
-  assert.ok(!('overall:critical' in nextState.open));
-  assert.ok(!('organ:agents:critical' in nextState.open));
-});
-
-test('computeAlertActions: partial recovery — one organ recovers, another stays critical', () => {
-  // agents recovered but jobs newly critical
-  const report = nominalReport({
-    overall: 'critical',
-    organs: {
-      agents:   { status: 'ok' },
-      jobs:     { status: 'critical' },
-      board:    { status: 'ok' },
-      pipeline: { status: 'ok' },
-      cognition:{ status: 'ok' },
-    },
-  });
-  const prior = { open: { 'overall:critical': 10, 'organ:agents:critical': 11 } };
-  const { toOpen, toClose, nextState } = computeAlertActions(report, prior);
-  // agents closed, jobs newly opened
-  assert.equal(toClose.length, 1);
-  assert.equal(toClose[0].key, 'organ:agents:critical');
-  assert.equal(toClose[0].number, 11);
-  // overall:critical stays open; organ:jobs:critical newly opened
-  assert.equal(toOpen.length, 1);
-  assert.equal(toOpen[0].key, 'organ:jobs:critical');
-  assert.equal(nextState.open['overall:critical'], 10);
-  assert.ok(!('organ:agents:critical' in nextState.open));
-  assert.equal(nextState.open['organ:jobs:critical'], null);
-});
-
-test('computeAlertActions: null-in-prior (persisted failed-open) → key is retried, not silently deduped', () => {
-  // Simulates the state after a gh issue create threw and the null was persisted.
-  // The next sweep must still open the issue, not treat null as "already open".
-  const report = criticalReport();
-  const prior = { open: { 'overall:critical': null } };
-  const { toOpen, toClose, nextState } = computeAlertActions(report, prior);
-  assert.ok(toOpen.some((o) => o.key === 'overall:critical'), 'overall:critical must be re-emitted to toOpen for retry');
-  assert.deepEqual(toClose, []);
-  assert.equal(nextState.open['overall:critical'], null); // still pending until shell fills in number
-});
-
-test('computeAlertActions: empty/corrupt priorState is tolerated', () => {
-  for (const bad of [null, undefined, {}, { open: null }, { open: 'garbage' }]) {
-    const { toOpen, toClose } = computeAlertActions(nominalReport(), bad);
-    assert.deepEqual(toOpen, []);
-    assert.deepEqual(toClose, []);
-  }
-});
-
-test('computeAlertActions: null report → no actions (never throws)', () => {
-  const { toOpen, toClose, nextState } = computeAlertActions(null, {});
-  assert.deepEqual(toOpen, []);
-  assert.deepEqual(toClose, []);
-  assert.deepEqual(nextState.open, {});
-});
-
-test('computeAlertActions: toOpen entries have title and body', () => {
-  const { toOpen } = computeAlertActions(criticalReport(), {});
-  for (const o of toOpen) {
-    assert.ok(typeof o.key === 'string' && o.key.length > 0, 'key missing');
-    assert.ok(typeof o.title === 'string' && o.title.length > 0, 'title missing');
-    assert.ok(typeof o.body === 'string' && o.body.length > 0, 'body missing');
-  }
-});
-
-test('computeAlertActions: toClose entries have number and comment', () => {
-  const prior = { open: { 'overall:critical': 99 } };
-  const { toClose } = computeAlertActions(nominalReport(), prior);
-  assert.equal(toClose.length, 1);
-  assert.equal(toClose[0].number, 99);
-  assert.ok(typeof toClose[0].comment === 'string' && toClose[0].comment.length > 0);
+test('empty/nominal report is a no-op', () => {
+  const { opens, closes, state } = planHealthAlerts({ report: report({ agents: 'ok', jobs: 'ok' }), prev: null, now: NOW });
+  assert.equal(opens.length, 0);
+  assert.equal(closes.length, 0);
+  assert.deepEqual(state.openAlerts, []);
+  assert.equal(state.generatedAt, NOW.toISOString());
 });

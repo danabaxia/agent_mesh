@@ -1,0 +1,13 @@
+{
+  "jobs": [
+    {
+      "id": "concierge-monitor-sweep",
+      "name": "concierge-monitor-sweep — over-the-loop mesh health sweep",
+      "kind": "builtin",
+      "builtin": "concierge-monitor-sweep",
+      "cadence": { "kind": "every", "minutes": 60 },
+      "enabled": true,
+      "saveArtifact": false
+    }
+  ]
+}

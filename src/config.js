@@ -69,6 +69,11 @@ export function readPositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+// Mobile Concierge history persistence (issue #362). AGENT_MESH_CONCIERGE_HISTORY_MAX turns
+// are kept on disk; AGENT_MESH_CONCIERGE_CONTEXT_TURNS are injected into each model prompt.
+export const DEFAULT_CONCIERGE_HISTORY_MAX = 200;
+export const DEFAULT_CONCIERGE_CONTEXT_TURNS = 10;
+
 // Mesh Improvement Report (MIR) — spec 2026-06-19. All optional; see CLAUDE.md Config.
 export const DEFAULT_MIR_DIR = '.dev-society/mir';
 export const DEFAULT_MIR_NOISE_BAND_PCT = 10;   // soft-finding regression threshold (%)
@@ -91,8 +96,11 @@ export const DEFAULT_HEALTH_PROMPT_SOFT_BYTES = 16_384;   // per-agent prompt so
 export const DEFAULT_HEALTH_HEADROOM_WARN_PCT = 25;       // context headroom below this → cognition flag
 export const DEFAULT_HEALTH_HISTORY_DAYS = 14;            // activity-history sparkline window (days)
 
-// Health alert sweep — issue #361. AGENT_MESH_HEALTH_ALERT_DISABLED=1 disables the sweep.
-export const DEFAULT_HEALTH_ALERT_INTERVAL_MS = 900_000;  // 15m between alert sweeps
+// Proactive health-alert sweep (dev-society daemon) — issue #361. Consumes the
+// organ-level health model and files a `needs-human` issue when an organ goes
+// CRITICAL, auto-closing on recovery. AGENT_MESH_HEALTH_ALERT_INTERVAL_MS=0 (or
+// AGENT_MESH_HEALTH_ALERT_DISABLED) disables. See CLAUDE.md Config.
+export const DEFAULT_HEALTH_ALERT_INTERVAL_MS = 900_000;  // 15m health-alert tick (0 disables)
 
 // Resolve the health thresholds from an env-like bag, falling back to the defaults
 // above. Pure: no process access of its own. Used by health-collect + /api/health.

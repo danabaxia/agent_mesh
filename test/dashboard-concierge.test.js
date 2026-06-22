@@ -1,9 +1,9 @@
-// Concierge unit + route + host-gate allowlist tests (spec 2026-06-21).
+// Concierge unit + route + host-gate allowlist tests (spec 2026-06-21, issue #362).
 // Hermetic: no real claude / gh / tailscale — all IO is injected or stubbed.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
@@ -185,6 +185,32 @@ test('host-gate: allowlisted tailnet host STILL requires the token (no auth bypa
   } finally { await srv.close(); }
 });
 
+test('host-gate: tailnet module request (http Origin, no Sec-Fetch-Site) is accepted', async () => {
+  // ES module scripts are fetched in CORS mode and send an Origin header even when
+  // same-origin; over `tailscale serve --http=80` that Origin is http://. The gate
+  // must accept it, else /mobile/app.js 403s and the PWA shell loads without JS.
+  const { srv, port, cookie } = await startServer();
+  try {
+    const res = await rawRequest({
+      port, path: '/mobile/app.js',
+      headers: { Host: 'my-mac.tailnet-abc.ts.net', Origin: 'http://my-mac.tailnet-abc.ts.net', Cookie: cookie }
+      // no Sec-Fetch-Site → falls through to the Origin check
+    });
+    assert.equal(res.status, 200, 'http:// Origin from the same tailnet host must pass');
+  } finally { await srv.close(); }
+});
+
+test('host-gate: a foreign Origin on a tailnet host is still rejected', async () => {
+  const { srv, port, cookie } = await startServer();
+  try {
+    const res = await rawRequest({
+      port, path: '/api/health',
+      headers: { Host: 'my-mac.tailnet-abc.ts.net', Origin: 'http://evil.example.com', Cookie: cookie }
+    });
+    assert.equal(res.status, 403, 'a foreign Origin must not pass even on an allowlisted host');
+  } finally { await srv.close(); }
+});
+
 test('host-gate: explicit env-listed host accepted', async () => {
   const { srv, port, cookie } = await startServer({ allowedHosts: ['mybox.local'] });
   try {
@@ -196,12 +222,165 @@ test('host-gate: explicit env-listed host accepted', async () => {
   } finally { await srv.close(); }
 });
 
-test('bootstrap also works at /m?t= (mobile entry)', async () => {
+test('/m?t= serves the mobile page directly (no redirect) with a Lax cookie', async () => {
+  // iOS Safari dropped Strict cookies set on a 302, 403ing the page's own assets.
+  // The mobile entry now serves the HTML on the SAME 200 response with a Lax cookie.
   const { srv, port, token } = await startServer();
   try {
     const res = await rawRequest({ port, path: `/m?t=${token}`, headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
-    assert.equal(res.status, 302);
-    assert.equal(res.headers.location, '/m');
-    assert.ok((res.headers['set-cookie']?.[0] || '').includes('am_dash='));
+    assert.equal(res.status, 200);
+    assert.ok(res.body.includes('Mesh Concierge'), 'serves the mobile shell HTML');
+    const sc = res.headers['set-cookie']?.[0] || '';
+    assert.ok(sc.includes('am_dash='), 'sets the auth cookie');
+    assert.ok(/SameSite=Lax/i.test(sc), 'cookie is SameSite=Lax');
+  } finally { await srv.close(); }
+});
+
+test('mobile shell is public (renders without a token); a bad ?t= is still rejected', async () => {
+  const { srv, port } = await startServer();
+  try {
+    const page = await rawRequest({ port, path: '/m', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
+    assert.equal(page.status, 200);
+    assert.ok(page.body.includes('Mesh Concierge'));
+    const js = await rawRequest({ port, path: '/mobile/app.js', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
+    assert.equal(js.status, 200, 'shell assets load without a cookie');
+    const bad = await rawRequest({ port, path: `/m?t=wrong`, headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'none' } });
+    assert.equal(bad.status, 403, 'an invalid token is still rejected');
+  } finally { await srv.close(); }
+});
+
+test('API auth accepts the X-Dashboard-Token header (cookie-independent fallback)', async () => {
+  const { srv, port, token } = await startServer();
+  try {
+    const ok = await rawRequest({ port, path: '/api/health', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', 'X-Dashboard-Token': token } });
+    assert.equal(ok.status, 200, 'valid header token authorizes an API call (no cookie)');
+    const no = await rawRequest({ port, path: '/api/health', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin' } });
+    assert.equal(no.status, 403, 'still rejected with neither cookie nor header');
+    const bad = await rawRequest({ port, path: '/api/health', headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', 'X-Dashboard-Token': 'nope' } });
+    assert.equal(bad.status, 403, 'a wrong header token is rejected');
+  } finally { await srv.close(); }
+});
+
+// --------------------------------------------------------------------------
+// History persistence (spec issue #362)
+// --------------------------------------------------------------------------
+
+test('message() appends user + assistant entries to history log', async () => {
+  const historyPath = join(await mkdtemp(join(tmpdir(), 'ch-')), 'history.jsonl');
+  const c = createConcierge({
+    meshRoot: '/tmp/nope',
+    runAsk: async () => 'The answer is 42.',
+    runGh: async () => ({ url: 'x' }),
+    historyPath,
+  });
+  await c.message({ text: 'What is the answer?' });
+  // Give the fire-and-forget appendHistory a tick to settle.
+  await new Promise((r) => setTimeout(r, 50));
+  const raw = await readFile(historyPath, 'utf8');
+  const lines = raw.split('\n').filter(Boolean);
+  assert.equal(lines.length, 2, 'one user + one assistant entry');
+  const [userEntry, assistantEntry] = lines.map((l) => JSON.parse(l));
+  assert.equal(userEntry.role, 'user');
+  assert.equal(userEntry.text, 'What is the answer?');
+  assert.equal(assistantEntry.role, 'assistant');
+  assert.equal(assistantEntry.text, 'The answer is 42.');
+  assert.ok(typeof userEntry.ts === 'string', 'ts field present on user entry');
+});
+
+test('history() returns stored turns up to limit', async () => {
+  const historyPath = join(await mkdtemp(join(tmpdir(), 'ch-')), 'history.jsonl');
+  const c = createConcierge({
+    meshRoot: '/tmp/nope',
+    runAsk: async (_, i) => `reply ${Date.now()}`,
+    runGh: async () => ({ url: 'x' }),
+    historyPath,
+  });
+  // Send two turns (= 4 entries).
+  await c.message({ text: 'Turn 1' });
+  await c.message({ text: 'Turn 2' });
+  await new Promise((r) => setTimeout(r, 50));
+  const all = await c.history({ limit: 10 });
+  assert.equal(all.length, 4, 'two user + two assistant entries total');
+  const limited = await c.history({ limit: 2 });
+  assert.equal(limited.length, 2, 'limit is respected');
+});
+
+test('LRU trim fires when entry count exceeds historyMax', async () => {
+  const historyPath = join(await mkdtemp(join(tmpdir(), 'ch-')), 'history.jsonl');
+  // historyMax=4 → trim to last 4 entries after each append.
+  const c = createConcierge({
+    meshRoot: '/tmp/nope',
+    runAsk: async () => 'ok',
+    runGh: async () => ({ url: 'x' }),
+    historyPath,
+    historyMax: 4,
+  });
+  // Three turns = 6 entries; after trim only 4 remain.
+  await c.message({ text: 'A' });
+  await c.message({ text: 'B' });
+  await c.message({ text: 'C' });
+  await new Promise((r) => setTimeout(r, 80));
+  const all = await c.history({ limit: 100 });
+  assert.ok(all.length <= 4, `expected ≤4 entries after trim, got ${all.length}`);
+});
+
+test('server-side history feeds into buildPrompt on the next turn', async () => {
+  const historyPath = join(await mkdtemp(join(tmpdir(), 'ch-')), 'history.jsonl');
+  const promptsSeen = [];
+  const c = createConcierge({
+    meshRoot: '/tmp/nope',
+    runAsk: async ({ prompt }) => { promptsSeen.push(prompt); return 'reply'; },
+    runGh: async () => ({ url: 'x' }),
+    historyPath,
+  });
+  await c.message({ text: 'First message' });
+  await new Promise((r) => setTimeout(r, 50));
+  await c.message({ text: 'Second message' });
+  // The second prompt should include the first turn's text.
+  assert.ok(promptsSeen.length >= 2, 'two prompts built');
+  assert.match(promptsSeen[1], /First message/, 'second prompt includes prior turn');
+});
+
+test('GET /api/concierge/history returns stored turns', async () => {
+  const historyPath = join(await mkdtemp(join(tmpdir(), 'ch-')), 'history.jsonl');
+  const fakeConcierge = {
+    message: async ({ text }) => ({ reply: `echo:${text}`, proposal: null }),
+    confirm: async () => ({ url: 'u' }),
+    history: async ({ limit }) => [
+      { role: 'user', text: 'hello', ts: '2026-06-21T00:00:00Z' },
+      { role: 'assistant', text: 'hi there', ts: '2026-06-21T00:00:01Z' },
+    ].slice(-limit),
+  };
+  const { srv, port, cookie } = await startServer({ concierge: fakeConcierge });
+  try {
+    const res = await rawRequest({
+      port, path: '/api/concierge/history?limit=10',
+      headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', Cookie: cookie }
+    });
+    assert.equal(res.status, 200);
+    const j = JSON.parse(res.body);
+    assert.ok(j.ok);
+    assert.equal(j.turns.length, 2);
+    assert.equal(j.turns[0].role, 'user');
+    assert.equal(j.turns[0].text, 'hello');
+  } finally { await srv.close(); }
+});
+
+test('GET /api/concierge/history returns empty array when concierge has no history method', async () => {
+  const fakeConcierge = {
+    message: async () => ({ reply: '', proposal: null }),
+    confirm: async () => ({ url: 'u' }),
+    // no history method
+  };
+  const { srv, port, cookie } = await startServer({ concierge: fakeConcierge });
+  try {
+    const res = await rawRequest({
+      port, path: '/api/concierge/history',
+      headers: { Host: `127.0.0.1:${port}`, 'Sec-Fetch-Site': 'same-origin', Cookie: cookie }
+    });
+    assert.equal(res.status, 200);
+    const j = JSON.parse(res.body);
+    assert.ok(j.ok);
+    assert.deepEqual(j.turns, []);
   } finally { await srv.close(); }
 });

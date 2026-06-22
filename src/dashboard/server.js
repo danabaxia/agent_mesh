@@ -34,6 +34,7 @@ import {
 import { extractSkillSummary, listLocalSkills } from '../agent-context.js';
 import { createConsoleBroker, ConsoleError } from './console.js';
 import { createConcierge, ConciergeError } from './concierge.js';
+import { readAlerts } from '../concierge/alerts-store.js';
 import { createMeshWatcher } from './watcher.js';
 import { buildActivity } from './activity.js';
 import { buildActivityStats, rangeBounds } from './activity-stats.js';
@@ -374,8 +375,15 @@ function passesSameOriginGate(req, listenerPort, allowedHosts = []) {
   const origin = req.headers['origin'];
   if (origin) {
     if (isRemote) {
-      // Same-origin under the proxy: https on the MagicDNS/allowlisted host.
-      if (origin === `https://${hostName}` || origin === `https://${hostName}:${hostPort}`) return true;
+      // Same-origin under the proxy. Accept BOTH http and https on the MagicDNS/
+      // allowlisted host: `tailscale serve --http=80` fronts the dashboard over
+      // plain HTTP on the tailnet (WireGuard already encrypts), so a same-origin
+      // request carries `Origin: http://<host>`. ES module scripts are fetched in
+      // CORS mode and ALWAYS send Origin (unlike stylesheets/classic scripts), so
+      // an https-only check here 403'd /mobile/app.js specifically → the PWA shell
+      // loaded but its JS never ran ("opens but won't fully load" on the phone).
+      if (origin === `https://${hostName}` || origin === `http://${hostName}` ||
+          origin === `https://${hostName}:${hostPort}` || origin === `http://${hostName}:${hostPort}`) return true;
       return false;
     }
     const expectedOrigin = `http://127.0.0.1:${listenerPort}`;
@@ -720,32 +728,56 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     // When reached through an HTTPS proxy (Tailscale serve sets X-Forwarded-Proto),
     // mark the cookie Secure so it is only ever returned over TLS.
     const secure = req.headers['x-forwarded-proto'] === 'https' ? ' Secure;' : '';
-    // Set cookie and redirect to the clean URL (preserving the requested page).
+    // SameSite=Lax (not Strict): Strict cookies set during a redirect are dropped
+    // by some mobile browsers (iOS Safari), which then 403'd the page's own JS/CSS
+    // subrequests → "opens but won't fully load". Lax is sent on top-level nav +
+    // same-site subresources, which is exactly this same-origin PWA.
     res.setHeader(
       'Set-Cookie',
-      `${COOKIE_NAME}=${token}; SameSite=Strict; HttpOnly;${secure} Path=/`
+      `${COOKIE_NAME}=${token}; SameSite=Lax; HttpOnly;${secure} Path=/`
     );
-    res.writeHead(302, { Location: pathname });
-    res.end();
-    return;
+    // Desktop board ('/'): redirect to the clean URL (drops the token from the bar).
+    // Mobile ('/m'): serve the page DIRECTLY on this same 200 response so the cookie
+    // is present before the browser fetches /mobile/*.js|css — no fragile redirect
+    // hop where the cookie can be lost. Fall through to the static-serve block.
+    if (pathname === '/') {
+      res.writeHead(302, { Location: '/' });
+      res.end();
+      return;
+    }
+    // /m: fall through (cookie already set on res); same-origin gate below still
+    // applies, and the static shell is public so it serves without a cookie.
   }
 
   // -----------------------------------------------------------------------
-  // All other routes: require same-origin gate + cookie
+  // All other routes: require same-origin gate; cookie required EXCEPT for the
+  // public mobile UI shell (static HTML/CSS/JS — no data). Every /api/* data and
+  // action route still requires the token, so auth is never weakened.
   // -----------------------------------------------------------------------
 
-  // Same-origin gate
+  // Same-origin gate (applies to everything, including the public shell)
   if (!passesSameOriginGate(req, listenerPort, allowedHosts)) {
     send403(res, 'Cross-origin request denied');
     return;
   }
 
-  // Cookie auth
-  const cookies = parseCookies(req.headers['cookie']);
-  const cookieVal = cookies[COOKIE_NAME] ?? '';
-  if (!tokenEquals(cookieVal, token)) {
-    send403(res, 'Authentication required');
-    return;
+  // The mobile PWA shell is non-sensitive UI code; serving it without the token
+  // means the page always renders, and a cookie hiccup degrades to "data needs
+  // sign-in" instead of a blank/403 page. Data + actions stay gated below.
+  const isPublicShell = pathname === '/m' || pathname.startsWith('/mobile/');
+
+  // Token auth (skipped only for the public shell). Accept the token via the cookie
+  // OR an `X-Dashboard-Token` header — the header is a cookie-independent fallback
+  // for mobile browsers that drop the cookie; the mobile PWA captures `?t=` once and
+  // sends it as this header on every /api call. Same token, same strength.
+  if (!isPublicShell) {
+    const cookies = parseCookies(req.headers['cookie']);
+    const cookieVal = cookies[COOKIE_NAME] ?? '';
+    const headerVal = req.headers['x-dashboard-token'] ?? '';
+    if (!tokenEquals(cookieVal, token) && !tokenEquals(headerVal, token)) {
+      send403(res, 'Authentication required');
+      return;
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -2621,11 +2653,38 @@ async function handleRequest(req, res, { meshRoot, token, listenerPort, allowedH
     try { payload = JSON.parse((await readBodyCapped(req, 64 * 1024)) || '{}'); }
     catch (err) { sendJson(res, err.tooLarge ? 413 : 400, { ok: false, error: { code: 'bad_input' } }); return; }
     try {
-      const out = await concierge.confirm({ title: payload.title, body: payload.body, labels: payload.labels });
+      // Pass the action + its payload (back-compat: bare title/body/labels → file_issue).
+      const out = await concierge.confirm({ action: payload.action, payload: payload.payload,
+        title: payload.title, body: payload.body, labels: payload.labels,
+        peer: payload.peer, objective: payload.objective, task: payload.task,
+        context: payload.context, requirements: payload.requirements, pointers: payload.pointers });
       sendJson(res, 200, { ok: true, ...out });
     } catch (err) {
-      if (err instanceof ConciergeError) sendJson(res, err.status, { ok: false, error: { code: 'concierge', message: err.message, detail: err.detail } });
+      // ConciergeError + the dispatcher's DispatchError both carry a numeric .status.
+      if (err && Number.isFinite(err.status)) sendJson(res, err.status, { ok: false, error: { code: 'concierge', message: err.message, detail: err.detail } });
       else sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
+    }
+    return;
+  }
+
+  if (pathname === '/api/concierge/alerts' && req.method === 'GET') {
+    const { alerts } = await readAlerts(meshRoot);
+    sendJson(res, 200, { ok: true, alerts });
+    return;
+  }
+
+  if (pathname === '/api/concierge/history' && req.method === 'GET') {
+    const limit = Math.min(200, Math.max(1, Number.parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+    try {
+      // Support both getHistory() (raw entries, `reply` field) and history() (normalized, `text` field).
+      // Return both `history` and `turns` keys so callers using either API shape work correctly.
+      const raw = typeof concierge.getHistory === 'function' ? await concierge.getHistory({ limit }) : null;
+      const normalized = typeof concierge.history === 'function' ? await concierge.history({ limit }) : null;
+      const result = raw ?? normalized ?? [];
+      const turns = normalized ?? raw ?? [];
+      sendJson(res, 200, { ok: true, history: result, turns });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: { code: 'internal', message: String(err && err.message || err) } });
     }
     return;
   }
@@ -2845,9 +2904,8 @@ export function createDashboardServer({ meshRoot, port = 7077, token, allowedHos
   // Host allowlist for the same-origin gate. Defaults from env; *.ts.net is always
   // accepted (Tailscale serve). Injectable for tests.
   const resolvedAllowedHosts = allowedHosts ?? readDashboardAllowedHosts(process.env.AGENT_MESH_DASHBOARD_ALLOWED_HOSTS);
-  // Concierge (mobile phone front-door): ask-only chat + tap-gated issue creation.
-  // Injectable for tests; defaults to a real concierge bound to this mesh root.
-  const conciergeApi = concierge ?? createConcierge({ meshRoot });
+  // Concierge is constructed after the console broker below — it routes phone chat to
+  // the served concierge AGENT via that broker (its peers power the action dispatcher).
   // Shared in-flight guard so concurrent POST /api/daily/refresh coalesce onto one run.
   const dailyRefresh = { fn: regenerateDaily ?? defaultRegenerateDaily, inflight: null };
   // Resolve auth token. Precedence:
@@ -2870,6 +2928,16 @@ export function createDashboardServer({ meshRoot, port = 7077, token, allowedHos
   // The Desk console broker (ask-only A2A). Injectable for tests; defaults to a
   // real broker bound to this mesh root.
   const broker = consoleBroker ?? createConsoleBroker({ meshRoot });
+
+  // Concierge (phone front-door): routes chat to the served concierge AGENT via the
+  // broker; its mesh peers (from mesh.json) power the Confirm-gated action dispatcher.
+  // Injectable for tests; the agent may not be in the mesh yet → peers default to [].
+  let conciergePeers = [];
+  try {
+    const mj = JSON.parse(readFileSync(join(meshRoot, 'mesh.json'), 'utf8'));
+    conciergePeers = (mj.agents || []).find((a) => a.name === 'concierge')?.peers ?? [];
+  } catch { /* concierge not registered yet */ }
+  const conciergeApi = concierge ?? createConcierge({ meshRoot, broker, peers: conciergePeers });
 
   // SSE hub for /api/events change notifications.
   const autoSyncEnabled = process.env.AGENT_MESH_NO_AUTOSYNC !== '1';

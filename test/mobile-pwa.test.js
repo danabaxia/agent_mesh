@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime } from '../src/dashboard/public/mobile/app.js';
+import { escapeHtml, toggleLabel, summarizeStatus, summarizeActivity, relTime, summarizeAlerts } from '../src/dashboard/public/mobile/app.js';
 import { resolveMagicHost, bootstrapUrl, serveArgs, run as serveRun } from '../scripts/mesh-mobile-serve.mjs';
 
 // ---- app.js pure helpers ----
@@ -34,6 +34,22 @@ test('summarizeStatus tolerates missing data and classifies health', () => {
 
   const bad = summarizeStatus({ health: { status: 'failing' } });
   assert.ok(bad[0].rows[0].cls === 'bad');
+});
+
+test('summarizeStatus renders the real daily-report shape (no [object Object])', () => {
+  const cards = summarizeStatus({ daily: {
+    prs: { merged: [{}, {}], openNow: 2 },
+    issues: { openNow: 17 },
+    tokens: { total: { input: 20577, output: 22855, costUsd: 2.0809 } }
+  }});
+  const daily = cards.find((c) => c.title === 'Daily report');
+  const flat = JSON.stringify(daily.rows);
+  assert.ok(!flat.includes('[object Object]'), 'never stringifies an object');
+  assert.ok(daily.rows.some((r) => r.label === 'PRs merged' && r.value === '2'));
+  assert.ok(daily.rows.some((r) => r.label === 'PRs open' && r.value === '2'));
+  assert.ok(daily.rows.some((r) => r.label === 'Issues open' && r.value === '17'));
+  assert.ok(daily.rows.some((r) => r.label === 'Cost (24h)' && r.value === '$2.08'));
+  assert.ok(daily.rows.some((r) => r.label === 'Tokens in+out' && r.value === (20577 + 22855).toLocaleString()));
 });
 
 test('relTime renders compact relative ages', () => {
@@ -66,6 +82,18 @@ test('summarizeActivity handles empty/missing feed', () => {
 test('summarizeActivity caps to max rows', () => {
   const many = Array.from({ length: 30 }, (_, i) => ({ ts: '2026-06-21T11:00:00Z', summary: `e${i}` }));
   assert.equal(summarizeActivity(many, { max: 12 }).rows.length, 12);
+});
+
+test('summarizeAlerts ranks by severity with colour; empty → placeholder', () => {
+  const card = summarizeAlerts([
+    { id: 'a', severity: 'warn', summary: 'stale task t1' },
+    { id: 'b', severity: 'critical', summary: 'conformance fail' }
+  ]);
+  assert.equal(card.title, 'Alerts');
+  assert.equal(card.rows[0].cls, 'bad');                      // critical first
+  assert.ok(card.rows[0].label.includes('conformance fail'));
+  assert.equal(summarizeAlerts([]).rows[0].value, '—');
+  assert.equal(summarizeAlerts(undefined).rows[0].cls, 'muted');
 });
 
 // ---- mesh-mobile-serve helpers ----
