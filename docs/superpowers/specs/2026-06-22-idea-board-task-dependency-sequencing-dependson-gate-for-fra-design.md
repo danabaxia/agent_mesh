@@ -1,4 +1,65 @@
-knowledged` transition; emits a structured refusal when blocked.
+# Board task dependency sequencing — `dependsOn` gate for framework-enforced task ordering
+
+**Date:** 2026-06-22
+**Status:** Design (pending review)
+**Builds on:** the mesh task board ([src/board/*](../../../src/board/), spec [2026-06-15-mesh-task-handoff-design.md](2026-06-15-mesh-task-handoff-design.md)).
+
+## Problem
+
+The orchestrator `board-drive` daemon fans out work by creating multiple tasks for peer agents: *analyze* → *implement* → *review* in sequence. Today there is no framework-enforced ordering: the *implement* agent can acknowledge and begin before *analyze* is `done`, producing wasted or incorrect downstream work.
+
+The orchestrator can instruct agents to "wait for task X" in the task brief, but the framework provides no structural guarantee. If the *implement* agent misses the instruction or picks up the task early, it may work on stale or incomplete inputs and ultimately produce work that must be discarded.
+
+## Goal
+
+A **`dependsOn` field** stamped at task-creation time that the framework enforces at the `assigned → acknowledged` transition: the dependent task cannot be acknowledged (and therefore cannot be worked) until every listed dependency is `done`. The gate is purely additive — tasks with no `dependsOn` behave exactly as today.
+
+### Decisions
+
+1. **Stamp once at creation, immutable.** `dependsOn` is set by `create_task_for_peer` and cannot be modified post-creation — same anti-spoof principle as `from`/`to`/`id`. No verb can alter or clear it.
+2. **`done`-only resolution.** A dependency is resolved only when its task is in the `done` state. No partial or soft deps in v1.
+3. **Gate at `assigned → acknowledged` only.** The gate fires at pickup; once a task is `acknowledged`, later transitions are not re-checked. This is the earliest and most useful enforcement point.
+4. **Failure is data, not an exception.** A blocked acknowledge returns a structured refusal (`{ error: 'blocked', blockedBy: [...] }`); the task stays `assigned`. No throw.
+5. **Create-time validation.** Unknown dep ids, self-references, and cycle-inducing deps are rejected at creation with a structured error; the task is not created.
+6. **`blockedBy` is derived, never stored.** At `list_my_tasks` time the board computes the unresolved-deps subset from live task states; it is not persisted in the task record.
+
+### Non-goals
+
+- General planning DAGs or multi-hop orchestration graphs — this is a single ordering gate, not a planner.
+- Mutable dependencies — `dependsOn` is set once at creation; adding/removing deps later is not supported in v1.
+- Gating transitions beyond `assigned → acknowledged` — later transitions are not dep-gated.
+- Cross-mesh dependencies — deps reference tasks on the same board only.
+- Auto-cancellation of permanently-blocked tasks — stale-task detection (#219) surfaces them.
+
+## Implementation
+
+### Data model
+
+The task record ([2026-06-15-mesh-task-handoff-design.md](2026-06-15-mesh-task-handoff-design.md) §4) gains one new framework-stamped field:
+
+```json
+{
+  "id": "orchestrator-coder-001",
+  "from": "orchestrator",
+  "to": "coder",
+  "dependsOn": ["orchestrator-analyst-001"],
+  "state": "assigned",
+  "created_at": "2026-06-22T00:00:00.000Z",
+  "result": null,
+  "seen_by_from": false,
+  "history": [
+    { "state": "assigned", "at": "2026-06-22T00:00:00.000Z", "by": "orchestrator" }
+  ]
+}
+```
+
+- `dependsOn`: array of task ids (strings); **framework-stamped** from the validated `create_task_for_peer` `dependsOn` arg; defaults to `[]`. **Immutable post-creation** — no verb may update or clear it.
+- Tasks with `dependsOn: []` (or the field absent for backward-compat) behave exactly as today.
+
+### Components
+
+- **`create_task_for_peer` validation** — accepts an optional `dependsOn: [taskId, ...]` arg; validates each id (task exists on board, not the task being created, no cycle introduced); **stamps the frozen field** on the task record. Unknown id / self-reference / cycle-inducing dep → structured error returned to caller; task not created.
+- **`update_my_task` dep-gate (pure, `task-state.js`)** — at the `assigned → acknowledged` transition; emits a structured refusal when blocked.
 - **`blockedBy` computation (pure)** — `(task, resolveState) → [taskId]`; the unresolved-deps subset returned by `list_my_tasks`. Read-only, derived.
 - **Task Board view (`tasks-model.js` / dashboard)** — surfaces `blockedBy`/`"waiting on N task(s)"` badge in the `assigned` column.
 
