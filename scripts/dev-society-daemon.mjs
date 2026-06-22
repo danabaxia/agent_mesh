@@ -295,6 +295,10 @@ if (!once && !selftest) {
     'autofix-pr-sweep': () => autofixPrSweep()
       .then((r) => ({ status: 'ok', output: `autofix-pr-sweep: escalated ${r.escalated}` }))
       .catch((e) => { log('autofix-pr-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Health-alert sweep: runs the proactive health-alert tick directly.
+    'health-alert-sweep': () => healthAlertTick()
+      .then(() => ({ status: 'ok', output: 'health-alert sweep complete' }))
+      .catch((e) => { log('health-alert-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
   };
   // Materialize managed wiring (registry.json / .mcp.json) before the scheduler
   // can fire any job — the daemon (unlike the dashboard) has no auto-sync, so
@@ -528,6 +532,7 @@ async function labelRepairSweep() {
   if (!repaired) log('label-repair-sweep: no repairs');
   return { repaired };
 }
+
 
 async function dispatchAdvisory(issue, route) {
   const reg = core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT });
