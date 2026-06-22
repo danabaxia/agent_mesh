@@ -566,6 +566,10 @@ export function buildTools() {
         'Dispatch a single ask to N peers concurrently and return all answers as an array. ' +
         'Use for redundant queries, adversarial reconciliation, or parallel enrichment — ' +
         'all peers receive the same task text simultaneously (scatter-gather). ' +
+        'Prefer delegate_to_peer when ONE peer clearly owns the domain (see list_peers): ' +
+        'fan-out spawns a worker per peer, so broadcasting a query only one peer can answer ' +
+        'multiplies token cost for no quality gain. Reserve fan_out_to_peers for genuinely ' +
+        'redundant/best-of-N, adversarial, or multi-domain queries where each peer adds value. ' +
         'mode is always "ask" in v2. Returns [{ peer, status, answer?, error_code?, log_path? }]. ' +
         'One peer failing does not abort the others; check each entry\'s status field. ' +
         'On pre-flight failure (bad mode, unknown peer, depth exhausted): { ok: false, error_code, summary }.',

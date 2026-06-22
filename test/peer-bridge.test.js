@@ -758,4 +758,8 @@ test('buildTools includes fan_out_to_peers with correct schema', () => {
   assert.equal(tool.inputSchema.properties.peers.type, 'array');
   assert.ok(tool.inputSchema.required.includes('peers'), 'peers is required');
   assert.ok(tool.inputSchema.required.includes('task'), 'task is required');
+  // Efficiency guidance: steer the model to single-delegate when one peer owns the
+  // domain, so it does not broadcast (and triple token cost) on disjoint routing —
+  // the lever for the quality_per_1k_tokens regression in the 3x-disjoint cell (#404).
+  assert.match(tool.description, /prefer delegate_to_peer/i);
 });
