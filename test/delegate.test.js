@@ -1166,3 +1166,29 @@ test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: failed spawn cleans up scra
   const { stdout } = await execFileAsync('git', ['branch', '--list', 'agentmesh/*'], { cwd: root });
   assert.equal(stdout.trim(), '', 'scratch branch should be cleaned up after failure');
 });
+
+test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: git checkout -b fails → error branch_create_failed', async () => {
+  const root = await createGitRepo();
+  await writeFile(join(root, 'README.md'), 'init', 'utf8');
+  await git(root, ['add', 'README.md']);
+  await git(root, ['-c', 'user.email=t@t.com', '-c', 'user.name=Test', 'commit', '--allow-empty-message', '-m', 'init']);
+  // Pre-create a branch named exactly 'agentmesh'. This writes a file at
+  // .git/refs/heads/agentmesh; when git tries to create agentmesh/<uuid> it
+  // needs that path to be a directory — but it's a file — so checkout -b fails.
+  await git(root, ['branch', 'agentmesh']);
+
+  const fakeClaude = await createFakeClaude(`console.log('should not run');`);
+
+  const result = await delegateTask({
+    root,
+    env: {
+      AGENT_MESH_CLAUDE: fakeClaude,
+      AGENT_MESH_TEST_PLATFORM: 'linux',
+      AGENT_MESH_DO_BRANCH: '1'
+    },
+    input: { mode: 'do', task: 'write something' }
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'branch_create_failed');
+});

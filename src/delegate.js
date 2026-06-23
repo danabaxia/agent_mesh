@@ -145,10 +145,10 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
   const timeoutMs = readPositiveInt(env.AGENT_MESH_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
   const before = await captureChangeState(root);
 
-  // Branch isolation for do-mode (opt-in via AGENT_MESH_DO_BRANCH=1 or registry
-  // peer field branchIsolate:true). When active, writes land on a scratch branch
-  // agentmesh/<runId> so the caller can review before merging. Non-git folders
-  // skip silently. On failure/timeout the scratch branch is cleaned up.
+  // Branch isolation for do-mode (opt-in via AGENT_MESH_DO_BRANCH=1). When active,
+  // writes land on a scratch branch agentmesh/<runId> so the caller can review
+  // before merging. Non-git folders skip silently. On failure/timeout the scratch
+  // branch is cleaned up.
   let branchName = null;
   let originalBranch = null;
   if (mode === 'do' && env.AGENT_MESH_DO_BRANCH === '1' && before.kind === 'git') {
@@ -172,7 +172,9 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
         return result;
       }
     }
-    // If rev-parse fails (detached HEAD, bare repo) skip branch isolation silently.
+    // If rev-parse fails (bare repo, unborn branch) skip branch isolation silently.
+    // Detached HEAD is NOT a failure case — it exits 0 and prints "HEAD"; isolation
+    // proceeds normally with originalBranch="HEAD" and cleanup restores via checkout -f HEAD.
   }
 
   // Spawn tagging (2026-06-13 spec §3): every framework spawn gets a known
