@@ -18,6 +18,25 @@ const APPROVED = 'approved';
 const RECONCILE_STATES = [...IN_FLIGHT, APPROVED];
 const DONE = 'done';
 
+// The lifecycle is a MUTUALLY-EXCLUSIVE group: an issue should carry exactly one of these
+// at a time (idea → discussing → … → done, per dev-mesh/README.md §"Lifecycle labels").
+// In practice they accumulate — an issue reconciled to `done` was often relabeled forward
+// without the prior stage stripped, so it ends up carrying `idea`+`done` or
+// `spec:in-review`+`done` (label-state drift, #430 P7). When we collapse to `done` we strip
+// EVERY preceding lifecycle label present, not just the in-flight subset that triggered the
+// reconcile, so `done` is the issue's only lifecycle label afterward. Listed in lifecycle
+// order so removeLabels is deterministic. (`blocked`/`rejected` are terminal, not part of
+// the linear lifecycle — left untouched.)
+const LIFECYCLE_STATES = [
+  'idea',
+  'discussing',
+  'spec:draft',
+  'spec:in-review',
+  'approved',
+  'in-progress',
+  'pr:in-review',
+];
+
 const labelNames = (issue) => (issue?.labels || []).map((l) => (typeof l === 'string' ? l : l?.name)).filter(Boolean);
 
 /**
@@ -48,7 +67,9 @@ export function planPostMergeReconcile(openIssues, mergedPrs) {
     plan.push({
       issue: n,
       closingPr: closedBy.get(n),
-      removeLabels: RECONCILE_STATES.filter((l) => labels.includes(l)),
+      // Strip the WHOLE lifecycle group present (not just the in-flight trigger labels) so
+      // the issue ends carrying only `done` — clears accumulated drift like `idea`+`done`.
+      removeLabels: LIFECYCLE_STATES.filter((l) => labels.includes(l)),
       addLabel: DONE,
     });
   }

@@ -12,7 +12,7 @@ name: dev-mesh-issue-gate
 
 on:
   schedule:
-    - cron: '2,17,32,47 * * * *' # every 15 min, 5 min before dev-mesh-automerge
+    - cron: '2,32 * * * *' # every 30 min, 5 min before dev-mesh-automerge (relaxed from 15-min, #430 P8)
   workflow_dispatch:
     inputs:
       dry_run:

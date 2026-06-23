@@ -11,7 +11,7 @@ name: dev-mesh-memory-automerge
 
 on:
   schedule:
-    - cron: '*/15 * * * *' # sweep every 15 min
+    - cron: '*/30 * * * *' # sweep every 30 min (relaxed from */15: bounded backstop, #430 P8)
   workflow_dispatch:
 
 permissions:

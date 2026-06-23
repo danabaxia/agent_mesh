@@ -7,7 +7,7 @@ name: dev-mesh-automerge
 
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *' # every 15 min, offset from the other sweeps
+    - cron: '7,37 * * * *' # every 30 min, offset from the other sweeps (relaxed from 15-min, #430 P8)
   workflow_dispatch:
     inputs:
       dry_run:
