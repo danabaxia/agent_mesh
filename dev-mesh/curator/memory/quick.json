@@ -1654,5 +1654,16 @@
       "source": "PR #437: spec: auto-filed issue dedup + noise-band gating (perf-regression + intake-health) (#433)",
       "ts": "2026-06-23"
     }
+  },
+  "health-gate-denial-filter-envelope-form": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Denial filter: match the envelope form production emits — array vs count path mismatch = silent dead code.",
+    "l1": "PR #448 filtered `fewer-permission-prompts` denials from the health gate, targeting the `permission_denials` ARRAY form. But real runs emit `permission_denials_count` (a NUMBER) — a different path. Tests against the array form pass while the fix is dead code in production. Also: JSON.stringify(.includes('.claude')) over-matches any denial record with a `.claude` path anywhere, silently disabling the gate. Fix: grep a real failing envelope first to confirm the form, then filter specific fields (tool_name, tool_input.*), not whole-object substrings.",
+    "value": "Two-layer trap from PR #448 (2026-06-23): filtering health-gate signals requires knowing which envelope variant production actually emits.\n\n1. ENVELOPE FORM MISMATCH: `classifyRunHealth` filters the `permission_denials` ARRAY (show_full_output form). Production `claude-execution-output.json` (read by assert-run-healthy.mjs) emits `permission_denials_count` (a NUMBER). Two different code paths — array-form tests pass green while the count path is untouched. Action: before adding a denial filter, open a real failing run's output file and confirm which key is actually populated.\n\n2. WHOLE-OBJECT SUBSTRING MATCH: `isInertDenial` used `JSON.stringify(denial).toLowerCase().includes('.claude')`. This matches `.claude` anywhere in the record — including cwd, transcript_path, session_path. A genuine denial whose record includes any `.claude` context path is silently laundered. Always filter specific fields: `tool_input.command`, `tool_input.file_path`, `tool_name === 'Skill'`.\n\n3. TEST COVERAGE BLINDSPOT: fixtures for denial filtering that only supply `{tool_name, tool_input}` leave field-level over-matching latent. Include the full real denial record shape (with context fields) to surface it.\n\nPattern for any new denial/signal exception:\n- Grep a real failing artifact first to confirm the exact key path\n- Filter specific named fields, never whole-object serialization\n- Write tests with full real record shapes, not minimal stubs",
+    "provenance": {
+      "source": "PR #448: postrun health-gate: don't fail runs on inert fewer-permission-prompts denials (#432)",
+      "ts": "2026-06-23"
+    }
   }
 }
