@@ -3,8 +3,9 @@
 // `noiseBandPct` (optional) overrides the global DEFAULT_MIR_NOISE_BAND_PCT for a
 // single metric. Wall-clock latency and per-task cost are high-variance signals on an
 // LLM-driven cell — they swing run-to-run with API/machine load far more than the
-// deterministic ratio/count metrics — so the generic 10% band false-positives on them.
-// 20% matches the perf-cell warn budget in the 2026-06-22 rolling-perf-baseline design.
+// deterministic ratio/count metrics — so the generic 10% band false-positives on them
+// (e.g. a ~16-19% swing is normal LLM-latency noise, not a code regression).
+// A wider band requires a genuinely large move before filing.
 export const METRICS = {
   passRate:              { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   precision:             { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
@@ -30,7 +31,7 @@ export function deltaPct(name, value, baseline) {
  * it overrides the caller's global band, otherwise the global `bandPct` applies.
  */
 export function isRegression(name, dPct, bandPct) {
-  const band = typeof METRICS[name]?.noiseBandPct === 'number' ? METRICS[name].noiseBandPct : bandPct;
+  const band = METRICS[name]?.noiseBandPct ?? bandPct;
   return typeof dPct === 'number' && dPct < 0 && Math.abs(dPct) > band;
 }
 

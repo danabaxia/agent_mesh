@@ -29,12 +29,19 @@ test('soft within band is not fileable', () => {
   assert.equal(mir.findings[0].fileable, false);
 });
 
-test('high-variance latency regression within its band is not filed (issue #460)', () => {
-  // -19% latency vs a 10% global band would file under the generic rule, but
-  // latency_ms carries its own 20% band → a within-variance swing stays unfiled.
+test('high-variance latency_ms uses its wider band, not the global one (issue #459, #460)', () => {
+  // -19% and -15.9% latency moves are inside latency_ms's 20% override → not fileable,
+  // even though both exceed the global 10% band.
   const mir = gate({ findings: [finding({ metric: { name: 'latency_ms', value: 28013.77,
     baseline: 23546.14, direction: 'lower_is_better', deltaPct: -19 } })] }, { noiseBandPct: 10 });
   assert.equal(mir.findings[0].fileable, false);
+  const noise = gate({ findings: [finding({ metric: { name: 'latency_ms', value: 32023, baseline: 27639,
+    direction: 'lower_is_better', deltaPct: -15.9 } })] }, { noiseBandPct: 10 });
+  assert.equal(noise.findings[0].fileable, false);
+  // A genuinely large latency regression still files.
+  const real = gate({ findings: [finding({ metric: { name: 'latency_ms', value: 40000, baseline: 27639,
+    direction: 'lower_is_better', deltaPct: -45 } })] }, { noiseBandPct: 10 });
+  assert.equal(real.findings[0].fileable, true);
 });
 
 test('first/zero baseline soft never fileable', () => {

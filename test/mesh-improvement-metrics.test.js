@@ -28,13 +28,16 @@ test('isRegression only past the band', () => {
 
 test('high-variance metrics use their own wider band, not the global one', () => {
   // latency_ms / cost_usd carry noiseBandPct:20 — a -19% wall-clock swing (issue #460)
-  // is within their natural run-to-run variance and must NOT be a fileable regression…
+  // and a -15.9% swing (issue #459) are within natural run-to-run variance, not fileable…
   assert.equal(isRegression('latency_ms', -19, 10), false);
+  assert.equal(isRegression('latency_ms', -15.9, 10), false);
   assert.equal(isRegression('cost_usd', -19, 10), false);
-  // …while a swing past the per-metric band still flags.
+  // …while swings past the per-metric band still flag.
   assert.equal(isRegression('latency_ms', -25, 10), true);
+  assert.equal(isRegression('latency_ms', -35, 10), true);
   // A deterministic metric without an override still uses the caller's global band.
   assert.equal(isRegression('wasted_hops', -19, 10), true);
+  assert.equal(isRegression('precision', -15.9, 10), true);
 });
 
 test('every metric with a noiseBandPct carries a positive number', () => {
