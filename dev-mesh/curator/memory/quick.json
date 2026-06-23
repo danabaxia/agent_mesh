@@ -1611,6 +1611,17 @@
       "ts": "2026-06-22"
     }
   },
+  "lifecycle-strip-all-on-terminal-close": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "On terminal close, strip ALL lifecycle labels (not just trigger subset) — clears drift like spec:in-review+done.",
+    "l1": "PR #435 P7: lifecycle labels accumulate on issues because state transitions add without removing predecessors (e.g. spec:in-review + pr:in-review + done). A reconciler stripping only its trigger set (RECONCILE_STATES) leaves earlier labels intact. Fix: strip LIFECYCLE_STATES (the full ordered group) — removes every lifecycle label present, not just triggering ones. Latent footgun: RECONCILE_STATES ⊆ LIFECYCLE_STATES must hold; if a new trigger label falls outside the strip set, done stamps without stripping the trigger. Encode as an assertion or derive one set from the other.",
+    "value": "Apply when a post-merge reconciler (or any terminal-state handler) adds a `done` label and closes an issue.\n\n(1) Strip the FULL lifecycle group, not just the trigger subset:\n  Define an ordered LIFECYCLE_STATES array covering all mutually-exclusive lifecycle labels:\n    const LIFECYCLE_STATES = ['idea','discussing','spec:draft','spec:in-review','approved','in-progress','pr:in-review'];\n  At reconcile time:\n    removeLabels: LIFECYCLE_STATES.filter(l => issue.labels.includes(l))\n  This collapses any accumulated combination (spec:in-review+in-progress+done) to a single clean `done`.\n\n(2) Terminal/rejected labels are NOT part of the lifecycle group:\n  `blocked` and `rejected` are terminal, not linear lifecycle steps — leave them untouched by the strip-all. Do not add them to LIFECYCLE_STATES.\n\n(3) RECONCILE_STATES ⊆ LIFECYCLE_STATES is a load-bearing silent invariant:\n  The strip-all works because every trigger label is in the strip set. If RECONCILE_STATES grows to include a label absent from LIFECYCLE_STATES, the reconciler stamps `done` without removing that trigger — re-introducing the exact drift it was meant to prevent.\n  Encode at module load:\n    for (const s of RECONCILE_STATES) {\n      if (!LIFECYCLE_STATES.includes(s)) throw new Error(`${s} not in LIFECYCLE_STATES`);\n    }\n  Or derive one from the other to eliminate the hand-maintenance gap:\n    const RECONCILE_STATES = LIFECYCLE_STATES.filter(l => IN_FLIGHT_SET.has(l) || l === 'approved');\n\n(4) Ordering for deterministic tests: list removeLabels in LIFECYCLE_STATES order so gh command sequences are stable.\n\n(5) Related: apply removeLabels + addLabel:done BEFORE gh issue close (see reconcile-approved-label-before-close) so the terminal-sweep backstop can catch a failed close.\n\nProvenance: PR #435 (2026-06-23), Issue #430 P7 (label-state drift).",
+    "provenance": {
+      "source": "PR #435 (2026-06-23): Pipeline audit (2026-06-23) — P7 lifecycle label-state drift fix",
+      "ts": "2026-06-23"
+    }
+  },
   "external-client-not-mesh-agent": {
     "status": "active",
     "valid_to": null,
