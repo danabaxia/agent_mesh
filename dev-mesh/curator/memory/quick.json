@@ -1720,5 +1720,16 @@
       "source": "PR #461 (2026-06-23): [mesh-scan] perf-regression: latency_ms regressed (-15.9%) (#459)",
       "ts": "2026-06-23"
     }
+  },
+  "per-peer-model-tier-spawn-flag": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Per-peer model tier: `model` in registry.json peer entry → `--model` at spawn; never from tool args.",
+    "l1": "Set `model: \"claude-haiku-4-5-20251001\"` on a registry.json peer entry to run that peer on a cheaper tier. The registry is the sole authoritative source — a delegating model's tool-arg `model` field has no effect (anti-spoof invariant). Absent `model` → binary default unchanged. Bad model ID → `status:error` result, not exception. BAMAS/AgentDropout research: 30–97% cost savings via tiering (arXiv 2511.21572, 2503.18891).",
+    "value": "Threading path: `normalizePeer` preserves the field (undefined when absent) → `peer-bridge.js` passes it to `delegateTask` options → `delegate.js` threads to `buildClaudeInvocation` → appends `--model <id>` to `claude -p` argv iff set. Regression lock: no `model` field → argv byte-identical to today; present → flag threaded end-to-end across all four layers. Design scope: v1 is static/operator-configured per peer (no dynamic tier selection, no per-task override, no model-ID validation — bad IDs degrade to `status:error`). Spec: 2026-06-23 design doc (PR #467 / Issue #457).",
+    "provenance": {
+      "source": "PR #467 (2026-06-23): spec: idea: per-peer model-tier selection — run Haiku workers, Opus orchestrator (#457)",
+      "ts": "2026-06-23"
+    }
   }
 }
