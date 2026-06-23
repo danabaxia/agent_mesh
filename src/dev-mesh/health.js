@@ -19,6 +19,27 @@
 // while tolerating a couple of incidental denials from an agent probing a tool.
 export const BLOCKED_DENIALS_THRESHOLD = 5;
 
+// Denials whose signature matches one of these are INERT on an ephemeral CI runner:
+// they touch the runner's own Claude config (read transcripts, write a project
+// .claude/settings.json the job discards) and change nothing about whether the agent
+// did its job. The model reaching for the /fewer-permission-prompts skill unprompted
+// (#421) racks up exactly these — they fail the postrun gate (#432) even though the run
+// otherwise worked. Drop them before the block threshold. Add other inert-on-runner
+// skill markers here as they surface. NOTE: only the ARRAY form of permission_denials
+// carries per-denial detail to match against; a bare permission_denials_count has no
+// detail to filter and is used as-is.
+export const INERT_DENIAL_SIGNATURES = [
+  'fewer-permission-prompts', // the skill name (its Skill invocation + any cmd naming it)
+  '.claude', // the runner's Claude config dir: settings.json it writes + transcripts it reads
+];
+
+/** True when a single permission-denial record bears an inert-on-runner signature. */
+export function isInertDenial(denial) {
+  if (!denial || typeof denial !== 'object') return false;
+  const hay = JSON.stringify(denial).toLowerCase();
+  return INERT_DENIAL_SIGNATURES.some((sig) => hay.includes(sig));
+}
+
 export function classifyRunHealth(envelope) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     return { healthy: false, status: 'unknown', reason: 'no result envelope to inspect' };
@@ -41,11 +62,18 @@ export function classifyRunHealth(envelope) {
   // The envelope reports denials in TWO observed forms: `permission_denials_count`
   // (a number — seen in real backlog run envelopes: 28, 25, 0) and `permission_denials`
   // (an array — seen in show_full_output envelopes). Handle both so the gate can't die
-  // on a schema variant.
-  const denials = Number(
-    envelope.permission_denials_count
-      ?? (Array.isArray(envelope.permission_denials) ? envelope.permission_denials.length : 0),
-  );
+  // on a schema variant. When the array form is present it carries per-denial detail,
+  // so drop INERT-on-runner denials (e.g. the /fewer-permission-prompts skill, #432)
+  // before counting — a model misbehaving on an inert skill must not red a run that
+  // otherwise did its job. The count-only form has no detail to filter, so use it as-is.
+  let denials;
+  if (envelope.permission_denials_count != null) {
+    denials = Number(envelope.permission_denials_count);
+  } else if (Array.isArray(envelope.permission_denials)) {
+    denials = envelope.permission_denials.filter((d) => !isInertDenial(d)).length;
+  } else {
+    denials = 0;
+  }
   if (denials >= BLOCKED_DENIALS_THRESHOLD) {
     return { healthy: false, status: 'blocked', reason: `ran but was blocked — ${denials} permission denials (missing/incorrect tool grants?)` };
   }

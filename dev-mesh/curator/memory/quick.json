@@ -1654,5 +1654,16 @@
       "source": "PR #438 (2026-06-23): spec: postrun health-gate: don't fail runs on inert fewer-permission-prompts denials (#432)",
       "ts": "2026-06-23"
     }
+  },
+  "autofiler-coalesce-gate-before-create": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Auto-filer: coalesce findings by key, gate at noise band, label-dedup update-or-file — never create then triage.",
+    "l1": "PR #437 spec: ~40% of perf issues rejected as noise or near-dups after filing; same-broken-intake filed per-symptom each run. Root causes: (1) noiseBandPct gated triage only, not creation; (2) each raw finding became a separate issue before grouping. Fix: coalesce by natural key (metric or workflow) before the planner; apply noiseBandPct as a creation gate; query existing open perf:<metric> / intake:<workflow> label to update vs. file; close on recovery.",
+    "value": "Apply whenever an automated scanner files issues into a human-reviewed backlog.\n\nPart A — perf regressions (same scan, N cells, same metric):\n1. COALESCE: group per-cell findings by metric before the planner — one finding per (scan, metric) carrying all per-cell rows.\n2. NOISE GATE: drop findings inside noiseBandPct and cold-start/null-baseline establishments at coalesce time — before reaching gh issue create.\n3. LABEL-DEDUP: query open perf:<metric> issue; found → update (refresh rows); not found → file one.\n4. RECOVER: metric returns within band → close the open issue.\n\nPart B — intake health (same workflow, repeated symptoms/runs):\n1. COALESCE: all same-window symptoms for a workflow → one intake:<workflow> issue accumulating them.\n2. ROLLING WINDOW: AGENT_MESH_INTAKE_DEDUP_WINDOW_MS (default 24h); an issue aged out counts as absent.\n3. UPDATE vs FILE: open issue within window → update; none → file once.\n4. RECOVER: intake healthy → close.\n\nCross-cutting: label-based marker lookup (never read issue bodies); pure-planner/gh-applier pattern; labels ensured before the loop (see label-preflight-before-issue-create). Provenance: PR #437 (2026-06-23) spec, closing #433.",
+    "provenance": {
+      "source": "PR #437: spec: auto-filed issue dedup + noise-band gating (perf-regression + intake-health) (#433)",
+      "ts": "2026-06-23"
+    }
   }
 }
