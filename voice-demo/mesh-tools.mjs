@@ -12,28 +12,35 @@ import { execFile } from 'node:child_process';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname, resolve, relative, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createConsoleBroker } from '../src/dashboard/console.js';
+import { homedir } from 'node:os';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const MESH_DIR = join(REPO_ROOT, 'dev-mesh');           // where mesh.json + agents live
 
-// --- ask-only proxy to a real mesh agent (console A2A broker) ----------------
-// The broker does a real `SendMessage` (mode:'ask') to a served agent's serve-a2a
-// — the agent READS/answers but CANNOT do work (ask-only is enforced by the
-// broker). Real agents run on `claude`, so this is SLOW (~30s–min) + costs; it's
-// for "get an agent's answer", while actual work still goes via file_mesh_task.
-let _broker = null;
-function broker() {
-  if (!_broker) _broker = createConsoleBroker({ meshRoot: MESH_DIR, requestTimeoutMs: 180000 });
-  return _broker;
+// --- ask-only proxy to a real mesh agent, VIA THE DASHBOARD CONSOLE -----------
+// We POST to the running dashboard's ask-only console (`/api/agent/<name>/message`,
+// mode:'ask') instead of spawning our own broker. Why: the dashboard runs against
+// the DEPLOY mesh and brokers the spawn itself, so the consult shows up as live
+// dashboard activity (the in-process broker against the working-copy mesh was
+// invisible to the dashboard). ask-only is enforced dashboard-side: the agent
+// answers but never does work. Slow (~5s–min); actual work still goes via file_mesh_task.
+const DASH_URL = process.env.VOICE_DASHBOARD_URL || 'http://127.0.0.1:7077';
+const DEPLOY_MESH = process.env.VOICE_MESH_DIR || join(homedir(), '.agent-mesh', 'deploy', 'dev-mesh');
+const DASH_TOKEN_FILE = process.env.VOICE_DASHBOARD_TOKEN_FILE || join(DEPLOY_MESH, '.agent-mesh', 'dashboard-token');
+function dashToken() {
+  if (process.env.VOICE_DASHBOARD_TOKEN) return process.env.VOICE_DASHBOARD_TOKEN;
+  try { return readFileSync(DASH_TOKEN_FILE, 'utf8').trim(); } catch { return ''; }
 }
-// Dynamic: the 门房 has ask access to EVERY served agent in mesh.json (present and
-// future) — read from the manifest so nothing is ever missed.
+// Ask access to EVERY served agent — read the served list from the DEPLOY mesh the
+// dashboard fronts (fall back to the working-copy mesh). Future agents auto-included.
 function readServedAgents() {
-  try {
-    const m = JSON.parse(readFileSync(join(MESH_DIR, 'mesh.json'), 'utf8'));
-    return (m.agents || []).filter((a) => a.served === true && a.name).map((a) => a.name);
-  } catch { return []; }
+  for (const dir of [DEPLOY_MESH, join(REPO_ROOT, 'dev-mesh')]) {
+    try {
+      const m = JSON.parse(readFileSync(join(dir, 'mesh.json'), 'utf8'));
+      const a = (m.agents || []).filter((x) => x.served === true && x.name).map((x) => x.name);
+      if (a.length) return a;
+    } catch { /* try next */ }
+  }
+  return [];
 }
 const SERVED_AGENTS = readServedAgents();
 function taskText(task) {
@@ -47,10 +54,18 @@ export async function askMeshAgent({ agent, question } = {}) {
   if (!SERVED_AGENTS.includes(name)) throw new Error(`unknown agent: ${agent}. options: ${SERVED_AGENTS.join(', ')}`);
   if (!question || !String(question).trim()) throw new Error('question required');
   const t0 = Date.now();
-  console.log(`[ask] → ${name}: ${String(question).slice(0, 100)}`);
+  console.log(`[ask] → ${name} (via dashboard): ${String(question).slice(0, 100)}`);
   try {
-    const { task } = await broker().send({ agentName: name, text: String(question), mode: 'ask' });
-    const answer = taskText(task).slice(0, 4000);
+    const token = dashToken();
+    if (!token) throw new Error('no dashboard token (set VOICE_DASHBOARD_TOKEN or the token file)');
+    const res = await fetch(`${DASH_URL}/api/agent/${encodeURIComponent(name)}/message`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': token },
+      body: JSON.stringify({ text: String(question), mode: 'ask' }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) throw new Error(`console ${res.status}: ${d?.error?.message || d?.error?.code || ''}`);
+    const answer = taskText(d.task).slice(0, 4000);
     console.log(`[ask] ← ${name} ok (${Date.now() - t0}ms): ${answer.slice(0, 120).replace(/\n/g, ' ')}`);
     return { agent: name, answer };
   } catch (e) {
