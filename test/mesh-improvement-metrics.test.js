@@ -26,6 +26,15 @@ test('isRegression only past the band', () => {
   assert.equal(isRegression('precision', null, 10), false);
 });
 
+test('isRegression: a metric-specific noiseBandPct overrides the global band', () => {
+  // latency_ms is wall-clock-dominated → wider band (30%). A -15.9%-style swing
+  // (issue #459) is normal LLM-latency noise, not a fileable regression.
+  assert.equal(isRegression('latency_ms', -15.9, 10), false); // within the 30% override
+  assert.equal(isRegression('latency_ms', -35, 10), true);    // past it → real regression
+  // metrics without an override still use the passed global band.
+  assert.equal(isRegression('precision', -15.9, 10), true);
+});
+
 test('every registry metric has a direction; ids are validated', () => {
   for (const m of Object.values(METRICS)) {
     assert.ok(['higher_is_better', 'lower_is_better'].includes(m.direction));

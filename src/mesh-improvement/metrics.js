@@ -1,11 +1,16 @@
 // src/mesh-improvement/metrics.js — pure metric registry + direction-aware deltas.
+// `noiseBandPct` (optional) overrides the global regression band for inherently
+// high-variance metrics. Wall-clock `latency_ms` is dominated by a single real-model
+// routing turn whose run-to-run jitter routinely exceeds the global 10% band, so a
+// flat band false-positives on it (e.g. a ~16% swing is normal LLM-latency noise, not
+// a code regression). A wider band requires a genuinely large move before filing.
 export const METRICS = {
   passRate:              { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   precision:             { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   recall:                { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   quality_per_1k_tokens: { tier: 'soft', direction: 'higher_is_better', unit: 'score' },
   cost_usd:              { tier: 'soft', direction: 'lower_is_better',  unit: 'usd' },
-  latency_ms:            { tier: 'soft', direction: 'lower_is_better',  unit: 'ms' },
+  latency_ms:            { tier: 'soft', direction: 'lower_is_better',  unit: 'ms', noiseBandPct: 30 },
   wasted_hops:           { tier: 'soft', direction: 'lower_is_better',  unit: 'count' },
 };
 
@@ -18,9 +23,11 @@ export function deltaPct(name, value, baseline) {
   return Math.round(signed * 10) / 10;
 }
 
-/** A regression is a negative signed delta whose magnitude exceeds the band. */
+/** A regression is a negative signed delta whose magnitude exceeds the band. The
+ * metric's own `noiseBandPct` (high-variance override) wins over the global band. */
 export function isRegression(name, dPct, bandPct) {
-  return typeof dPct === 'number' && dPct < 0 && Math.abs(dPct) > bandPct;
+  const band = METRICS[name]?.noiseBandPct ?? bandPct;
+  return typeof dPct === 'number' && dPct < 0 && Math.abs(dPct) > band;
 }
 
 /** Median of a numeric array; null for empty/non-array input. */
