@@ -27,14 +27,13 @@ export function deltaPct(name, value, baseline) {
 
 /**
  * A regression is a negative signed delta whose magnitude exceeds the band. A metric
- * may carry its own `noiseBandPct` (high-variance signals like latency/cost); when set
- * the effective band is the *wider* of it and the caller's global `bandPct`, so a wider
- * global band is never narrowed by the per-metric override. Metrics without an override
- * use the global `bandPct` unchanged.
+ * may carry its own `noiseBandPct` (high-variance signals like latency/cost); the
+ * effective band is `Math.max(perMetricBand, globalBand)` so a wider global band is
+ * never narrowed by a smaller per-metric override. Metrics without an override use the
+ * global `bandPct` unchanged.
  */
 export function isRegression(name, dPct, bandPct) {
-  const perMetric = METRICS[name]?.noiseBandPct;
-  const band = typeof perMetric === 'number' ? Math.max(bandPct, perMetric) : bandPct;
+  const band = Math.max(METRICS[name]?.noiseBandPct ?? 0, bandPct);
   return typeof dPct === 'number' && dPct < 0 && Math.abs(dPct) > band;
 }
 
