@@ -40,6 +40,14 @@ test('high-variance metrics use their own wider band, not the global one', () =>
   assert.equal(isRegression('precision', -15.9, 10), true);
 });
 
+test('per-metric noiseBandPct overrides a wider global band', () => {
+  // global=25 > per-metric=20; the per-metric floor wins under ?? semantics
+  assert.equal(isRegression('latency_ms', -22, 25), true);  // 22>20, not suppressed
+  assert.equal(isRegression('cost_usd', -22, 25), true);
+  // within the per-metric floor: still does not fire
+  assert.equal(isRegression('latency_ms', -19, 25), false);
+});
+
 test('every metric with a noiseBandPct carries a positive number', () => {
   for (const [name, m] of Object.entries(METRICS)) {
     if ('noiseBandPct' in m) {
