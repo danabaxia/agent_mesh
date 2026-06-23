@@ -1611,6 +1611,17 @@
       "ts": "2026-06-22"
     }
   },
+  "actions-self-cancel-relabel": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "cancel-in-progress:true + agent relabels/edits own issue = self-cancel; fix: false + drop edited trigger.",
+    "l1": "dev-mesh-intake cancelled 34-45% of runs: Analyst relabeled the issue mid-work, firing another labeled event on the same concurrency group (dev-mesh-intake-${{ issue.number }}, cancel-in-progress:true) → killed the in-flight run. Also had issues:edited trigger; Analyst edits body as it works. Fix: cancel-in-progress:false (group still serializes — GitHub keeps ONE pending run max per group; bounded waste) + remove issues:edited. Evidence: cancelled pairs share identical timestamp. PR #428.",
+    "value": "Concurrency self-cancel pattern: when a workflow's concurrency group is stable per-object (e.g. dev-mesh-intake-${{ issue.number }}) with cancel-in-progress:true, any agent side effect that re-fires the SAME trigger event mid-execution kills the in-flight run.\n\nCommon sources:\n- relabeling the issue → labeled event → same group → cancel\n- editing the issue body → edited event → same group → cancel\n- commenting on the issue → issues: commented → same group → cancel\n\nFix pattern (two changes):\n1. cancel-in-progress: false — serializes the burst WITHOUT killing live work. GitHub queues exactly ONE pending run per group, so the maximum redundant waste is one cold start, not unbounded.\n2. Audit the workflow's own side effects vs its trigger list — remove any event the agent fires as a byproduct:\n  - Drop issues: edited if the agent ever edits bodies.\n  - Drop labeled if the agent relabels.\n  - Drop issues: commented if the agent comments.\n\nDiagnosis: look for cancelled runs that share identical timestamps and the same issue number.\n\nTest coverage: assert cancel-in-progress: false in workflow lint for any intake-style workflow where the agent modifies the trigger object. Provenance: PR #428 (2026-06-23), ~18 wasted/cancelled runs per 60 recovered.",
+    "provenance": {
+      "source": "PR #428 (2026-06-23): fix(ci): stop dev-mesh-intake self-cancelling its own runs (~34-45% wasted + live API spend)",
+      "ts": "2026-06-23"
+    }
+  },
   "lifecycle-strip-all-on-terminal-close": {
     "status": "active",
     "valid_to": null,
