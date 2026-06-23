@@ -1,4 +1,40 @@
-lthy-block threshold comparison; emits a summary distinguishing ignored-inert vs. counted denials.
+# Postrun health-gate: don't fail runs on inert `fewer-permission-prompts` denials
+
+**Date:** 2026-06-23
+**Status:** Design (pending review)
+**Closes:** #432
+
+## Problem
+
+Intake run 27978106979 failed with *"agent run unhealthy (blocked): 8 permission denials"*
+because the model invoked the `fewer-permission-prompts` skill. On an ephemeral CI runner
+those denials are **inert** — the settings change nothing, because the runner is discarded
+after the job. The prompt carries a HARD RULE forbidding this invocation (#421), but a
+prose rule still trips occasionally, and a single invocation costs an otherwise-successful
+run its green status.
+
+Penalising a run for calling an inert skill is a false-positive: the run did its actual
+job but was reded for side-effect noise.
+
+## Goal
+
+Fix **structurally**, not by prompt: update the postrun gate
+(`scripts/assert-run-healthy.mjs` / `.github/actions/agent-postrun`) to **ignore denials
+whose originating skill is on an explicit inert-skill allowlist** when tallying the
+unhealthy-block threshold. The default allowlist is `fewer-permission-prompts`. All other
+denials are counted exactly as before — the carve-out is narrow and explicit.
+
+### Non-goals
+
+- Weakening the #421 HARD RULE prompt — it stays as first-line defense.
+- Preventing the model from invoking the skill — this handles the *consequence*.
+- Broadly relaxing the denial threshold for non-inert skills.
+- Covering conditionally-inert skills (those inert only in some contexts).
+- Non-ephemeral (persistent) runner environments.
+
+## Components
+
+- **Postrun gate logic (`scripts/assert-run-healthy.mjs`)** — updated unhealthy-block threshold comparison; emits a summary distinguishing ignored-inert vs. counted denials.
 - **Denial classifier (pure)** — `(denial, inertSkillAllowlist) → { counts: bool, reason }`: returns whether a denial counts toward the threshold and why. Pure, table-testable — the core seam.
 - **Denial-provenance accessor** — surfaces the originating skill from each denial record so the classifier can match the allowlist; extended if provenance is not already present.
 - **`.github/actions/agent-postrun`** — passes the configured inert-skill allowlist through to the script; surfaces the ignored-inert summary in the action output/logs.
