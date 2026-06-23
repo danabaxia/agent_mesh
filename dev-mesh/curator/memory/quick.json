@@ -1666,6 +1666,17 @@
       "ts": "2026-06-23"
     }
   },
+  "streaming-pipeline-latency-reduction": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Streaming pipeline: cut perceived latency by pipelining generation→segment→per-chunk synthesis→ordered queue.",
+    "l1": "PR #443: Stage A voice was sequential (full reply → full TTS → play; ~4.5–6 s). Stage B pipelines it: stream generator → sentence segmenter → TTS per sentence → ordered client audio queue (plays as chunks arrive). Target: ≤3 s to first audio. Critical: (1) segment timeout prevents stalls on tool-call-heavy turns; (2) ordering enforced by queue index, not arrival time — TTS chunk N+1 may finish before N; (3) fallback to single-shot+batch on any stream/TTS error; (4) time-to-first-chunk instrumentation required from day 1.",
+    "value": "Apply when a sequential generate→synthesize→deliver pipeline is the perceived-latency bottleneck:\n\n1. STREAM the generator so output begins arriving immediately (streamGenerateContent, SSE, streaming API).\n2. SEGMENT the stream into delivery units (sentences, frames, tiles) — flush on a short timeout (~300ms) so tool-call-heavy turns or boundary-free text never stall the segmenter.\n3. SYNTHESIZE each unit immediately on arrival (TTS, encode, render) while later units are still generating.\n4. DELIVER in order via a client queue indexed by unit position, NOT by arrival time — chunk N+1 may synthesize faster than N; hold it until N is delivered.\n5. BEGIN playback/display on the first unit — do not wait for the full batch.\n6. INSTRUMENT time-to-first-unit per turn from day 1. Without a recorded metric, improvement is unverifiable.\n7. FALLBACK: any stream or synthesis error → degrade to single-shot (full output then batch synthesis); the turn still completes.\n\nGotchas:\n- Segment timeout is mandatory: a boundary-free turn (all tool calls, then a one-word answer) must eventually flush or the user waits for the whole turn.\n- Queue ordering by index prevents audio/display ordering from depending on per-chunk timing variance.\n- Test each fallback path with forced injection of stream errors and synthesis errors — not just the happy path.\n- Inline tool calls that modify state (e.g. file_mesh_task within a streamed turn) must still fire correctly; test explicitly.\n\nProvenance: PR #443 (2026-06-23) — Voice Console Stage B spec, resolving issue #426.",
+    "provenance": {
+      "source": "PR #443 (2026-06-23): spec: Voice console — Stage B: streaming low-latency voice (stream reply + chunked sentence TTS) (#426)",
+      "ts": "2026-06-23"
+    }
+  },
   "attempt-cap-circuit-breaker-durable-state": {
     "status": "active",
     "valid_to": null,
