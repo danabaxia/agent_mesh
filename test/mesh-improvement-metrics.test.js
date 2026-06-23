@@ -26,13 +26,26 @@ test('isRegression only past the band', () => {
   assert.equal(isRegression('precision', null, 10), false);
 });
 
-test('isRegression: a metric-specific noiseBandPct overrides the global band', () => {
-  // latency_ms is wall-clock-dominated → wider band (30%). A -15.9%-style swing
-  // (issue #459) is normal LLM-latency noise, not a fileable regression.
-  assert.equal(isRegression('latency_ms', -15.9, 10), false); // within the 30% override
-  assert.equal(isRegression('latency_ms', -35, 10), true);    // past it → real regression
-  // metrics without an override still use the passed global band.
+test('high-variance metrics use their own wider band, not the global one', () => {
+  // latency_ms / cost_usd carry noiseBandPct:20 — a -19% wall-clock swing (issue #460)
+  // and a -15.9% swing (issue #459) are within natural run-to-run variance, not fileable…
+  assert.equal(isRegression('latency_ms', -19, 10), false);
+  assert.equal(isRegression('latency_ms', -15.9, 10), false);
+  assert.equal(isRegression('cost_usd', -19, 10), false);
+  // …while swings past the per-metric band still flag.
+  assert.equal(isRegression('latency_ms', -25, 10), true);
+  assert.equal(isRegression('latency_ms', -35, 10), true);
+  // A deterministic metric without an override still uses the caller's global band.
+  assert.equal(isRegression('wasted_hops', -19, 10), true);
   assert.equal(isRegression('precision', -15.9, 10), true);
+});
+
+test('every metric with a noiseBandPct carries a positive number', () => {
+  for (const [name, m] of Object.entries(METRICS)) {
+    if ('noiseBandPct' in m) {
+      assert.ok(typeof m.noiseBandPct === 'number' && m.noiseBandPct > 0, `${name} band`);
+    }
+  }
 });
 
 test('every registry metric has a direction; ids are validated', () => {
