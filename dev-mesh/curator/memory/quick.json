@@ -1765,6 +1765,17 @@
       "ts": "2026-06-23"
     }
   },
+  "do-mode-branch-isolation": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "AGENT_MESH_DO_BRANCH=1: do-mode writes land on agentmesh/<runId>; dirty→refused, non-git skip, error-path cleanup.",
+    "l1": "PR #474: AGENT_MESH_DO_BRANCH=1 puts do-mode writes on a scratch branch `agentmesh/<runId>` for human review before merge. Dirty working tree → status:refused/reason:dirty_worktree (clean precondition must hold). Non-git folders skip silently. On error or timeout the scratch branch is cleaned up (framework restores original branch, deletes scratch) — 'failure is data' still holds. Five hermetic tests: success, dirty-tree refusal, ask-mode no-op, non-git skip, error-path cleanup.",
+    "value": "Apply when adding an opt-in human-review gate for do-mode writes via a scratch branch:\n\n(1) Opt-in flag: AGENT_MESH_DO_BRANCH=1 activates branch isolation. Default OFF — integrations without the flag are unaffected. Add to RESERVED_BRIDGE_ENV so peer.env cannot set it (anti-spoof invariant).\n\n(2) Clean precondition: if the working tree is dirty, return {status:'refused', reason:'dirty_worktree'} before creating any branch. A mid-flight tree cannot safely host do-mode output.\n\n(3) Branch naming: agentmesh/<runId> — framework-generated, collision-resistant. Never accept a branch name from tool args (same anti-spoof principle as recursion call-path).\n\n(4) Non-git folder: skip silently. No error, no isolation — same behavior as without the flag.\n\n(5) Error-path cleanup: on any non-done outcome (error, timeout), restore the original branch and delete the scratch branch. 'Failure is data' still holds — a status:timeout or status:error result is returned regardless; the cleanup prevents stale agentmesh/* branches from accumulating.\n\n(6) Ask-mode no-op: the flag is ignored when mode='ask'. Branch isolation is only meaningful for do-mode writes.\n\n(7) Test coverage (5 required cases): success (branch created, committed, original restored); dirty-tree refusal (refused before branching); ask-mode no-op (no branch, same output as no-flag); non-git skip (no error, no branch); error-path cleanup (branch deleted after error/timeout).\n\nHuman-review flow: after a successful run the scratch branch holds the do-mode changes; human inspects and merges at their discretion. The framework never auto-merges the scratch branch.\n\nProvenance: PR #474 (2026-06-23), Issue #458.",
+    "provenance": {
+      "source": "PR #474: feat: branch-isolated do mode (AGENT_MESH_DO_BRANCH=1)",
+      "ts": "2026-06-23"
+    }
+  },
   "voice-proxy-via-dashboard-not-inprocess": {
     "status": "active",
     "valid_to": null,
