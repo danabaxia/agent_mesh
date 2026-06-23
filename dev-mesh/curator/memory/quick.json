@@ -1753,5 +1753,16 @@
       "source": "PR #469: spec: idea: populate mesh-bench task corpus — L5 eval harness runs with empty task list (#454)",
       "ts": "2026-06-23"
     }
+  },
+  "multi-component-path-eval-coverage": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New multi-component paths need an L2 eval scenario at merge — uncovered gaps are invisible until live test.",
+    "l1": "Orchestrator-board pipeline (spec 2026-06-22) wired 5 components: `create_task_for_peer → board/store.js → board/task-state.js → board/identity.js → peer-bridge.js` — but shipped with no L2 eval scenario. Issue #455 (Analyst-detected) surfaced the gap; PR #468 specifies scenario 13: two-turn, deterministic (no daemon scheduling), real store (no mocks), includes identity enforcement as required negative probe (board security invariant: only `to` agent may advance). Out-of-scope: fan-out, full `assigned→done` walk, production code changes.",
+    "value": "When a feature wires ≥3 framework components end-to-end, treat an L2 eval scenario as a required deliverable alongside the spec — not a follow-up. Pattern for designing the scenario:\n\n(1) Two-turn deterministic: avoid daemon scheduling dependencies. Drive the pipeline explicitly (turn 1: create, turn 2: advance). Scheduler behavior is a separate concern.\n\n(2) Real store, no mocks: if the framework uses a file-based store, the scenario reads/writes it. A mock substitution would be a defect — the eval must catch persistence failures, not paper over them.\n\n(3) Identity enforcement is a required negative probe: if the path has an identity invariant (e.g. 'only the `to` agent may advance'), include a wrong-identity case with `refusedWith`. This is a security property per the board invariant; the L2 tier must gate it.\n\n(4) Name out-of-scope explicitly: state which behaviors the scenario does NOT cover (daemon scheduling, full state-machine walk, production code changes, fan-out reasoning). This prevents scope creep and makes the scenario's coverage boundary clear.\n\n(5) Analyst is the natural gap detector: the `analyst-daily-review` daemon reads MIR + daily-report and is well-positioned to identify eval coverage gaps. File the gap as a `generated:analyst` `idea` issue so it enters the backlog and is trackable.\n\nProvenance: PR #468 / Issue #455 (2026-06-23).",
+    "provenance": {
+      "source": "PR #468 (2026-06-23): spec: behavior eval scenario for orchestrator-board pipeline (#455)",
+      "ts": "2026-06-23"
+    }
   }
 }
