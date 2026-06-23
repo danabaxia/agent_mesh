@@ -59,6 +59,31 @@ test('gate: blocked is FATAL by default (do-mode pushers) — exit 1', () => {
   assert.match(r.stderr, /blocked/);
 });
 
+test('gate: #432 — inert fewer-permission-prompts denials pass the STRICT gate (exit 0)', () => {
+  // The intake run (advisory_blocked: "false") that prompted #432: 8 denials, all from
+  // the model invoking the inert /fewer-permission-prompts skill. The run did its job;
+  // the strict gate must NOT red it — inert denials are dropped before the threshold.
+  const inert = [
+    { tool_name: 'Skill', tool_input: { command: 'fewer-permission-prompts' } },
+    ...new Array(7).fill({ tool_name: 'Bash', tool_input: { command: 'cat .claude/settings.json' } }),
+  ];
+  const env = { type: 'result', is_error: false, num_turns: 30, total_cost_usd: 0, permission_denials: inert };
+  const r = runGate(env); // no --advisory-blocked: this is the strict do-mode path
+  assert.equal(r.code, 0, 'inert-skill denials must not hard-fail the strict gate');
+  assert.match(r.stdout, /agent run healthy/);
+});
+
+test('gate: a real misconfig (git denials) still hard-fails despite inert noise (exit 1)', () => {
+  const denials = [
+    { tool_name: 'Skill', tool_input: { command: 'fewer-permission-prompts' } }, // inert
+    ...new Array(5).fill({ tool_name: 'Bash', tool_input: { command: 'git push origin HEAD' } }),
+  ];
+  const env = { type: 'result', is_error: false, num_turns: 30, total_cost_usd: 0, permission_denials: denials };
+  const r = runGate(env);
+  assert.equal(r.code, 1, 'genuine action denials must still fail');
+  assert.match(r.stderr, /blocked/);
+});
+
 test('gate: an errored run is fatal (exit 1)', () => {
   const r = runGate({ type: 'result', is_error: true, duration_ms: 218, num_turns: 1, total_cost_usd: 0 });
   assert.equal(r.code, 1);

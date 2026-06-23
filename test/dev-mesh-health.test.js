@@ -3,7 +3,7 @@
 // run, so health is judged on the result ENVELOPE, not the job conclusion.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyRunHealth, assessMesh, renderHealthReport, extractResultEnvelope } from '../src/dev-mesh/health.js';
+import { classifyRunHealth, assessMesh, renderHealthReport, extractResultEnvelope, isInertDenial } from '../src/dev-mesh/health.js';
 
 test('extractResultEnvelope: finds the result in a stream-json array, object, or wrapper', () => {
   // stream-json array (claude-code-action's saved output): pick the last result event.
@@ -64,6 +64,57 @@ test('classifyRunHealth: threshold boundary — 4 denials healthy, 5 blocked', (
 
 test('classifyRunHealth: denials reported as an array (show_full_output form) also trip the gate', () => {
   const h = classifyRunHealth({ is_error: false, num_turns: 12, total_cost_usd: 0.4, permission_denials: new Array(7).fill({}) });
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'blocked');
+});
+
+test('isInertDenial: flags fewer-permission-prompts + .claude probes, not real denials', () => {
+  assert.equal(isInertDenial({ tool_name: 'Skill', tool_input: { command: 'fewer-permission-prompts' } }), true);
+  assert.equal(isInertDenial({ tool_name: 'Edit', tool_input: { file_path: '/repo/.claude/settings.json' } }), true);
+  assert.equal(isInertDenial({ tool_name: 'Bash', tool_input: { command: 'cat ~/.claude/projects/x.jsonl' } }), true);
+  // a real action denial (git push / gh) is NOT inert — it means a missing tool grant.
+  assert.equal(isInertDenial({ tool_name: 'Bash', tool_input: { command: 'git push origin HEAD' } }), false);
+  assert.equal(isInertDenial(null), false);
+  assert.equal(isInertDenial('nope'), false);
+});
+
+test('classifyRunHealth: #432 — a wall of inert fewer-permission-prompts denials stays healthy', () => {
+  // The intake run that prompted #432: 8 denials, all from the model invoking the
+  // /fewer-permission-prompts skill — inert on the ephemeral runner. The run did its
+  // job; these must not count toward the block threshold.
+  const inert = [
+    { tool_name: 'Skill', tool_input: { command: 'fewer-permission-prompts' } },
+    { tool_name: 'Bash', tool_input: { command: 'ls ~/.claude' } },
+    { tool_name: 'Bash', tool_input: { command: 'cat .claude/settings.json' } },
+    { tool_name: 'Bash', tool_input: { command: 'grep -r tool ~/.claude/projects' } },
+    { tool_name: 'Edit', tool_input: { file_path: '/repo/.claude/settings.json' } },
+    { tool_name: 'Write', tool_input: { file_path: '.claude/settings.json' } },
+    { tool_name: 'Bash', tool_input: { command: 'cat ~/.claude/settings.json' } },
+    { tool_name: 'Bash', tool_input: { command: 'head .claude/settings.local.json' } },
+  ];
+  const h = classifyRunHealth({ is_error: false, num_turns: 30, total_cost_usd: 0, permission_denials: inert });
+  assert.equal(h.healthy, true, 'inert skill denials must not block an otherwise-healthy run');
+  assert.equal(h.status, 'ok');
+});
+
+test('classifyRunHealth: real action denials still block even mixed with inert ones', () => {
+  // Inert filtering must NOT mask a genuine misconfigured tool grant: 5 real git/gh
+  // denials (missing Bash(git:*)) still trip the gate, regardless of inert noise.
+  const denials = [
+    { tool_name: 'Skill', tool_input: { command: 'fewer-permission-prompts' } }, // inert
+    { tool_name: 'Bash', tool_input: { command: 'cat .claude/settings.json' } }, // inert
+    ...new Array(5).fill({ tool_name: 'Bash', tool_input: { command: 'git push origin HEAD' } }),
+  ];
+  const h = classifyRunHealth({ is_error: false, num_turns: 30, total_cost_usd: 0, permission_denials: denials });
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'blocked');
+  assert.match(h.reason, /5 permission denials/);
+});
+
+test('classifyRunHealth: count-only form is unfilterable (no detail) — used as reported', () => {
+  // A bare permission_denials_count carries no per-denial detail to identify inert
+  // skills, so it can't be filtered; it stays authoritative (current behavior).
+  const h = classifyRunHealth({ is_error: false, num_turns: 30, total_cost_usd: 0, permission_denials_count: 8 });
   assert.equal(h.healthy, false);
   assert.equal(h.status, 'blocked');
 });
