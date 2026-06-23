@@ -1643,5 +1643,16 @@
       "source": "PR #429: feat(voice-demo): phone voice console — Gemini agent ↔ mesh (STT/TTS + ask-only agent proxy)",
       "ts": "2026-06-23"
     }
+  },
+  "postrun-gate-inert-skill-carveout": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Postrun health-gate: use inert-skill allowlist to filter false-positive denials; unattributable denial always counts.",
+    "l1": "PR #422's HARD RULE forbids /fewer-permission-prompts on CI but is soft. PR #438's structural layer: each denial record carries skill provenance; the gate classifies against an explicit inert-skill allowlist (`AGENT_MESH_HEALTH_INERT_SKILLS`; default: `fewer-permission-prompts`). Denials from inert skills (effects discarded on ephemeral runner) are excluded from the unhealthy-block tally. Fail-safe: unattributable denial always counts. Core seam: pure classifier `(denial, allowlist) → {counts, reason}` — table-testable. PR #438 / #432 (2026-06-23).",
+    "value": "Defense-in-depth pattern for CI agents that call inert skills despite HARD RULE prompts.\n\n**Layer 1 (soft — prompt):** Already in `ci-prompt-forbid-unqualified-bash`. A named HARD RULE in the agent prompt forbids the skill. First line of defense; model can still disobey.\n\n**Layer 2 (structural — postrun gate):** Added by PR #438:\n1. Add provenance to each denial record: identifies its originating skill.\n2. Pure denial classifier: `(denial, inertSkillAllowlist) → { counts: bool, reason }`\n   - Inert skill source → `counts: false` (excluded from tally, logged for observability)\n   - Any other source → `counts: true`\n   - No provenance → `counts: true` (fail-safe: never silently ignore)\n3. Gate compares COUNTED denials (not total) against the unhealthy-block threshold.\n4. Config: `AGENT_MESH_HEALTH_INERT_SKILLS` (default: `fewer-permission-prompts`); explicit and minimal — only skills provably inert on the target environment.\n5. Gate output distinguishes ignored-inert vs. counted denials (observability preserved).\n\n**What makes a skill inert:** its ONLY observable effect on ephemeral runners is discarded (e.g., writing `.claude/settings.json` the runner throws away). Do NOT add conditionally-inert skills — only skills provably inert regardless of input.\n\n**Testing the pure classifier:**\n- All denials from inert skill → gate passes (0 counted)\n- Mixed: inert + genuine → only genuine count; gate reds if counted ≥ threshold\n- Genuine only → gate reds as before (carve-out did not weaken the gate)\n- No provenance → always counts (fail-safe)\n- Config-driven: adding/removing from allowlist changes behavior without code change\n- Gate output names skipped skills (observability)\n\n**Related:** `ci-prompt-forbid-unqualified-bash` (PR #422). Provenance: PR #438 (2026-06-23), closes #432.",
+    "provenance": {
+      "source": "PR #438 (2026-06-23): spec: postrun health-gate: don't fail runs on inert fewer-permission-prompts denials (#432)",
+      "ts": "2026-06-23"
+    }
   }
 }
