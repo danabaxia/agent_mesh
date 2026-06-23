@@ -1,4 +1,37 @@
-he optional `model` field on each normalized peer (default `undefined` when absent). The registry remains the single authoritative source.
+# Per-Peer Model-Tier Selection — Design
+
+## Goal
+
+Add an optional `model` field to each peer entry in `registry.json`. When present, the framework passes `--model <id>` to the spawned `claude -p` for that peer; when absent, the binary's default model is used — no change from today. A triage or data-retrieval peer can run on Haiku while the orchestrator runs on Opus, reducing mesh-wide token cost with no change to routing logic, tool allowlists, or security invariants.
+
+## Motivation
+
+Every `delegate_task` call today uses the same `AGENT_MESH_CLAUDE` binary with its default model. A triage or data-retrieval peer pays the same token price as an orchestrator doing complex synthesis. Multi-agent cost compounding (4–15× per hop) makes this the dominant cost driver as the mesh grows. The perf benchmark (#405) already tracks `quality_per_1k_tokens` as the efficiency signal; a Haiku worker on a routine triage task reduces the denominator 3–10× even if answer quality stays flat.
+
+Research basis:
+- **BAMAS** (arXiv 2511.21572): hierarchical model tiers achieve 97.7% frontier accuracy at ~61% cost.
+- **AgentDropout** (arXiv 2503.18891): 30–40% average token reduction via tiered routing.
+- **MetaGPT**: different model budgets per role (CEO/architect vs programmer/reviewer).
+- **SupervisorAgent** (arXiv 2510.26585): lightweight supervisor reduces token usage 29–39% while matching accuracy.
+
+None of these require external dependencies — tiering is a spawn-time `--model` flag.
+
+## Registry shape
+
+```json
+{ "peers": [
+    { "name": "analyst",      "model": "claude-haiku-4-5-20251001" },
+    { "name": "orchestrator", "model": "claude-opus-4-8" },
+    { "name": "tester" }
+  ]
+}
+```
+
+The `model` key is optional on each peer; omission is equivalent to `undefined` (use the binary's default). The registry is the single authoritative source for model selection — the field never appears in tool arguments.
+
+## Implementation touches
+
+- **`src/a2a/registry.js` (`normalizePeer`)** — accept the optional `model` field on each normalized peer (default `undefined` when absent). The registry remains the single authoritative source.
 - **`src/a2a/peer-bridge.js`** — pass `peer.model` into `delegateTask`'s options when building the delegation for that peer.
 - **`src/delegate.js`** — accept `{ model }` in the 5th options argument and thread it into `buildClaudeInvocation`.
 - **`src/delegate-invocation.js` (`buildClaudeInvocation`)** — when `model` is present, push `['--model', model]` onto the `claude -p` argv; when absent, emit no `--model` flag (default behavior).
