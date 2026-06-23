@@ -6,7 +6,7 @@ name: dev-mesh-intake
 
 on:
   issues:
-    types: [opened, edited, labeled]
+    types: [opened, labeled] # NOT `edited`: the Analyst edits issue bodies as it works → would self-trigger
   issue_comment:
     types: [created]
   schedule:
@@ -25,7 +25,13 @@ permissions:
 
 concurrency:
   group: dev-mesh-intake-${{ github.event.issue.number || 'poll' }}
-  cancel-in-progress: true # dedupe: opening an issue *with* a label fires opened+labeled
+  # NEVER cancel an in-flight intake run: the Analyst relabels the issue as it works,
+  # which fires another `labeled` event for the SAME issue-number group — with
+  # cancel-in-progress:true that later event killed the running job mid-`claude -p`,
+  # wasting live API spend (~34-45% of intake runs cancelled). The per-issue group
+  # still SERIALIZES the opened+labeled burst (the next run queues, then no-ops on the
+  # already-handled issue) — same pattern as dev-mesh-backlog (0 cancellations).
+  cancel-in-progress: false
 
 jobs:
   intake:
