@@ -1,0 +1,6 @@
+# Local runtime artifacts — not committed
+models/            # whisper ggml models (multi-GB, fetched on setup)
+.venv/             # arm64 python venv for Kokoro
+.voice-token       # per-install auth token (generated at first run)
+__pycache__/
+*.pyc
