@@ -1,11 +1,17 @@
 // src/mesh-improvement/metrics.js — pure metric registry + direction-aware deltas.
+//
+// `noiseBandPct` (optional) overrides the global DEFAULT_MIR_NOISE_BAND_PCT for a
+// single metric. Wall-clock latency and per-task cost are high-variance signals on an
+// LLM-driven cell — they swing run-to-run with API/machine load far more than the
+// deterministic ratio/count metrics — so the generic 10% band false-positives on them.
+// 20% matches the perf-cell warn budget in the 2026-06-22 rolling-perf-baseline design.
 export const METRICS = {
   passRate:              { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   precision:             { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   recall:                { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   quality_per_1k_tokens: { tier: 'soft', direction: 'higher_is_better', unit: 'score' },
-  cost_usd:              { tier: 'soft', direction: 'lower_is_better',  unit: 'usd' },
-  latency_ms:            { tier: 'soft', direction: 'lower_is_better',  unit: 'ms' },
+  cost_usd:              { tier: 'soft', direction: 'lower_is_better',  unit: 'usd', noiseBandPct: 20 },
+  latency_ms:            { tier: 'soft', direction: 'lower_is_better',  unit: 'ms', noiseBandPct: 20 },
   wasted_hops:           { tier: 'soft', direction: 'lower_is_better',  unit: 'count' },
 };
 
@@ -18,9 +24,14 @@ export function deltaPct(name, value, baseline) {
   return Math.round(signed * 10) / 10;
 }
 
-/** A regression is a negative signed delta whose magnitude exceeds the band. */
+/**
+ * A regression is a negative signed delta whose magnitude exceeds the band. A metric
+ * may carry its own `noiseBandPct` (high-variance signals like latency/cost); when set
+ * it overrides the caller's global band, otherwise the global `bandPct` applies.
+ */
 export function isRegression(name, dPct, bandPct) {
-  return typeof dPct === 'number' && dPct < 0 && Math.abs(dPct) > bandPct;
+  const band = typeof METRICS[name]?.noiseBandPct === 'number' ? METRICS[name].noiseBandPct : bandPct;
+  return typeof dPct === 'number' && dPct < 0 && Math.abs(dPct) > band;
 }
 
 /** Median of a numeric array; null for empty/non-array input. */
