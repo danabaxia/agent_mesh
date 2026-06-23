@@ -1,4 +1,41 @@
-rkers against open/closed issues; reused from existing sweeps.
+# Auto-filed Issue Dedup and Noise-Band Gating (Perf-Regression + Intake-Health) — Design
+
+**Date:** 2026-06-23
+**Status:** Design (pending review)
+**Resolves:** #433
+
+## Goal
+
+Cut auto-filed issue noise so the backlog/triage signal stays clean. Two classes of
+auto-filed issues are generating duplicate or low-signal GitHub entries:
+
+**Part A — perf-regression coalescing + noise-band pre-filing gate:**
+Same-scan, same-metric regressions from adjacent cells produce separate issues (#404 and
+#405 are the same `quality_per_1k_tokens` metric; #319/#320 were filed then rejected as
+noise; ~40% of mesh-scan perf issues are rejected-as-noise or near-dups). Fix: coalesce
+within a single scan on metric before filing, and respect `noiseBandPct` as a **creation
+gate** (it currently gates triage only, not creation).
+
+**Part B — intake-health dedup by workflow + rolling window:**
+The same broken intake on the same day produces multiple issues for different symptoms
+(#418 for HTTP 529, #421 for permission denials); repeated triage-sweep NOT_PLANNED runs
+each open a fresh infra issue (#385/#325). Fix: dedup intake-health filings by workflow
+name within a configurable rolling window; update an existing open issue rather than
+opening a new one per run.
+
+Both parts follow the existing pure-planner pattern (MIR spec §5/§8): deterministic dedup
+by label lookup (never by reading issue bodies); `gh` CLI host-applies the plan; ask-mode
+only.
+
+## Components
+
+- **Perf coalescer** — groups per-cell findings from a single scan by metric name into one
+  coalesced finding per `(scan, metric)`, carrying all per-cell rows.
+- **Noise-band pre-filing gate** — drops coalesced perf findings inside `noiseBandPct` and
+  cold-start/null-baseline establishments before reaching the planner; makes `noiseBandPct`
+  a creation gate, not just a triage gate.
+- **Marker matchers** — per-part label-based dedup lookup (`perf:<metric>` for Part A;
+  `intake:<workflow>` for Part B); the dedup planner matches markers against open/closed issues; reused from existing sweeps.
 - **Issue body renderer** — per-cell findings table for perf issues; accumulated-symptoms list for intake issues; both update in place on recurrence.
 - **`gh` applier (shared)** — create/update/close via `gh`, ask-mode only; lazy label creation as today.
 - **Config** — `noiseBandPct` (existing, now also creation-gating), `AGENT_MESH_INTAKE_DEDUP_WINDOW_MS` (default 24 h), and any per-part disable flags.
