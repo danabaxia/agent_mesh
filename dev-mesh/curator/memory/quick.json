@@ -1699,6 +1699,17 @@
       "ts": "2026-06-23"
     }
   },
+  "regression-band-override-semantics": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Regression band per-metric override: use Math.max, not ?? — ?? inverts if global later rises above override.",
+    "l1": "PR #465 fixed `isRegression` to use per-metric `noiseBandPct` for latency/cost. Reviewer found two latent issues: (1) `band = override ?? global` is replace-semantics — if global is later tuned above the override, per-metric becomes MORE sensitive than global (inverts 'high-variance = wider' intent); today global=10 < override=20, no live bug. (2) per-metric band wired only into per-run `gate()`; planned `assessTrend` trend gate still uses global, creating per-gate inconsistency when that lands.",
+    "value": "(1) Use `Math.max(override, bandPct)` not `override ?? bandPct` for per-metric threshold overrides in regression detection. Widen-only semantics guarantee the per-metric band is never tighter than the global, matching the 'high-variance metric = wider tolerance' intent regardless of future global tuning. Example: if global is later raised to 25, `override ?? global` resolves to 20 (now MORE sensitive than the 25 global — inverts intent); `Math.max(20, 25)` resolves to 25 (correctly uses the wider of the two).\n\n(2) When adding per-metric configuration to a multi-gate regression system (per-run / trend / creation gates), wire it into ALL current and planned gates in one PR, or file a tracking issue for each uncovered gate immediately. Leaving a gate uncovered creates silent inconsistency when that gate lands later (e.g. latency uses 20% per-run but 10% global at trend time).\n\n(3) Scope-creep corollary: if a targeted fix (latency-only) also widens an adjacent metric (cost_usd), call it out in the PR description as a deliberate extension requiring explicit sign-off — not a silent freebie. Reviewers should flag this even if the fix itself is correct. Provenance: PR #465 (2026-06-23), fixing latency_ms false-positive regression in mesh-scan; issue #460.",
+    "provenance": {
+      "source": "PR #465 (2026-06-23): [mesh-scan] perf-regression: latency_ms regressed (-19%) (#460)",
+      "ts": "2026-06-23"
+    }
+  },
   "implicit-set-subset-assert-or-derive": {
     "status": "active",
     "valid_to": null,
