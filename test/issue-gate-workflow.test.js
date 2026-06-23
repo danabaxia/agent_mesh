@@ -11,7 +11,7 @@ const wf = repo('.github/workflows/dev-mesh-issue-gate.yml');
 test('issue-gate workflow: scheduled, offset before automerge, dispatchable', () => {
   assert.match(wf, /^name:\s*dev-mesh-issue-gate/m);
   assert.match(wf, /schedule:/);
-  assert.match(wf, /cron:\s*'2,17,32,47 \* \* \* \*'/, 'runs 5 min before dev-mesh-automerge (7,22,37,52)');
+  assert.match(wf, /cron:\s*'2,32 \* \* \* \*'/, 'runs 5 min before dev-mesh-automerge (7,37)');
   assert.match(wf, /workflow_dispatch:/);
 });
 
