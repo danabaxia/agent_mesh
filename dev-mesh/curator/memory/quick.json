@@ -1676,5 +1676,27 @@
       "source": "PR #443 (2026-06-23): spec: Voice console — Stage B: streaming low-latency voice (stream reply + chunked sentence TTS) (#426)",
       "ts": "2026-06-23"
     }
+  },
+  "attempt-cap-circuit-breaker-durable-state": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Retry loops need durable-state attempt caps — read from issue comments/state file, not ephemeral runner vars.",
+    "l1": "PR #439 (spec for #431): issue #405 re-authored 12× over ~15h because spec-push retry had no attempt cap. Root cause: counter lived only in ephemeral runner state, reset on each re-trigger. Fix: read prior 'Spec ready attempt N' comment markers (or a state file) to count attempts across runner instances. After N=3 failed pushes: add `needs-human` label, leave ONE deduped escalation comment (check for marker before posting), STOP. Reset counter on green push.",
+    "value": "Apply whenever a pipeline agent can fail and be re-triggered (spec-push, code-gen, auto-PR).\n\nDURABLE STATE COUNTER: Never use ephemeral runner env/vars for attempt counts — the count resets each re-trigger. Instead:\n  Option A: scan issue comments for a per-attempt marker string (e.g. 'Spec ready attempt N') and count them.\n  Option B: use a committed or external state file keyed to the issue/workflow.\n\nCIRCUIT-BREAK LOGIC (after N=3 failures):\n  1. Add `needs-human` label to the source issue.\n  2. Post ONE deduped escalation comment: check for an existing sentinel-marker comment before posting — re-running at cap must NOT add a second comment.\n  3. STOP — exit without re-triggering.\n\nCOUNTER RESET: On an observed GREEN outcome (e.g. successful push), reset the counter. A later failure starts fresh at 1.\n\nSCOPE: The circuit breaker stops the loop; it does NOT diagnose the root cause. `needs-human` is the hand-off — a human investigates why N pushes failed.\n\nRELATED: pair with upfront credential preflight (see `label-preflight-before-issue-create`) to fail fast before the loop starts, and bounded 529 retry (see `claude-api-529-retry-resilience`) so transient errors don't burn attempt budget. Provenance: PR #439 (2026-06-23), issue #431.",
+    "provenance": {
+      "source": "PR #439 (2026-06-23): spec: intake runtime reliability: circuit breaker + DEV_MESH_PAT preflight + 529 retry (#431)",
+      "ts": "2026-06-23"
+    }
+  },
+  "health-gate-denial-filter-envelope-form": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Denial filter: match the envelope form production emits — array vs count path mismatch = silent dead code.",
+    "l1": "PR #448 filtered `fewer-permission-prompts` denials from the health gate, targeting the `permission_denials` ARRAY form. But real runs emit `permission_denials_count` (a NUMBER) — a different path. Tests against the array form pass while the fix is dead code in production. Also: JSON.stringify(.includes('.claude')) over-matches any denial record with a `.claude` path anywhere, silently disabling the gate. Fix: grep a real failing envelope first to confirm the form, then filter specific fields (tool_name, tool_input.*), not whole-object substrings.",
+    "value": "Two-layer trap from PR #448 (2026-06-23): filtering health-gate signals requires knowing which envelope variant production actually emits.\n\n1. ENVELOPE FORM MISMATCH: `classifyRunHealth` filters the `permission_denials` ARRAY (show_full_output form). Production `claude-execution-output.json` (read by assert-run-healthy.mjs) emits `permission_denials_count` (a NUMBER). Two different code paths — array-form tests pass green while the count path is untouched. Action: before adding a denial filter, open a real failing run's output file and confirm which key is actually populated.\n\n2. WHOLE-OBJECT SUBSTRING MATCH: `isInertDenial` used `JSON.stringify(denial).toLowerCase().includes('.claude')`. This matches `.claude` anywhere in the record — including cwd, transcript_path, session_path. A genuine denial whose record includes any `.claude` context path is silently laundered. Always filter specific fields: `tool_input.command`, `tool_input.file_path`, `tool_name === 'Skill'`.\n\n3. TEST COVERAGE BLINDSPOT: fixtures for denial filtering that only supply `{tool_name, tool_input}` leave field-level over-matching latent. Include the full real denial record shape (with context fields) to surface it.\n\nPattern for any new denial/signal exception:\n- Grep a real failing artifact first to confirm the exact key path\n- Filter specific named fields, never whole-object serialization\n- Write tests with full real record shapes, not minimal stubs",
+    "provenance": {
+      "source": "PR #448: postrun health-gate: don't fail runs on inert fewer-permission-prompts denials (#432)",
+      "ts": "2026-06-23"
+    }
   }
 }
