@@ -1709,5 +1709,16 @@
       "source": "PR #445 (2026-06-23): spec: fix(dev-society): assert RECONCILE_STATES ⊆ LIFECYCLE_STATES at module load (#442)",
       "ts": "2026-06-23"
     }
+  },
+  "per-metric-noise-band-llm-variance": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "LLM-dominated metrics need per-metric noise bands — a global band false-positives on real-model latency jitter.",
+    "l1": "Wall-clock `latency_ms` (and `cost_usd`) are dominated by real-model call time whose run-to-run jitter routinely exceeds a 10% global band — so normal LLM noise looks like a code regression. Add `noiseBandPct` to METRICS entries for high-variance metrics. `isRegression` resolves it with `METRICS[name]?.noiseBandPct ?? bandPct` — `??` (not `||`) is load-bearing: `||` would treat a zero band as absent and fall back to the global default.",
+    "value": "In the metric registry (e.g. `src/mesh-improvement/metrics.js`), add `noiseBandPct: N` to each METRICS entry dominated by external non-code factors (LLM latency, API cost). `isRegression` applies it: `const band = METRICS[name]?.noiseBandPct ?? bandPct`. The `??` is critical — `||` treats a zero band as falsy and falls back, breaking intentional tight bands.\n\nDerive the band value from `computeStats`/cv on historical runs; `computeStats` already exists in metrics.js for this purpose. A hand-picked constant (e.g. 30) risks two failure modes: too tight = false positives persist; too wide = genuine code regressions masked. The cv-derived value anchors the band to observed variance.\n\nReviewer notes from PR #461: (1) `Math.max(bandPct, noiseBandPct)` would better express 'at least this wide' if the intent is a floor — plain `??` lets a low noiseBandPct override a wider global band (opposite direction); choose semantics deliberately. (2) `cost_usd` has the same LLM-dominated variance class and likely needs the same treatment. PR #461 (2026-06-23) introduced `latency_ms: { noiseBandPct: 30 }` (≈2× the observed 15.9% swing), closing false-positive issue #459.",
+    "provenance": {
+      "source": "PR #461 (2026-06-23): [mesh-scan] perf-regression: latency_ms regressed (-15.9%) (#459)",
+      "ts": "2026-06-23"
+    }
   }
 }
