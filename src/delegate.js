@@ -145,6 +145,36 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
   const timeoutMs = readPositiveInt(env.AGENT_MESH_TIMEOUT_MS, DEFAULT_TIMEOUT_MS);
   const before = await captureChangeState(root);
 
+  // Branch isolation for do-mode (opt-in via AGENT_MESH_DO_BRANCH=1 or registry
+  // peer field branchIsolate:true). When active, writes land on a scratch branch
+  // agentmesh/<runId> so the caller can review before merging. Non-git folders
+  // skip silently. On failure/timeout the scratch branch is cleaned up.
+  let branchName = null;
+  let originalBranch = null;
+  if (mode === 'do' && env.AGENT_MESH_DO_BRANCH === '1' && before.kind === 'git') {
+    if (before.porcelain.size > 0) {
+      const result = refused('dirty_worktree', 'Branch isolation requires a clean working tree; commit or stash changes first.');
+      result.log_path = logPath;
+      result.run_id = runId;
+      await appendRunLog(logPath, { id: runId, parent_run_id: parentRunId, route, started_at: startedAt, finished_at: new Date().toISOString(), root, mode, task, state: 'done', status: result.status, result });
+      return result;
+    }
+    const headRef = await spawnFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: root, timeoutMs: 5_000 });
+    if (headRef.code === 0) {
+      originalBranch = headRef.stdout.trim();
+      branchName = `agentmesh/${runId}`;
+      const checkoutBranch = await spawnFile('git', ['checkout', '-b', branchName], { cwd: root, timeoutMs: 10_000 });
+      if (checkoutBranch.code !== 0) {
+        const result = resultError('branch_create_failed', checkoutBranch.stderr.trim() || 'Failed to create scratch branch.');
+        result.log_path = logPath;
+        result.run_id = runId;
+        await appendRunLog(logPath, { id: runId, parent_run_id: parentRunId, route, started_at: startedAt, finished_at: new Date().toISOString(), root, mode, task, state: 'done', status: result.status, result });
+        return result;
+      }
+    }
+    // If rev-parse fails (detached HEAD, bare repo) skip branch isolation silently.
+  }
+
   // Spawn tagging (2026-06-13 spec §3): every framework spawn gets a known
   // session id so its transcript is identifiable as worker-origin — the
   // dashboard's auto-follow then never mistakes a scheduler/digest/delegate
@@ -240,6 +270,7 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
       }
     }
   } catch (error) {
+    if (branchName) await cleanupScratchBranch(root, originalBranch, branchName);
     const result = resultError('spawn_failed', error.message);
     result.log_path = logPath;
     result.run_id = runId;
@@ -272,6 +303,15 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
   // this worker made, regardless of mode (ask and do chains both generate costs).
   const downstreamCostUsd = await aggregateDownstreamCosts(root, env, runId);
   if (downstreamCostUsd !== null) result.downstream_cost_usd = downstreamCostUsd;
+  // Branch isolation post-spawn: tag the result with the scratch branch on success;
+  // clean up (restore original branch + delete scratch) on any non-done outcome.
+  if (branchName) {
+    if (result.status === 'done') {
+      result.branch = branchName;
+    } else {
+      await cleanupScratchBranch(root, originalBranch, branchName);
+    }
+  }
   await appendRunLog(logPath, {
     id: runId,
     parent_run_id: parentRunId,
@@ -297,6 +337,14 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
     result
   });
   return result;
+}
+
+// Restore the original branch and delete the scratch branch after a non-done
+// delegate outcome. Best-effort: git errors are suppressed so the caller still
+// gets back the original error result unchanged.
+async function cleanupScratchBranch(root, originalBranch, branchName) {
+  await spawnFile('git', ['checkout', '-f', originalBranch], { cwd: root, timeoutMs: 10_000 });
+  await spawnFile('git', ['branch', '-D', branchName], { cwd: root, timeoutMs: 10_000 });
 }
 
 // Env for the framework peer bridge MCP server. The bridge inherits the worker's
