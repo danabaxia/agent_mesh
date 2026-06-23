@@ -1621,5 +1621,16 @@
       "source": "PR #435 (2026-06-23): Pipeline audit (2026-06-23) — P7 lifecycle label-state drift fix",
       "ts": "2026-06-23"
     }
+  },
+  "external-client-not-mesh-agent": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Mesh UI front-doors (voice/phone/IDE) are external clients via ask-only console broker — never registered mesh agents.",
+    "l1": "PR #429 (voice console) is the second external front-door after /m Mobile Concierge. UI clients that only discuss and ask should NOT be registered peers: pollutes the roster, adds routing overhead, complicates ask-only enforcement. Pattern: an external server with an ask_mesh_agent tool calling the console broker A2A proxy + read-only tools (gh/REST). The AI brain lives outside the mesh — any model (Gemini, OpenAI) works. Console broker enforces ask-only so consulted agents answer but never do work.",
+    "value": "When adding a new UI front-door to the mesh (voice assistant, phone chat, IDE plugin, CLI wrapper): (1) Do NOT register it as a peer in registry.json — it is a client, not a collaborator. (2) Give it an ask_mesh_agent tool that POSTs to the console broker A2A endpoint — the broker enforces ask-only on entry. (3) Give it direct read tools (gh CLI, REST, file reads) for mesh state — these bypass the mesh for speed. (4) Its AI brain is independent of the mesh: any model/provider works, no AGENT_MESH_* env needed. (5) For TTS/STT in voice frontends: keep a persistent warm TTS worker (e.g. Kokoro) to avoid cold-start latency per reply; provide a hosted TTS fallback (e.g. Gemini TTS) for reliability. (6) Gemini-specific gotcha: force functionCallingConfig: {mode: \"ANY\"} — Gemini 2.5-flash sometimes emits function calls as plain text (leaked tool call) which breaks parsing; forcing the mode prevents it. Provenance: PR #429 (2026-06-23).",
+    "provenance": {
+      "source": "PR #429: feat(voice-demo): phone voice console — Gemini agent ↔ mesh (STT/TTS + ask-only agent proxy)",
+      "ts": "2026-06-23"
+    }
   }
 }
