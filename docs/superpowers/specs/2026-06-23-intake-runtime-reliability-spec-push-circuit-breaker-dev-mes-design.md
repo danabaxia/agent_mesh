@@ -1,4 +1,22 @@
-gle deduped escalation comment (reusing the existing marker/dedup convention).
+# intake runtime reliability: spec-push circuit breaker + DEV_MESH_PAT preflight + 529 retry
+
+**Date:** 2026-06-23
+**Status:** Design (pending review)
+**Builds on:** the `dev-mesh-intake` pipeline (`.github/workflows/dev-mesh-intake.yml`) and the pipeline audit (issue #430: findings P1b, P3, P4).
+
+## Problem
+
+The `dev-mesh-intake` runtime keeps failing in three linked ways, identified in the pipeline audit (#430):
+
+1. **Runaway re-author loop (P1b):** The spec-push retry has no cap — issue #405 re-authored 12× over ~15 h, burning credits without escalating. Nothing counts or bounds attempts; a transient push failure triggers an unbounded re-author loop.
+2. **Silent credential failure (P3):** `DEV_MESH_PAT` gaps (#227, #418, #421) keep getting closed `COMPLETED` while the runtime still cannot push spec branches. The downstream `git push` fails silently and credential issues are incorrectly marked resolved before a green push is observed.
+3. **Hard red on transient 529 (P4):** `HTTP 529 (overloaded)` exits 1 (hard red). The error text references a **nonexistent** `.github/actions/mesh-retry-backoff` action — any hint to operators points nowhere.
+
+## Goal
+
+Three targeted fixes — smallest correct change per fix, no scope creep:
+
+- **Attempt-cap circuit breaker (P1b):** per-issue counter (read from prior "Spec ready attempt N" comments or a state file); after N=3 failed pushes, circuit-break: add `needs-human`, leave a single deduped escalation comment (reusing the existing marker/dedup convention).
 - **`DEV_MESH_PAT` preflight check** — a cheap authenticated capability probe for spec-branch `contents:write`; fails loud with a clear message on miss.
 - **529 handler** — bounded retry-on-529 with jittered back-off and/or neutral-exit mapping; replaces the exit-1 path and the dead action reference.
 - **Config** — attempt cap `N` (default 3), retry count/back-off for 529, and any disable flags.
