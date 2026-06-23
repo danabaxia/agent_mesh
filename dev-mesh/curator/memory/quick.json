@@ -1666,6 +1666,17 @@
       "ts": "2026-06-23"
     }
   },
+  "attempt-cap-circuit-breaker-durable-state": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Retry loops need durable-state attempt caps — read from issue comments/state file, not ephemeral runner vars.",
+    "l1": "PR #439 (spec for #431): issue #405 re-authored 12× over ~15h because spec-push retry had no attempt cap. Root cause: counter lived only in ephemeral runner state, reset on each re-trigger. Fix: read prior 'Spec ready attempt N' comment markers (or a state file) to count attempts across runner instances. After N=3 failed pushes: add `needs-human` label, leave ONE deduped escalation comment (check for marker before posting), STOP. Reset counter on green push.",
+    "value": "Apply whenever a pipeline agent can fail and be re-triggered (spec-push, code-gen, auto-PR).\n\nDURABLE STATE COUNTER: Never use ephemeral runner env/vars for attempt counts — the count resets each re-trigger. Instead:\n  Option A: scan issue comments for a per-attempt marker string (e.g. 'Spec ready attempt N') and count them.\n  Option B: use a committed or external state file keyed to the issue/workflow.\n\nCIRCUIT-BREAK LOGIC (after N=3 failures):\n  1. Add `needs-human` label to the source issue.\n  2. Post ONE deduped escalation comment: check for an existing sentinel-marker comment before posting — re-running at cap must NOT add a second comment.\n  3. STOP — exit without re-triggering.\n\nCOUNTER RESET: On an observed GREEN outcome (e.g. successful push), reset the counter. A later failure starts fresh at 1.\n\nSCOPE: The circuit breaker stops the loop; it does NOT diagnose the root cause. `needs-human` is the hand-off — a human investigates why N pushes failed.\n\nRELATED: pair with upfront credential preflight (see `label-preflight-before-issue-create`) to fail fast before the loop starts, and bounded 529 retry (see `claude-api-529-retry-resilience`) so transient errors don't burn attempt budget. Provenance: PR #439 (2026-06-23), issue #431.",
+    "provenance": {
+      "source": "PR #439 (2026-06-23): spec: intake runtime reliability: circuit breaker + DEV_MESH_PAT preflight + 529 retry (#431)",
+      "ts": "2026-06-23"
+    }
+  },
   "health-gate-denial-filter-envelope-form": {
     "status": "active",
     "valid_to": null,
