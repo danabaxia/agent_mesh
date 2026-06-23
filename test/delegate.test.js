@@ -1035,3 +1035,160 @@ test('delegateTask: downstream_cost_usd absent when result envelope has no cost'
   assert.equal(result.usage, undefined, 'no usage when output is bare text');
   assert.equal(result.downstream_cost_usd, undefined, 'downstream_cost_usd absent when no bridge calls with costs');
 });
+
+// ── Branch isolation (AGENT_MESH_DO_BRANCH=1) ──────────────────────────────
+
+test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: scratch branch created, result.branch set', async () => {
+  const root = await createGitRepo();
+  // Need at least one commit so the branch can be created
+  await writeFile(join(root, 'README.md'), 'init', 'utf8');
+  await git(root, ['add', 'README.md']);
+  await git(root, ['-c', 'user.email=t@t.com', '-c', 'user.name=Test', 'commit', '--allow-empty-message', '-m', 'init']);
+
+  const fakeClaude = await createFakeClaude(`
+    const fs = await import('node:fs/promises');
+    // Write a file so files_changed is non-empty and confirm we're on the scratch branch
+    await fs.writeFile(process.cwd() + '/output.txt', 'done', 'utf8');
+    console.log('wrote output');
+  `);
+
+  const result = await delegateTask({
+    root,
+    env: {
+      AGENT_MESH_CLAUDE: fakeClaude,
+      AGENT_MESH_TEST_PLATFORM: 'linux',
+      AGENT_MESH_DO_BRANCH: '1'
+    },
+    input: { mode: 'do', task: 'write a file' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.match(result.branch, /^agentmesh\/delegate-/);
+  // Verify the scratch branch exists in the repo
+  const { stdout } = await execFileAsync('git', ['branch', '--list', result.branch], { cwd: root });
+  assert.ok(stdout.trim().length > 0, `scratch branch ${result.branch} should exist`);
+});
+
+test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: dirty working tree → refused dirty_worktree', async () => {
+  const root = await createGitRepo();
+  await writeFile(join(root, 'README.md'), 'init', 'utf8');
+  await git(root, ['add', 'README.md']);
+  await git(root, ['-c', 'user.email=t@t.com', '-c', 'user.name=Test', 'commit', '--allow-empty-message', '-m', 'init']);
+  // Make the working tree dirty
+  await writeFile(join(root, 'dirty.txt'), 'unstaged change', 'utf8');
+
+  const fakeClaude = await createFakeClaude(`console.log('should not run');`);
+
+  const result = await delegateTask({
+    root,
+    env: {
+      AGENT_MESH_CLAUDE: fakeClaude,
+      AGENT_MESH_TEST_PLATFORM: 'linux',
+      AGENT_MESH_DO_BRANCH: '1'
+    },
+    input: { mode: 'do', task: 'write something' }
+  });
+
+  assert.equal(result.status, 'refused');
+  assert.equal(result.reason, 'dirty_worktree');
+});
+
+test('delegateTask ask mode + AGENT_MESH_DO_BRANCH=1: branch isolation skipped (ask is read-only)', async () => {
+  const root = await createGitRepo();
+  await writeFile(join(root, 'README.md'), 'init', 'utf8');
+  await git(root, ['add', 'README.md']);
+  await git(root, ['-c', 'user.email=t@t.com', '-c', 'user.name=Test', 'commit', '--allow-empty-message', '-m', 'init']);
+
+  const fakeClaude = await createFakeClaude(`console.log('ask done');`);
+
+  const result = await delegateTask({
+    root,
+    env: {
+      AGENT_MESH_CLAUDE: fakeClaude,
+      AGENT_MESH_TEST_PLATFORM: 'linux',
+      AGENT_MESH_DO_BRANCH: '1'
+    },
+    input: { mode: 'ask', task: 'inspect only' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.branch, undefined, 'ask mode never sets branch');
+});
+
+test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: non-git folder skips branch isolation', async () => {
+  // createGitRepo → but don't init git; use a plain tmpdir
+  const root = await (await import('node:fs/promises')).mkdtemp(
+    (await import('node:path')).join((await import('node:os')).tmpdir(), 'agent-mesh-nongit-')
+  );
+
+  const fakeClaude = await createFakeClaude(`console.log('non-git done');`);
+
+  const result = await delegateTask({
+    root,
+    env: {
+      AGENT_MESH_CLAUDE: fakeClaude,
+      AGENT_MESH_TEST_PLATFORM: 'linux',
+      AGENT_MESH_DO_BRANCH: '1'
+    },
+    input: { mode: 'do', task: 'write something' }
+  });
+
+  assert.equal(result.status, 'done');
+  assert.equal(result.branch, undefined, 'non-git folder: no branch isolation');
+  assert.equal(result.files_changed, null, 'non-git folder: files_changed is null');
+});
+
+test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: failed spawn cleans up scratch branch', async () => {
+  const root = await createGitRepo();
+  await writeFile(join(root, 'README.md'), 'init', 'utf8');
+  await git(root, ['add', 'README.md']);
+  await git(root, ['-c', 'user.email=t@t.com', '-c', 'user.name=Test', 'commit', '--allow-empty-message', '-m', 'init']);
+
+  // A fake claude that exits non-zero so the result is status:'error'
+  const fakeClaude = await createFakeClaude(`
+    process.stderr.write('something went wrong');
+    process.exit(1);
+  `);
+
+  const result = await delegateTask({
+    root,
+    env: {
+      AGENT_MESH_CLAUDE: fakeClaude,
+      AGENT_MESH_TEST_PLATFORM: 'linux',
+      AGENT_MESH_DO_BRANCH: '1'
+    },
+    input: { mode: 'do', task: 'will fail' }
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.branch, undefined, 'no branch in result on error');
+  // Verify no agentmesh/* branches remain
+  const { stdout } = await execFileAsync('git', ['branch', '--list', 'agentmesh/*'], { cwd: root });
+  assert.equal(stdout.trim(), '', 'scratch branch should be cleaned up after failure');
+});
+
+test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: git checkout -b fails → error branch_create_failed', async () => {
+  const root = await createGitRepo();
+  await writeFile(join(root, 'README.md'), 'init', 'utf8');
+  await git(root, ['add', 'README.md']);
+  await git(root, ['-c', 'user.email=t@t.com', '-c', 'user.name=Test', 'commit', '--allow-empty-message', '-m', 'init']);
+  // Pre-create a branch named exactly 'agentmesh'. This writes a file at
+  // .git/refs/heads/agentmesh; when git tries to create agentmesh/<uuid> it
+  // needs that path to be a directory — but it's a file — so checkout -b fails.
+  await git(root, ['branch', 'agentmesh']);
+
+  const fakeClaude = await createFakeClaude(`console.log('should not run');`);
+
+  const result = await delegateTask({
+    root,
+    env: {
+      AGENT_MESH_CLAUDE: fakeClaude,
+      AGENT_MESH_TEST_PLATFORM: 'linux',
+      AGENT_MESH_DO_BRANCH: '1'
+    },
+    input: { mode: 'do', task: 'write something' }
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'branch_create_failed');
+});
