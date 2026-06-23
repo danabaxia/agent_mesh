@@ -1,4 +1,22 @@
-e)** — defines the two-agent mesh, the two-turn create→advance flow, and the probes.
+# Behavior Eval Scenario 13: Orchestrator-Board Pipeline — Design
+
+**Date:** 2026-06-23
+**Status:** Draft (human review required)
+**Addresses:** #455 — no regression coverage for `assign_task → orchestrator pickup → done`
+
+## Problem
+
+The orchestrator-board pipeline (spec `2026-06-22-orchestrator-board-pipeline-design.md`) wires the phone concierge → board ticket → orchestrator `board-drive` daemon job → team fan-out → `done` flow. This is a multi-component path spanning `board/store.js`, `board/task-state.js`, `board/identity.js`, and `peer-bridge.js` `create_task_for_peer`, yet **no L2 behavior eval scenario covers it**. A regression in any of these components (task not persisted, wrong assignee resolved, state-machine blocked, identity rejected) would go undetected until a live phone test.
+
+## Goal
+
+Add **scenario 13** to the behavior eval suite (`eval-a2a.mjs`): a two-agent mesh (A = orchestrator, B = specialist) that drives the `create_task_for_peer → list_my_tasks → update_my_task` path end-to-end with deterministic probes against the real board store. The scenario joins the L2 tier alongside scenarios 01–12 and becomes the regression gate for the board-pipeline integration surface.
+
+No production code changes — this adds a scenario file only.
+
+## Components
+
+- **`eval/scenarios/13-orchestrator-board-pipeline.mjs` (new)** — defines the two-agent mesh, the two-turn create→advance flow, and the probes.
 - **`h.buildMesh` (reused)** — constructs the A (orchestrator) + B (specialist) mesh with peerbridge injection.
 - **`h.probe` (reused)** — inspects scenario state/outputs for assertions.
 - **`probes.mjs` gates (reused)** — `noUnexpectedDelegation`, `refusedWith`, plus store-state assertions.
@@ -25,7 +43,7 @@ This idea *is* a test artifact, so "testing" here means validating the scenario 
 - **Single-step respected:** an attempt to advance more than one step is rejected (consistent with `task-state.js`), and the scenario does not falsely pass on it.
 - **Determinism:** repeated runs of scenario 13 yield identical results with no daemon dependency (no flakiness from scheduling).
 - **Real-store usage:** the scenario reads/writes the file-based store (a mock substitution would be a defect) — verified by the task persisting across turns.
-- **Negative path (optional):** a wrong-identity `update_my_task` is `refusedWith` the expected refusal.
+- **Negative path (required):** a wrong-identity `update_my_task` is `refusedWith` the expected refusal. This is a required probe, not optional: CLAUDE.md's board invariant ("only the `to` agent may advance it") is a security property, so the L2 eval tier must gate identity enforcement, not just the happy path.
 
 ## Out of scope
 
