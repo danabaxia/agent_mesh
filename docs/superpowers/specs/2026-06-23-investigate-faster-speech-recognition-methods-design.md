@@ -1,4 +1,26 @@
-latency (p50/p95) and WER side by side. The decision artifact.
+# Investigate Faster Speech Recognition Methods — Design
+
+Resolves issue #425 ("The current speech broadcast is too slow. We need to explore and implement better speech recognition methods to improve the speed of voice interaction").
+
+The [PWA Voice Interaction spec](2026-06-22-pwa-voice-interaction-design.md) shipped bidirectional voice for the mobile concierge using the browser-native Web Speech API. That spec deliberately isolated the STT/TTS engine behind a `createVoiceEngine` interface so the implementation could be swapped. This spec drives the measurement-first investigation to determine whether a faster STT path is warranted and, if so, which engine to adopt.
+
+## Goal
+
+Identify whether the STT stage is the dominant latency contributor in the voice round-trip, and if so, select and integrate a faster server-side STT engine that materially reduces end-to-end latency (p50 target: ≤ 300 ms for STT stage alone) while keeping word-error rate (WER) within an acceptable ceiling on representative voice commands.
+
+## Non-goals
+
+- **Pre-committing to a specific engine before measurement** — which engine wins (if any) is an output of the benchmark, not an input to this spec.
+- **Changing the voice UX** — interaction model (push-to-talk, language toggle, readback toggle) is unchanged; this is an engine-speed investigation.
+- **Cloud/hosted STT** — the stack is local-first on the M4 (privacy + tailnet); offloading to a cloud API is out of scope.
+- **Multilingual / new-language expansion** — targets the owner's existing usage patterns.
+- **TTS / "broadcast" optimization** — out of scope *unless* Phase 0 measurement shows TTS is the dominant stage (open question #1).
+- **Auth, tailnet HTTPS, or `/m` access-control changes** — unchanged.
+- **Hardware changes** — optimization targets the existing M4 (MPS/Neural Engine).
+
+## Deliverables
+
+- **Benchmark comparison matrix** — per-engine measurement of latency (p50/p95) and WER side by side. The decision artifact.
 - **Pluggable STT engine interface** — an abstraction over "audio in → transcript out" so engines (current Whisper, `faster-whisper`, `whisper.cpp`, distilled, streaming) are swappable behind one contract.
 - **Selected recognition engine adapter** — the integration of whichever engine wins, implementing the interface.
 - **Config (`src/config.js`)** — `AGENT_MESH_VOICE_STT_ENGINE` (engine selector, default = winner), model-size/param knobs, and a fallback flag.
