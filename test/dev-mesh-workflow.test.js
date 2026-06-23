@@ -31,6 +31,9 @@ test('triggers match the §6 table', () => {
   assert.match(wf.research, /workflow_dispatch:/);
   assert.match(wf.research, /schedule:/);
   assert.match(wf.intake, /^\s*issues:/m);
+  // intake must NOT trigger on `edited` — the Analyst edits issue bodies as it works,
+  // which would self-trigger an intake re-run (the self-cancel bug, PR #428).
+  assert.doesNotMatch(wf.intake, /types:\s*\[[^\]]*edited/, 'intake: must not trigger on issues:edited (self-trigger)');
   assert.match(wf.backlog, /schedule:/);
   assert.match(wf.backlog, /^\s*issues:/m);
   assert.match(wf.autofix, /check_run:/);           // autofix owns the CI-failure event
@@ -94,6 +97,9 @@ test('CLAIM LOCK: backlog & triage serialize via concurrency (no double-claim)',
     assert.match(wf[n], /concurrency:/, `${n}: needs a concurrency group (the claim lock)`);
     assert.match(wf[n], /cancel-in-progress:\s*false/, `${n}: in-flight work must not be cancelled`);
   }
+  // intake too: the Analyst relabels the issue as it works, firing a same-group event —
+  // cancel-in-progress:true killed the in-flight `claude -p` (self-cancel bug, PR #428).
+  assert.match(wf.intake, /cancel-in-progress:\s*false/, 'intake: Analyst relabels mid-run → must not cancel in-flight runs');
 });
 
 test('APPROVAL GATE: backlog only builds approved work; intake never builds code', () => {
