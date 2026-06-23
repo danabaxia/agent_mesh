@@ -1731,5 +1731,27 @@
       "source": "PR #467 (2026-06-23): spec: idea: per-peer model-tier selection — run Haiku workers, Opus orchestrator (#457)",
       "ts": "2026-06-23"
     }
+  },
+  "regression-band-override-semantics": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Regression band per-metric override: use Math.max, not ?? — ?? inverts if global later rises above override.",
+    "l1": "PR #465 fixed `isRegression` to use per-metric `noiseBandPct` for latency/cost. Reviewer found two latent issues: (1) `band = override ?? global` is replace-semantics — if global is later tuned above the override, per-metric becomes MORE sensitive than global (inverts 'high-variance = wider' intent); today global=10 < override=20, no live bug. (2) per-metric band wired only into per-run `gate()`; planned `assessTrend` trend gate still uses global, creating per-gate inconsistency when that lands.",
+    "value": "(1) Use `Math.max(override, bandPct)` not `override ?? bandPct` for per-metric threshold overrides in regression detection. Widen-only semantics guarantee the per-metric band is never tighter than the global, matching the 'high-variance metric = wider tolerance' intent regardless of future global tuning. Example: if global is later raised to 25, `override ?? global` resolves to 20 (now MORE sensitive than the 25 global — inverts intent); `Math.max(20, 25)` resolves to 25 (correctly uses the wider of the two).\n\n(2) When adding per-metric configuration to a multi-gate regression system (per-run / trend / creation gates), wire it into ALL current and planned gates in one PR, or file a tracking issue for each uncovered gate immediately. Leaving a gate uncovered creates silent inconsistency when that gate lands later (e.g. latency uses 20% per-run but 10% global at trend time).\n\n(3) Scope-creep corollary: if a targeted fix (latency-only) also widens an adjacent metric (cost_usd), call it out in the PR description as a deliberate extension requiring explicit sign-off — not a silent freebie. Reviewers should flag this even if the fix itself is correct. Provenance: PR #465 (2026-06-23), fixing latency_ms false-positive regression in mesh-scan; issue #460.",
+    "provenance": {
+      "source": "PR #465 (2026-06-23): [mesh-scan] perf-regression: latency_ms regressed (-19%) (#460)",
+      "ts": "2026-06-23"
+    }
+  },
+  "eval-corpus-anti-gaming-design": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "L5 eval corpus: keywords = real verifiable framework terms, non-reconstructable from task alone; min_hits < total.",
+    "l1": "PR #469 / Issue #454: mesh-bench.json shipped empty → vacuous L5 scorecard every run. Corpus rules: (1) keywords = real framework terms (component names, env vars, exit codes) verifiable in codebase — not extractable from task text; (2) min_keyword_hits < len(expected_keywords) for partial-correct scoring; (3) ≥5 concern areas × ≥2 tasks each; (4) cross-concern tasks validate multi-peer advantage. Tests: schema+threshold sanity, ≥10 tasks load, anti-gaming review (answer not reconstructable from task+keywords).",
+    "value": "Apply when populating any eval task corpus for a harness that uses keyword-hit scoring.\n\n(1) Keywords must be REAL and VERIFIABLE: choose actual component names, env var names, function signatures, or exit-code semantics from the codebase. A keyword that appears verbatim in the task description is gameable — a model can extract it without understanding. Verify each keyword appears in the actual codebase or spec.\n\n(2) min_keyword_hits < len(expected_keywords): require N out of M keywords where N < M. A threshold of N=M is brittle — one synonym or phrasing variation fails the task. N < M allows correct-but-differently-worded answers to score.\n\n(3) Anti-gaming review (manual gate per task): confirm the correct answer is NOT reconstructable from task text + expected_keywords alone. A reviewer seeing only those two fields should not be able to write a passing answer without understanding the framework.\n\n(4) Coverage breadth: ensure all major system areas have ≥2 tasks each (e.g. routing, security, board, health, protocol). Single-area concentration inflates apparent coverage while missing large surfaces.\n\n(5) Cross-concern tasks: include tasks spanning two system areas. These validate whether multi-peer meshes outperform single agents on compound questions — the core L5 hypothesis.\n\n(6) End-to-end smoke: after populating, run the eval script and confirm it produces a non-vacuous scorecard (>0 tasks scored, >0 keywords evaluated). An empty corpus produces silently vacuous results with no error.\n\nProvenance: PR #469 spec (2026-06-23), Issue #454.",
+    "provenance": {
+      "source": "PR #469: spec: idea: populate mesh-bench task corpus — L5 eval harness runs with empty task list (#454)",
+      "ts": "2026-06-23"
+    }
   }
 }
