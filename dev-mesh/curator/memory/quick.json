@@ -1720,5 +1720,16 @@
       "source": "PR #461 (2026-06-23): [mesh-scan] perf-regression: latency_ms regressed (-15.9%) (#459)",
       "ts": "2026-06-23"
     }
+  },
+  "eval-corpus-anti-gaming-design": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "L5 eval corpus: keywords = real verifiable framework terms, non-reconstructable from task alone; min_hits < total.",
+    "l1": "PR #469 / Issue #454: mesh-bench.json shipped empty → vacuous L5 scorecard every run. Corpus rules: (1) keywords = real framework terms (component names, env vars, exit codes) verifiable in codebase — not extractable from task text; (2) min_keyword_hits < len(expected_keywords) for partial-correct scoring; (3) ≥5 concern areas × ≥2 tasks each; (4) cross-concern tasks validate multi-peer advantage. Tests: schema+threshold sanity, ≥10 tasks load, anti-gaming review (answer not reconstructable from task+keywords).",
+    "value": "Apply when populating any eval task corpus for a harness that uses keyword-hit scoring.\n\n(1) Keywords must be REAL and VERIFIABLE: choose actual component names, env var names, function signatures, or exit-code semantics from the codebase. A keyword that appears verbatim in the task description is gameable — a model can extract it without understanding. Verify each keyword appears in the actual codebase or spec.\n\n(2) min_keyword_hits < len(expected_keywords): require N out of M keywords where N < M. A threshold of N=M is brittle — one synonym or phrasing variation fails the task. N < M allows correct-but-differently-worded answers to score.\n\n(3) Anti-gaming review (manual gate per task): confirm the correct answer is NOT reconstructable from task text + expected_keywords alone. A reviewer seeing only those two fields should not be able to write a passing answer without understanding the framework.\n\n(4) Coverage breadth: ensure all major system areas have ≥2 tasks each (e.g. routing, security, board, health, protocol). Single-area concentration inflates apparent coverage while missing large surfaces.\n\n(5) Cross-concern tasks: include tasks spanning two system areas. These validate whether multi-peer meshes outperform single agents on compound questions — the core L5 hypothesis.\n\n(6) End-to-end smoke: after populating, run the eval script and confirm it produces a non-vacuous scorecard (>0 tasks scored, >0 keywords evaluated). An empty corpus produces silently vacuous results with no error.\n\nProvenance: PR #469 spec (2026-06-23), Issue #454.",
+    "provenance": {
+      "source": "PR #469: spec: idea: populate mesh-bench task corpus — L5 eval harness runs with empty task list (#454)",
+      "ts": "2026-06-23"
+    }
   }
 }
