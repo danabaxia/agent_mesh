@@ -345,12 +345,12 @@ const server = createServer(async (req, res) => {
       return send(res, 200, 'audio/wav', wav);
     }
     if (req.method === 'POST' && path === '/chat') {
-      const { history, text } = JSON.parse((await readBody(req)).toString() || '{}');
+      const { history, text, confirmBeforeFile } = JSON.parse((await readBody(req)).toString() || '{}');
       if (!text) return send(res, 400, 'application/json', JSON.stringify({ ok: false, error: 'no text' }));
       const t0 = performance.now();
       console.log(`[chat] ← ${String(text).slice(0, 100)}`);
       try {
-        const out = await conciergeTurn(history, text);   // Gemini + mesh tools (auto 串联)
+        const out = await conciergeTurn(history, text, { confirmBeforeFile: !!confirmBeforeFile });   // Gemini + mesh tools (auto 串联)
         const ms = Math.round(performance.now() - t0);
         console.log(`[chat] → (${ms}ms) tools=[${(out.actions || []).map((a) => a.name).join(',')}] reply: ${String(out.reply).slice(0, 100).replace(/\n/g, ' ')}`);
         return send(res, 200, 'application/json', JSON.stringify({ ok: true, ...out, ms }));

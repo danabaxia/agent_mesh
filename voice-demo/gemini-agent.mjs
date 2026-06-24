@@ -38,10 +38,10 @@ function historyToContents(history) {
   }));
 }
 
-async function callGemini(contents, mode = 'AUTO') {
+async function callGemini(contents, mode = 'AUTO', sys = SYSTEM) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
   const body = {
-    systemInstruction: { parts: [{ text: SYSTEM }] },
+    systemInstruction: { parts: [{ text: sys }] },
     contents,
     tools: [{ functionDeclarations: MESH_TOOL_DECLARATIONS }],
     toolConfig: { functionCallingConfig: { mode } },   // ANY = force a structured call
@@ -61,13 +61,19 @@ const LEAK_RE = /default_api\.|tool_code|print\(|(?:ask_mesh_agent|file_mesh_tas
  * Run one concierge turn. Returns { reply, actions } where actions is the list of
  * mesh tool calls executed this turn (so the UI can surface filed issues).
  */
-export async function conciergeTurn(history, text) {
+export async function conciergeTurn(history, text, opts = {}) {
   if (!KEY) throw new Error('GEMINI_API_KEY not set');
+  // Eyes-free safety: when the owner is driving they can't read the screen, so a
+  // misheard idea could silently create a junk task. confirmBeforeFile makes the
+  // 门房 read the idea back and wait for a "好/对" before calling file_mesh_task.
+  const sys = SYSTEM + (opts.confirmBeforeFile
+    ? '\n\nCONFIRM-BEFORE-FILE (driving/eyes-free): before calling file_mesh_task, do NOT file yet — first reply with a ONE-sentence read-back of the task and ask "要记下来吗？". Only on the NEXT turn, if the owner confirms (好/对/记吧/yes), call file_mesh_task. If they say 取消/不用/no, drop it. (get_mesh_status / ask_mesh_agent / reads need no confirmation.)'
+    : '\n\nWhen you file a task from a spoken idea, READ IT BACK in your reply (one short sentence + the issue number) so a mishearing is caught by ear.');
   const contents = [...historyToContents(history), { role: 'user', parts: [{ text: String(text) }] }];
   const actions = [];
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
-    let content = await callGemini(contents);
+    let content = await callGemini(contents, 'AUTO', sys);
     let parts = content.parts || [];
     let calls = parts.filter((p) => p.functionCall).map((p) => p.functionCall);
 
@@ -76,7 +82,7 @@ export async function conciergeTurn(history, text) {
     if (calls.length === 0) {
       const text = parts.filter((p) => p.text).map((p) => p.text).join(' ');
       if (LEAK_RE.test(text)) {
-        content = await callGemini(contents, 'ANY');
+        content = await callGemini(contents, 'ANY', sys);
         parts = content.parts || [];
         calls = parts.filter((p) => p.functionCall).map((p) => p.functionCall);
       }
