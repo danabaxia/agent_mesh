@@ -1808,5 +1808,16 @@
       "source": "PR #477 (2026-06-23): idea: per-metric noise-band override for cost_usd (#462 already closed)",
       "ts": "2026-06-23"
     }
+  },
+  "gitignore-inline-comment-silently-exposes": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Git .gitignore: inline # comments extend the pattern—they don't comment it, leaving the file silently un-ignored.",
+    "l1": "PR #505 (2026-06-24): .voice-token and .voice-env had trailing inline # comments in .gitignore (e.g. `.voice-env # key loader`). Git supports ONLY full-line comments (line starting with #)—no inline comments. The # and all text after it become part of the filename pattern, so it matches nothing. Both credential files were silently un-ignored. Fix: move comments to a preceding line. Verify: `git check-ignore -v <file>` before assuming a sensitive file is safely ignored.",
+    "value": "Pattern: inline # text in .gitignore is part of the filename pattern, not a comment.\n\nWRONG (silently un-ignores the file):\n  .voice-env # key loader file\n  .voice-token # oauth token\n\nRIGHT:\n  # key loader file\n  .voice-env\n  # oauth token\n  .voice-token\n\nGit .gitignore syntax (per git-scm.com/docs/gitignore):\n- A '#' on a line whose first non-whitespace character is '#' = comment (line ignored).\n- A '#' anywhere else is a literal character in the pattern.\n- Blank lines are also ignored.\n- No inline comment syntax exists.\n\nConsequences of the mistake:\n- The file is NOT ignored — `git status` shows it as untracked.\n- A `git add .` or `git add -A` can silently commit secrets, tokens, or env files.\n- The bug is invisible at write time: `.gitignore` editors don't warn, `git add` doesn't warn.\n\nChecklist when adding sensitive files to .gitignore:\n1. Use only full-line comments (# on its own line above the pattern).\n2. After adding, verify with `git check-ignore -v <file>`. A missing line in the output means the file is NOT ignored.\n3. For files already staged/committed accidentally: `git rm --cached <file>`, then re-commit.\n\nProvenance: PR #505 (2026-06-24) — fix(voice): durable key loading + Gemini-TTS 429 cooldown + Kokoro pre-warm.",
+    "provenance": {
+      "source": "PR #505 (2026-06-24): fix(voice): durable key loading + Gemini-TTS 429 cooldown + Kokoro pre-warm",
+      "ts": "2026-06-24"
+    }
   }
 }
