@@ -74,6 +74,12 @@ export async function conciergeTurn(history, text, opts = {}) {
     : '\n\nWhen the owner gives an idea to record, call file_mesh_task NOW in this same turn (do NOT ask "对吗？", do NOT say "我来记" without calling — just call it). Then your reply reads back what you filed + the issue number so a mishearing is caught by ear.');
   const contents = [...historyToContents(history), { role: 'user', parts: [{ text: String(text) }] }];
   const actions = [];
+  // Code-enforced confirm-before-file (the prompt alone is unreliable — the model
+  // filed 3/4 times despite confirm mode). A file is allowed ONLY when the previous
+  // assistant turn already asked for confirmation; otherwise intercept the call and
+  // ask instead. Eyes-free safety: a misheard idea can't silently create a junk task.
+  const lastAsst = [...(Array.isArray(history) ? history : [])].reverse().find((t) => t.role === 'assistant');
+  const confirmPending = !!(opts.confirmBeforeFile && lastAsst && /要记|记下来吗|要不要记|记吗|要存吗|存下来吗|确认一下/.test(lastAsst.text || ''));
 
   for (let hop = 0; hop < MAX_TOOL_HOPS; hop++) {
     let content = await callGemini(contents, 'AUTO', sys);
@@ -104,6 +110,12 @@ export async function conciergeTurn(history, text, opts = {}) {
     // Execute every tool call, feed results back as functionResponse parts.
     const responseParts = [];
     for (const call of calls) {
+      // Intercept a premature file (confirm mode, not yet confirmed) → ask first.
+      if (call.name === 'file_mesh_task' && opts.confirmBeforeFile && !confirmPending) {
+        const a = call.args || {};
+        const what = String(a.title || a.body || '这个想法').slice(0, 80);
+        return { reply: `我听到的是：${what}。要记下来吗？`, actions };
+      }
       let result;
       try { result = await runMeshTool(call.name, call.args || {}); actions.push({ name: call.name, args: call.args, result }); }
       catch (e) { result = { error: String(e.message || e) }; actions.push({ name: call.name, args: call.args, error: result.error }); }
