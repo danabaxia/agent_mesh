@@ -1819,5 +1819,16 @@
       "source": "PR #505 (2026-06-24): fix(voice): durable key loading + Gemini-TTS 429 cooldown + Kokoro pre-warm",
       "ts": "2026-06-24"
     }
+  },
+  "voice-text-test-tier-split": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Voice+logic agents: separate test tiers — text/logic (default, zero voice tokens) + voice (opt-in, logic stubbed).",
+    "l1": "PR #513 spec: agents bundling STT/TTS + reasoning run every logic test through the voice pipeline, burning unnecessary tokens. Fix: a text tier (text-in→text-out, voice module never instantiated, zero STT/TTS tokens, deterministic) + a voice tier (audio fixtures, logic layer stubbed, no reasoning tokens). A test-tier selector (file pattern, flag, or tag) runs text by default; voice requires an explicit opt-in. CI: text tier on every change, voice tier on a narrower trigger (voice-surface changes / scheduled / manual).",
+    "value": "Apply when an agent bundles two concerns: a reasoning/logic layer and an audio layer (STT/TTS).\n\n(1) VOICE/LOGIC SEAM: expose the agent's text-in→text-out logic independently of the audio wrapper. This seam is the enabling abstraction — everything else depends on it. Test this layer first; absence means no isolation is possible.\n\n(2) TEXT TIER (default): test files drive the logic layer with text inputs, assert text outputs, and never import or instantiate the voice module. Zero STT/TTS tokens. Deterministic and fast. All logic/reasoning/routing/tool assertions belong here — no coverage loss from the split.\n\n(3) VOICE TIER (opt-in): test files exercise STT/TTS transforms and audio round-trip wiring. The logic layer is stubbed/fixture-driven; live audio uses pre-recorded fixtures — no reasoning tokens and deterministic by default. One explicitly-gated live e2e case is acceptable.\n\n(4) TIER SELECTOR: file pattern (e.g. test/text/ vs test/voice/), flag, or tag. Default test command → text tier only. Explicit opt-in → voice tier (or both). The mechanism is test-framework-agnostic; uses existing test tooling.\n\n(5) CI WIRING: text tier runs on every PR/change (fast, cheap). Voice tier runs only on a narrower trigger: voice-surface changes, scheduled, or manual dispatch.\n\n(6) KEY ASSERTIONS:\n  - Logic tests invoke no voice module: a text-tier run instantiates no STT/TTS and records zero voice token usage.\n  - Default excludes voice: the default command runs text tier only; voice requires explicit opt-in.\n  - Voice tier runs independently: exercises STT/TTS with logic stubbed, no full-reasoning tokens.\n  - Seam isolation: logic layer is fully testable text-in→text-out with voice module absent.\n  - Determinism: text-tier is deterministic; voice-tier fixture tests are deterministic (except the explicit gated e2e).\n\n(7) OUT OF SCOPE: changing agent logic, the voice pipeline, or its UX; optimizing voice latency; removing voice tests; new token-accounting infrastructure. The split restructures HOW agents are tested, not what they do.\n\nProvenance: spec PR #513 (2026-06-24), closes Issue #512.",
+    "provenance": {
+      "source": "PR #513: spec: Separate voice and text module testing for agents (#512)",
+      "ts": "2026-06-24"
+    }
   }
 }
