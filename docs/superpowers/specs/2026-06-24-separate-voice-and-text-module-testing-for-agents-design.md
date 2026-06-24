@@ -1,4 +1,20 @@
-odule is paid for only when it is the thing under test.
+# Separate Voice and Text Module Testing for Agents — Design
+
+**Date:** 2026-06-24
+**Status:** Draft
+**Topic:** Restructure agent test suites so voice (STT/TTS) logic and text (reasoning) logic run in separate tiers, eliminating unnecessary token consumption when only agent reasoning is under test.
+
+---
+
+## 1. Motivation
+
+Agents such as the voice-demo assistant bundle two distinct concerns: a reasoning/logic layer (text-in → text-out) and an audio layer (STT + TTS). Today's test suites exercise the full pipeline together — every logic test invokes the voice module, consuming STT/TTS tokens even when only the agent's reasoning is being validated. This is wasteful and makes the default CI run unnecessarily expensive.
+
+**Issue #512:** "When testing agents, the voice module and text module should be tested separately to avoid unnecessary token consumption by always using the voice module when only logic is being tested."
+
+## 2. Goal
+
+Split each agent's test suite into two independent tiers — a **text (logic) tier** and a **voice tier** — so that each module is paid for only when it is the thing under test.
 
 ## Components
 
