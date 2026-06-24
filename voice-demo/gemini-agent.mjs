@@ -29,10 +29,12 @@ const SYSTEM = [
   'STYLE (this reply is READ ALOUD by TTS — long replies are slow + unnatural):',
   '- Reply in the SAME language the owner spoke (中文→中文, English→English; mixed→dominant).',
   '- HARD LIMIT: at most 2 short spoken sentences (~40 words). NO markdown, lists, code, or emoji.',
-  '- Even when you explored code or listed agents, speak only a BRIEF SUMMARY (the headline + a count), then ask if they want detail on a specific one — never read a long list or code aloud.',
+  '- Even when you explored code or listed agents, speak only a BRIEF SUMMARY (the headline + the key finding) — never read a long list or code aloud. Lead with the answer/insight, not a question.',
   '- After filing a task, say in ONE sentence what you filed + the issue number.',
-  '- When discussing, reflect the idea, suggest 1 concrete next step, ask ONE question.',
-  'IDEA DISCUSSION: brainstorming an idea with the owner is a core job. Develop it together — clarify intent, surface trade-offs, shape it toward something actionable. To deepen it you may consult the right agent via ask_mesh_agent: analyst (research / how to spec it), reviewer (risks / does it break invariants), security (attack surface), tester (how to test it), orchestrator (how it would be built). Bring their input back into the conversation. Only file_mesh_task once the owner is happy with the shaped idea.',
+  '- Be PROACTIVE and decisive, not a question machine. When the owner raises a problem or idea, give a concrete ANALYSIS / RECOMMENDATION / answer — from your OWN knowledge first, and from FAST tools when needed (get_mesh_status, read_repo_file/search_repo). Reflexively bouncing it back with "你觉得呢 / 下一步 / 您认为" instead of answering is a FAILURE. Default to solving, not deferring.',
+  '- SPEED: answer quickly from your own knowledge for most things. Do NOT reflexively call the slow ask_mesh_agent (~30–60s, stalls the voice turn) — use it ONLY when the owner explicitly asks to consult an agent, or for a genuinely deep question you cannot answer yourself.',
+  '- HARD RULE: NEVER reply with only a question. Every reply must contain substance — a concrete take, finding, or recommendation (what YOU think / what you would do). A question may follow it but must never replace it. Even when the owner is vague or just makes an observation ("延迟还能优化"), first give your concrete take (e.g. where the latency actually is + what you would do about it), then optionally one short question. Asking the owner to clarify before offering anything is a failure.',
+  'IDEA DISCUSSION: when the owner raises an idea, DRIVE it toward an answer — investigate with your tools, form a concrete opinion, and propose a shaped plan or next action; do not just collect their input and ask what they think. To deepen it, consult the right agent via ask_mesh_agent: analyst (research / how to spec it), reviewer (risks / invariants), security (attack surface), tester (how to test it), orchestrator (how it would be built) — then bring back a concrete recommendation, not another question. File a task once it is actionable.',
 ].join('\n');
 
 function historyToContents(history) {
@@ -56,7 +58,7 @@ const RESPOND_TOOL = {
 };
 const ALL_TOOLS = [...MESH_TOOL_DECLARATIONS, RESPOND_TOOL];
 
-async function callGemini(contents, sys) {
+async function callGeminiOnce(contents, sys) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
   const body = {
     systemInstruction: { parts: [{ text: sys }] },
@@ -69,6 +71,30 @@ async function callGemini(contents, sys) {
   const j = await r.json();
   if (!r.ok) throw new Error(`gemini ${r.status}: ${JSON.stringify(j).slice(0, 300)}`);
   return j.candidates?.[0]?.content ?? { role: 'model', parts: [] };
+}
+// mode:'ANY' usually forces a call, but Gemini still intermittently returns an EMPTY
+// candidate (no parts). Retry a couple times before giving up — empty is transient,
+// and surfacing it as "我没听清" on a perfectly clear request is the bug we're killing.
+async function callGemini(contents, sys) {
+  let last = { role: 'model', parts: [] };
+  for (let i = 0; i < 3; i++) {
+    last = await callGeminiOnce(contents, sys);
+    if ((last.parts || []).some((p) => p.functionCall || (p.text && p.text.trim()))) return last;
+  }
+  return last;
+}
+// Last-resort plain generation (NO tools → the model is free to, and will, produce
+// text). Used when forced-tool mode keeps returning empty, so the owner gets a real
+// answer instead of "我没听清" on a perfectly clear request.
+async function callGeminiPlain(contents, sys) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${KEY}`;
+  const body = { systemInstruction: { parts: [{ text: sys }] }, contents, generationConfig: { temperature: 0.6, maxOutputTokens: 512 } };
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const j = await r.json();
+    if (!r.ok) return '';
+    return (j.candidates?.[0]?.content?.parts || []).filter((p) => p.text).map((p) => p.text).join(' ').trim();
+  } catch { return ''; }
 }
 
 /**
@@ -92,9 +118,10 @@ export async function conciergeTurn(history, text, opts = {}) {
     contents.push(content);
     const calls = (content.parts || []).filter((p) => p.functionCall).map((p) => p.functionCall);
 
-    if (calls.length === 0) {   // rare under mode:ANY — salvage any text, else a soft fallback
-      const txt = (content.parts || []).filter((p) => p.text).map((p) => p.text).join(' ').trim();
-      return { reply: txt || (actions.length ? '好的，已处理。' : '我没太听清，再说一次？'), actions };
+    if (calls.length === 0) {   // forced-tool mode returned empty after retries
+      let txt = (content.parts || []).filter((p) => p.text).map((p) => p.text).join(' ').trim();
+      if (!txt) txt = await callGeminiPlain(contents, sys);   // fall back to plain text generation
+      return { reply: txt || (actions.length ? '好的，已处理。' : '好的，我在听。'), actions };
     }
 
     const responseParts = [];
