@@ -149,10 +149,15 @@ function bubble(cls, text) {
 async function send(text) {
   text = (text || '').trim(); if (!text) return;
   bubble('me', text); convo.push({ role: 'user', text });
-  const think = bubble('ai typing', '…'); setStatus('思考中…');
+  const think = bubble('ai typing', '…'); setStatus('💭 在想…');
+  // Eyes-free heartbeat: a long turn (e.g. consulting a real agent ~30-60s) would
+  // otherwise be silent — the driver can't tell it's still working. Soft tick.
+  let waited = 0;
+  const beat = setInterval(() => { waited += 6; cue('thinking'); setStatus(`💭 在想…（${waited}s）`); }, 6000);
   try {
     const confirmBeforeFile = $('confirmFile') ? $('confirmFile').checked : true;
     const res = await fetch(api('chat'), { method: 'POST', headers: authHdr({ 'Content-Type': 'application/json' }), body: JSON.stringify({ history: convo.slice(0, -1), text, confirmBeforeFile }) });
+    clearInterval(beat);
     const r = await res.json();
     if (!r.ok) { think.textContent = '出错：' + (r.error || '未知'); setStatus(''); return; }
     think.className = 'b ai'; think.textContent = r.reply; convo.push({ role: 'assistant', text: r.reply });
@@ -170,7 +175,7 @@ async function send(text) {
     setStatus('');
     if ($('autospeak').checked) await speakChunked(r.reply, cvGen);   // chunked + awaited; cvGen lets '停' abort mid-reply
     return r;
-  } catch (e) { think.textContent = '请求失败：' + e.message; setStatus(''); }
+  } catch (e) { clearInterval(beat); think.textContent = '请求失败：' + e.message; cue('error'); setStatus(''); }
 }
 
 // ---- wiring ----
@@ -212,7 +217,7 @@ function cue(kind) {
     const ctx = cvCtx && cvCtx.state !== 'closed' ? cvCtx : earCtx;
     if (!ctx) return;
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
-    const seq = { listen: [660], heard: [880], saved: [660, 990], stopped: [520, 380], error: [300, 300], resumed: [520, 700] }[kind] || [660];
+    const seq = { listen: [660], heard: [880], thinking: [440], saved: [660, 990], stopped: [520, 380], error: [300, 300], resumed: [520, 700] }[kind] || [660];
     seq.forEach((f, i) => {
       const o = ctx.createOscillator(), g = ctx.createGain();
       const t = ctx.currentTime + i * 0.12;

@@ -19,7 +19,7 @@ const SYSTEM = [
   '- get_mesh_status: read what the mesh is doing (issues/PRs/cost).',
   '- list_mesh_agents: list the mesh\'s agents and their roles (the dev-society team).',
   '- list_repo_tree / read_repo_file / search_repo: browse, read, and search the mesh\'s ACTUAL codebase (src/, dev-mesh/, docs/, PROJECT.md, …). Use these to understand and discuss the real structure and implementation. When the owner asks about internal structure/agents/code, EXPLORE with these tools and answer concretely — never say you lack permission.',
-  '- ask_mesh_agent: ASK a real mesh agent (analyst/coder/tester/…) for its answer (ask-only — the agent answers but does not do work). When the owner says to consult an agent (问问/找/ask X), call ask_mesh_agent directly with that agent and question — actually call it, do not just say you will. It is slow (~30s–min); that is expected, and your spoken reply comes after the agent answers.',
+  '- ask_mesh_agent: ASK a real mesh agent (analyst/coder/tester/…) for its answer (ask-only — the agent answers but does not do work). When the owner says to consult an agent (问问/找/ask X), CALL ask_mesh_agent RIGHT NOW in this same turn. Do NOT first reply "请稍等" / "我来问问" / "give me a minute" — a text-only reply ENDS your turn and the agent never gets asked, so the owner just waits forever (looks like a timeout). No pre-message: call the tool; the answer comes back to you and THEN you reply. (Yes it takes ~30s–min; that is fine.)',
   '- file_mesh_task: file a concrete task (English title/body) into the mesh pipeline for an agent to actually DO THE WORK (async — they pick it up on GitHub). Call it once the owner settles on something actionable — do NOT ask them to copy anything anywhere; YOU file it. Distinction: ask_mesh_agent = get an answer now (slow); file_mesh_task = get work done later.',
   'CRITICAL: when the owner tells you to create/file/build a task (建 / 建成任务 / 就这么定 / file it / make it a task), you MUST call file_mesh_task in THIS SAME turn. Do NOT just say "好我来建" without calling the tool — saying it without calling it is a failure.',
   'STYLE (this reply is READ ALOUD by TTS — long replies are slow + unnatural):',
@@ -56,6 +56,9 @@ async function callGemini(contents, mode = 'AUTO', sys = SYSTEM) {
 // Gemini sometimes leaks a tool call as TEXT (e.g. `tool_code` / `print(default_api.x(...))`)
 // instead of a structured functionCall. Detect that so we can force a real call.
 const LEAK_RE = /default_api\.|tool_code|print\(|(?:ask_mesh_agent|file_mesh_task|get_mesh_status|list_mesh_agents|read_repo_file|search_repo|list_repo_tree)\s*\(/;
+// "Announce but don't call": the model says it WILL ask/file but emits no function
+// call → the action never happens and the owner waits forever. Force a real call.
+const ANNOUNCE_RE = /(我来|我帮你|我去|让我|稍等|请稍等|马上|这就|i'?ll|let me|going to|i will)[\s\S]{0,8}?(问|记|建|开|录|查|file|create|log|ask|note|save|record|check)/i;
 
 /**
  * Run one concierge turn. Returns { reply, actions } where actions is the list of
@@ -67,8 +70,8 @@ export async function conciergeTurn(history, text, opts = {}) {
   // misheard idea could silently create a junk task. confirmBeforeFile makes the
   // 门房 read the idea back and wait for a "好/对" before calling file_mesh_task.
   const sys = SYSTEM + (opts.confirmBeforeFile
-    ? '\n\nCONFIRM-BEFORE-FILE (driving/eyes-free): before calling file_mesh_task, do NOT file yet — first reply with a ONE-sentence read-back of the task and ask "要记下来吗？". Only on the NEXT turn, if the owner confirms (好/对/记吧/yes), call file_mesh_task. If they say 取消/不用/no, drop it. (get_mesh_status / ask_mesh_agent / reads need no confirmation.)'
-    : '\n\nWhen you file a task from a spoken idea, READ IT BACK in your reply (one short sentence + the issue number) so a mishearing is caught by ear.');
+    ? '\n\nCONFIRM-BEFORE-FILE (driving/eyes-free): before calling file_mesh_task, do NOT file yet — first reply with a ONE-sentence read-back of the task and ask "要记下来吗？". Only on the NEXT turn, if the owner confirms (好/对/记吧/yes), call file_mesh_task RIGHT THEN (do not just say "好的我来记" — actually call it). If they say 取消/不用/no, drop it. (get_mesh_status / ask_mesh_agent / reads need no confirmation.)'
+    : '\n\nWhen the owner gives an idea to record, call file_mesh_task NOW in this same turn (do NOT ask "对吗？", do NOT say "我来记" without calling — just call it). Then your reply reads back what you filed + the issue number so a mishearing is caught by ear.');
   const contents = [...historyToContents(history), { role: 'user', parts: [{ text: String(text) }] }];
   const actions = [];
 
@@ -81,10 +84,12 @@ export async function conciergeTurn(history, text, opts = {}) {
     // mode:'ANY' to force a structured functionCall instead of the text leak.
     if (calls.length === 0) {
       const text = parts.filter((p) => p.text).map((p) => p.text).join(' ');
-      if (LEAK_RE.test(text)) {
-        content = await callGemini(contents, 'ANY', sys);
-        parts = content.parts || [];
-        calls = parts.filter((p) => p.functionCall).map((p) => p.functionCall);
+      // Leaked-as-text OR announced-but-not-called → force a structured call (mode:ANY).
+      if (text && (LEAK_RE.test(text) || ANNOUNCE_RE.test(text))) {
+        const forced = await callGemini([...contents, content, { role: 'user', parts: [{ text: '（系统：请立即用结构化函数调用执行你刚才说要做的动作，不要再用文字。）' }] }], 'ANY', sys);
+        const fParts = forced.parts || [];
+        const fCalls = fParts.filter((p) => p.functionCall).map((p) => p.functionCall);
+        if (fCalls.length) { content = forced; parts = fParts; calls = fCalls; }
       }
     }
     contents.push(content);

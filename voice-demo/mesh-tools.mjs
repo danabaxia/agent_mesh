@@ -58,11 +58,18 @@ export async function askMeshAgent({ agent, question } = {}) {
   try {
     const token = dashToken();
     if (!token) throw new Error('no dashboard token (set VOICE_DASHBOARD_TOKEN or the token file)');
-    const res = await fetch(`${DASH_URL}/api/agent/${encodeURIComponent(name)}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': token },
-      body: JSON.stringify({ text: String(question), mode: 'ask' }),
-    });
+    let res;
+    try {
+      res = await fetch(`${DASH_URL}/api/agent/${encodeURIComponent(name)}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': token },
+        body: JSON.stringify({ text: String(question), mode: 'ask' }),
+        signal: AbortSignal.timeout(Number(process.env.VOICE_ASK_TIMEOUT_MS) || 150000),
+      });
+    } catch (e) {
+      if (e.name === 'TimeoutError' || e.name === 'AbortError') throw new Error(`${name} 想得太久没及时回复（可改用「建成任务」让它异步处理）`);
+      throw e;
+    }
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) throw new Error(`console ${res.status}: ${d?.error?.message || d?.error?.code || ''}`);
     const answer = taskText(d.task).slice(0, 4000);
