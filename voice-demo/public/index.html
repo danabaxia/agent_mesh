@@ -33,7 +33,12 @@
   .mic:active{transform:scale(.94)}
   .mic.rec{background:#e5484d;color:#fff;box-shadow:0 0 0 6px rgba(229,72,77,.25)}
   .send{flex:0 0 auto;width:52px;height:52px;border-radius:50%;border:0;background:var(--panel);color:var(--fg);font-size:18px;cursor:pointer}
-  #status{text-align:center;color:var(--mut);font-size:12px;min-height:16px;margin-top:6px}
+  .convo-btn{width:100%;margin-bottom:10px;padding:14px;border:0;border-radius:14px;background:#18324d;color:var(--fg);
+             font:600 16px inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .convo-btn.on{background:var(--ok);color:#04140a;animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(63,185,80,.5)}50%{box-shadow:0 0 0 10px rgba(63,185,80,0)}}
+  #status{text-align:center;color:var(--mut);font-size:13px;min-height:18px;margin-top:6px}
+  input[type=range]{width:100%;accent-color:var(--acc)}
   /* settings sheet */
   #sheet{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-end;z-index:10}
   #sheet.on{display:flex}
@@ -55,6 +60,7 @@
   <div id="thread"></div>
 
   <footer>
+    <button class="convo-btn" id="convo">🚗 连续对话</button>
     <div class="composer">
       <textarea id="input" rows="1" placeholder="说话或打字…" enterkeyhint="send"></textarea>
       <button class="send" id="send" aria-label="发送">➤</button>
@@ -76,6 +82,11 @@
     </select>
     <label class="row" style="margin-top:14px"><input type="checkbox" id="accurate" style="width:auto"> <span style="font-size:13px">高精度识别(更慢)</span></label>
     <label class="row"><input type="checkbox" id="autospeak" checked style="width:auto"> <span style="font-size:13px">自动朗读回复</span></label>
+    <label class="row"><input type="checkbox" id="confirmFile" checked style="width:auto"> <span style="font-size:13px">开任务前口头确认(防听错)</span></label>
+    <label style="margin-top:12px">连续对话灵敏度（越左越灵敏，吵环境调右）</label>
+    <input type="range" id="sens" min="0.008" max="0.045" step="0.002" value="0.02">
+    <label style="margin-top:8px">停顿断句（秒，越大越能容忍想话的停顿）</label>
+    <input type="range" id="endpause" min="0.7" max="1.8" step="0.1" value="1.1">
     <button class="done" id="sheetDone">完成</button>
   </div></div>
 

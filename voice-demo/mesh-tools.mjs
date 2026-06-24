@@ -58,11 +58,18 @@ export async function askMeshAgent({ agent, question } = {}) {
   try {
     const token = dashToken();
     if (!token) throw new Error('no dashboard token (set VOICE_DASHBOARD_TOKEN or the token file)');
-    const res = await fetch(`${DASH_URL}/api/agent/${encodeURIComponent(name)}/message`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': token },
-      body: JSON.stringify({ text: String(question), mode: 'ask' }),
-    });
+    let res;
+    try {
+      res = await fetch(`${DASH_URL}/api/agent/${encodeURIComponent(name)}/message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dashboard-Token': token },
+        body: JSON.stringify({ text: String(question), mode: 'ask' }),
+        signal: AbortSignal.timeout(Number(process.env.VOICE_ASK_TIMEOUT_MS) || 150000),
+      });
+    } catch (e) {
+      if (e.name === 'TimeoutError' || e.name === 'AbortError') throw new Error(`${name} 想得太久没及时回复（可改用「建成任务」让它异步处理）`);
+      throw e;
+    }
     const d = await res.json().catch(() => ({}));
     if (!res.ok || !d.ok) throw new Error(`console ${res.status}: ${d?.error?.message || d?.error?.code || ''}`);
     const answer = taskText(d.task).slice(0, 4000);
@@ -103,6 +110,19 @@ export async function fileMeshTask({ title, body = '', labels } = {}) {
   const url = (out.match(/https?:\/\/\S+/) || [''])[0].trim();
   const number = (url.match(/\/(\d+)$/) || [])[1] || null;
   return { url, number, labels: safe };
+}
+
+/** Set allowlisted labels on an EXISTING issue (e.g. idea→approved+route:a2a to
+ *  dispatch it to the dev-society for auto-building). Label-allowlisted, like filing. */
+export async function setIssueLabels({ number, labels } = {}) {
+  const num = String(number || '').replace(/^#/, '');
+  if (!/^\d+$/.test(num)) throw new Error('valid issue number required');
+  let safe = Array.isArray(labels) ? labels.filter((l) => LABEL_ALLOWLIST.has(l)) : [];
+  if (safe.length === 0) throw new Error(`no allowlisted labels (options: ${[...LABEL_ALLOWLIST].join(', ')})`);
+  const args = ['issue', 'edit', num];
+  for (const l of safe) args.push('--add-label', l);
+  await sh('gh', args);
+  return { number: num, labels: safe, dispatched: safe.includes('route:a2a') };
 }
 
 /** Read what the mesh is currently doing: recent activity + open issues/PRs. */
@@ -204,6 +224,18 @@ export const MESH_TOOL_DECLARATIONS = [
     parameters: { type: 'object', properties: { query: { type: 'string', description: 'literal text or symbol to find' } }, required: ['query'] },
   },
   {
+    name: 'set_issue_labels',
+    description: 'Set labels on an EXISTING mesh issue by number. Use this when the owner wants to advance/dispatch an existing issue — e.g. relabel an `idea` to `approved` + `route:a2a` so the dev-society auto-builds it. Labels are allowlisted (idea/approved/route:a2a). This is the only way to make the mesh act on an already-open issue.',
+    parameters: {
+      type: 'object',
+      properties: {
+        number: { type: 'string', description: 'the issue number, e.g. "361"' },
+        labels: { type: 'array', items: { type: 'string', enum: ['idea', 'approved', 'route:a2a'] }, description: 'labels to add; use ["approved","route:a2a"] to dispatch for auto-build' },
+      },
+      required: ['number', 'labels'],
+    },
+  },
+  {
     name: 'ask_mesh_agent',
     description: 'ASK a real mesh agent a question and get ITS answer (ask-only — the agent reads/reasons and answers but does NOT do work). Use when the owner wants a specific agent\'s expert opinion/analysis (e.g. "ask the analyst…", "what does the tester think…"). SLOW: real agents run on claude (~30s–minutes), so tell the owner it will take a moment before calling. For actually getting work DONE, use file_mesh_task instead (async).',
     parameters: {
@@ -243,5 +275,6 @@ export async function runMeshTool(name, args) {
   if (name === 'read_repo_file') return readRepoFile(args || {});
   if (name === 'search_repo') return searchRepo(args || {});
   if (name === 'ask_mesh_agent') return askMeshAgent(args || {});
+  if (name === 'set_issue_labels') return setIssueLabels(args || {});
   throw new Error(`unknown tool: ${name}`);
 }
