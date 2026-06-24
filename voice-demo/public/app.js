@@ -15,9 +15,19 @@ async function loadVoices() {
   const gem = (r.gemini || []).map((v) => opt('gemini', v.name, '✨ ' + v.label));
   const kok = (r.kokoro || []).map((v) => opt('kokoro', v.name, '🧠 ' + v.label, v.lang));
   const say = (r.say || []).map((v) => opt('say', v.name, '🔊 ' + v.name + ' · ' + v.lang));
-  $('voice').innerHTML = (gem.length ? `<optgroup label="自然(Gemini)">${gem.join('')}</optgroup>` : '')
-    + (kok.length ? `<optgroup label="本地(Kokoro)">${kok.join('')}</optgroup>` : '')
+  // Labels spell out the real trade-off so the owner can choose with eyes-free intent:
+  // Gemini = more natural but ~2.5s + has a daily quota; Kokoro = local, ~0.7s warm,
+  // free + unlimited (best for the driving/hands-free loop). Gemini stays the default
+  // (the owner supplied a key for it); Kokoro is one tap away when speed matters most.
+  $('voice').innerHTML = (gem.length ? `<optgroup label="自然·较慢·有配额(Gemini)">${gem.join('')}</optgroup>` : '')
+    + (kok.length ? `<optgroup label="本地·快·无限额(Kokoro)">${kok.join('')}</optgroup>` : '')
     + `<optgroup label="系统(say)">${say.join('')}</optgroup>`;
+  // Persist the owner's pick across reloads (a driving PWA reloads often) so their
+  // chosen voice sticks instead of silently reverting to the first option every load.
+  let saved = ''; try { saved = localStorage.getItem('voice_pick') || ''; } catch {}
+  const valid = [...$('voice').options].some((o) => o.value === saved);
+  if (valid) $('voice').value = saved;
+  $('voice').onchange = () => { try { localStorage.setItem('voice_pick', $('voice').value); } catch {} };
 }
 
 // ---- TTS (iOS-safe playback) ----

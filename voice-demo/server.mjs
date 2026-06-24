@@ -18,6 +18,28 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+// --- local secrets: load .voice-env (gitignored) so GEMINI_API_KEY etc. survive
+// EVERY restart regardless of who launched us (keepalive/watcher/launchd). Without
+// this, a bare `node server.mjs` restart came back keyless and Gemini voice died
+// silently. Existing process env always wins; the file only fills gaps. KEY=VALUE
+// lines, '#' comments, optional surrounding quotes. Never logged, never committed.
+(function loadVoiceEnv() {
+  try {
+    const f = join(HERE, '.voice-env');
+    if (!existsSync(f)) return;
+    for (const raw of readFileSync(f, 'utf8').split('\n')) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const eq = line.indexOf('=');
+      if (eq < 1) continue;
+      const k = line.slice(0, eq).trim();
+      const v = line.slice(eq + 1).trim().replace(/^['"]|['"]$/g, '');
+      if (k && !process.env[k]) process.env[k] = v;
+    }
+  } catch {}
+})();
+
 const PORT = Number(process.env.VOICE_DEMO_PORT || 7099);
 
 // --- whisper discovery -----------------------------------------------------
@@ -186,6 +208,16 @@ async function geminiTtsOnce(text, voiceName) {
   const m = /rate=(\d+)/.exec(part.inlineData.mimeType || '');
   return pcmToWav(Buffer.from(part.inlineData.data, 'base64'), m ? Number(m[1]) : 24000);
 }
+// Gemini's free-tier TTS daily quota is tiny (~a handful of calls), so once it 429s
+// it stays 429 until Google's daily reset. Without a cooldown EVERY reply would pay a
+// failed Gemini round-trip (~0.5-1s) before falling back — death by a thousand cuts on
+// the driving loop. So on 429 we mark Gemini TTS "out" for a window and route straight
+// to local Kokoro; after the window we probe Gemini again (auto-recovers on reset / a
+// billed key). Set GEMINI_TTS_COOLDOWN_MS=0 to disable.
+const GEMINI_TTS_COOLDOWN_MS = Number(process.env.GEMINI_TTS_COOLDOWN_MS || 15 * 60 * 1000);
+let geminiTtsCooldownUntil = 0;
+const geminiTtsCoolingDown = () => GEMINI_TTS_COOLDOWN_MS > 0 && performance.now() < geminiTtsCooldownUntil;
+
 async function runGeminiTts(text, voice) {
   if (!GEMINI_KEY) throw new Error('GEMINI_API_KEY not set');
   const v = (GEMINI_VOICES.find((x) => x.name === voice) || GEMINI_VOICES[0]).name;
@@ -198,7 +230,15 @@ async function runGeminiTts(text, voice) {
   const t0 = performance.now();
   for (const a of attempts) {
     try { const wav = await geminiTtsOnce(a, v); console.log('gemini-tts', Math.round(performance.now() - t0) + 'ms'); return wav; }
-    catch (e) { lastErr = e; }
+    catch (e) {
+      lastErr = e;
+      // Quota exhausted → don't keep retrying this call OR the next ones; cool down.
+      if (/\b429\b|quota|RESOURCE_EXHAUSTED/i.test(String(e && e.message))) {
+        geminiTtsCooldownUntil = performance.now() + GEMINI_TTS_COOLDOWN_MS;
+        console.log(`gemini-tts 429 → cooling down ${Math.round(GEMINI_TTS_COOLDOWN_MS / 60000)}m, using Kokoro`);
+        break;
+      }
+    }
   }
   throw lastErr;
 }
@@ -331,7 +371,7 @@ const server = createServer(async (req, res) => {
       const { text, voice, engine, lang } = JSON.parse((await readBody(req)).toString() || '{}');
       if (!text) return send(res, 400, 'application/json', JSON.stringify({ error: 'no text' }));
       let wav;
-      if (engine === 'gemini') {
+      if (engine === 'gemini' && !geminiTtsCoolingDown()) {
         // Gemini is the natural default; if it ever fails, fall back so the user
         // still always hears a reply (Kokoro local → macOS say last resort).
         try { wav = await runGeminiTts(text, voice); }
@@ -340,6 +380,10 @@ const server = createServer(async (req, res) => {
           try { wav = await runKokoro(text, 'zf_xiaoxiao', 'z'); }
           catch { wav = await runTts(text); }
         }
+      } else if (engine === 'gemini') {
+        // Gemini is quota-cooled — skip the doomed round-trip, speak via fast Kokoro now.
+        try { wav = await runKokoro(text, 'zf_xiaoxiao', 'z'); }
+        catch { wav = await runTts(text); }
       } else if (engine === 'kokoro') { wav = await runKokoro(text, voice, lang); }
       else { wav = await runTts(text, voice); }
       return send(res, 200, 'audio/wav', wav);
@@ -381,4 +425,11 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  whisper    : ${WHISPER_BIN && MODEL ? 'READY (' + MODEL.split('/').pop() + ')' : 'NOT READY'}`);
   console.log(`  token      : ${TOKEN}  (needed only off-localhost / on the phone)`);
   console.log('');
+  // Pre-warm Kokoro at boot: the model loads on the FIRST request (~5s cold) which,
+  // on a fresh server, makes the owner's very first reply feel broken. Warming here
+  // means the local fast path (and the Gemini-failure fallback) is ~0.7s from the
+  // start. Best-effort: a failure here never blocks serving.
+  if (KOKORO_OK) runKokoro('准备好了', 'zf_xiaoxiao', 'z').then(
+    () => console.log('kokoro pre-warmed (ready for fast/fallback TTS)'),
+    (e) => console.log('kokoro pre-warm skipped:', String(e && e.message).slice(0, 80)));
 });

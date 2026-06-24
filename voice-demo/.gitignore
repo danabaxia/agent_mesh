@@ -1,6 +1,18 @@
-# Local runtime artifacts — not committed
-models/            # whisper ggml models (multi-GB, fetched on setup)
-.venv/             # arm64 python venv for Kokoro
-.voice-token       # per-install auth token (generated at first run)
+# Local runtime artifacts — not committed.
+# NOTE: git does NOT support inline `# ...` comments on a pattern line — the `#`
+# becomes part of the pattern and silently breaks the ignore. Keep comments on
+# their own lines (this file previously had inline comments that ignored nothing,
+# leaving .voice-token / .voice-env effectively un-ignored).
+
+# whisper ggml models (multi-GB, fetched on setup)
+models/
+# arm64 python venv for Kokoro
+.venv/
+# per-install auth token (generated at first run)
+.voice-token
+# local secrets: GEMINI_API_KEY etc. — NEVER commit
+.voice-env
+# server-side conversation memory (local runtime state)
+.sessions.json
 __pycache__/
 *.pyc
