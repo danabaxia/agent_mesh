@@ -84,9 +84,11 @@ export async function conciergeTurn(history, text, opts = {}) {
     // mode:'ANY' to force a structured functionCall instead of the text leak.
     if (calls.length === 0) {
       const text = parts.filter((p) => p.text).map((p) => p.text).join(' ');
-      // Leaked-as-text OR announced-but-not-called → force a structured call (mode:ANY).
-      if (text && (LEAK_RE.test(text) || ANNOUNCE_RE.test(text))) {
-        const forced = await callGemini([...contents, content, { role: 'user', parts: [{ text: '（系统：请立即用结构化函数调用执行你刚才说要做的动作，不要再用文字。）' }] }], 'ANY', sys);
+      // Recover from: (a) an EMPTY response (no text, no call — Gemini intermittently
+      // returns this → the owner saw "(无回复)"), or (b) a leaked/announced-but-not-
+      // called intent. Force a structured call (mode:ANY) so it actually acts.
+      if (!text.trim() || LEAK_RE.test(text) || ANNOUNCE_RE.test(text)) {
+        const forced = await callGemini([...contents, content, { role: 'user', parts: [{ text: '（系统：请立即用结构化函数调用执行该请求，或直接给出文字回答，不要返回空。）' }] }], 'ANY', sys);
         const fParts = forced.parts || [];
         const fCalls = fParts.filter((p) => p.functionCall).map((p) => p.functionCall);
         if (fCalls.length) { content = forced; parts = fParts; calls = fCalls; }
@@ -96,7 +98,7 @@ export async function conciergeTurn(history, text, opts = {}) {
 
     if (calls.length === 0) {
       const reply = parts.filter((p) => p.text).map((p) => p.text).join(' ').trim();
-      return { reply: reply || '(无回复)', actions };
+      return { reply: reply || (actions.length ? '好的，已处理。' : '我没太理解，可以再说一次吗？'), actions };
     }
 
     // Execute every tool call, feed results back as functionResponse parts.
