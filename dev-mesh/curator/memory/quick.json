@@ -1787,6 +1787,17 @@
       "ts": "2026-06-23"
     }
   },
+  "analyst-codebase-demonstrated-vs-claimed": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Codebase assess: Demonstrated (code-cited) vs. Claimed (docs-only); adversarially test novelty; report coverage limits.",
+    "l1": "Analyst codebase-mode deep-research (PR #489/#487): standard web research misses source evidence. Protocol: (1) enumerate load-bearing files, read chunked; (2) tag each claim Demonstrated (code-cited) or Claimed (docs-only); (3) adversarially search to DISPROVE each novelty candidate; (4) report exact coverage (read vs. unread). Confidence-calibrated verdicts only — no bare novelty assertions. Runtime, private repos, JS-rendered targets: marked unobservable, never hallucinated.",
+    "value": "When doing any technical assessment of a codebase, documentation corpus, or external library, apply the Demonstrated/Claimed evidence protocol:\n\n1. **Read source, not just docs.** Enumerate load-bearing files (entry points, core modules, tests); read them in full (chunked for large files) rather than stopping at README/landing page. The README may overstate or understate what the code actually does.\n\n2. **Tag every claim:** Demonstrated = supported by a code excerpt with file:line citation. Claimed = stated in documentation only, no code backing. A claim cannot be upgraded from Claimed to Demonstrated without a concrete code reference. If the code contradicts the docs, Demonstrated wins.\n\n3. **Adversarial novelty testing.** For each innovation candidate, fan out web searches *to disprove* — not to confirm. Return a calibrated verdict: `actually-common` (prior art found), `plausible-novel` (no prior art found, but limited search), or `novel-within-scope` (absence of prior art corroborated across multiple searches). Never echo the project's self-assessment as fact.\n\n4. **Honest coverage.** Explicitly report (a) which files were read, (b) which were skipped and why (too large, inaccessible, binary), (c) what categories of evidence are unobservable (runtime performance, private repo internals, dynamic/JS-rendered content). An unobservable claim is labelled as such, never hallucinated.\n\n5. **Non-regression.** Standard web-only research paths (fact-finding, summarisation) are unaffected — codebase mode is a routing specialisation activated by repo/architecture/innovation-assessment requests.\n\nApplies to: Analyst deep-research skill, security reviews, architecture assessments, third-party library evaluations, any mesh task producing a technical judgment from source evidence.\n\nProvenance: PR #489 (2026-06-24), closing issue #487 — Analyst spec for codebase-mode deep-research.",
+    "provenance": {
+      "source": "PR #489 (2026-06-24): spec: Analyst codebase-mode deep-research with Demonstrated/Claimed evidence separation",
+      "ts": "2026-06-24"
+    }
+  },
   "mir-noise-band-reversion": {
     "status": "active",
     "valid_to": null,
