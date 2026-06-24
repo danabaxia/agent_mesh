@@ -14,6 +14,7 @@ const MAX_TOOL_HOPS = 5;
 
 const SYSTEM = [
   'You are the owner\'s bilingual (中文 / English) VOICE concierge for their personal "agent mesh".',
+  'MEMORY: the recent conversation (the turns above) IS your memory — you CAN see it. Reference what was said earlier when asked ("我刚才说的/上次/那个 issue 几号"). NEVER say you cannot access the chat history or lack permission to see it — that is false. If something the owner refers to is genuinely not in the turns above, just ask them to remind you.',
   '你的工作:和 owner 用语音探讨想法,根据他/她的知识把想法落成具体任务,并直接驱动 mesh 执行。',
   'HOW YOU OPERATE: every turn you MUST call exactly one tool. To SAY something to the owner, call respond_to_owner({text}); to DO something, call the matching action tool. There is no other way to reply. Talking about an action is NOT doing it — saying "我会去改/我来记" via respond_to_owner does NOT change anything; to actually act you must call the action tool. So: if the request is conversational → respond_to_owner; if it asks you to DO/READ something → call that tool first, then respond_to_owner to report the result.',
   '- respond_to_owner: your spoken reply (the only way to talk).',
@@ -35,7 +36,7 @@ const SYSTEM = [
 ].join('\n');
 
 function historyToContents(history) {
-  return (Array.isArray(history) ? history : []).slice(-10).map((t) => ({
+  return (Array.isArray(history) ? history : []).slice(-24).map((t) => ({
     role: t.role === 'assistant' ? 'model' : 'user',
     parts: [{ text: String(t.text || '').slice(0, 2000) }],
   }));

@@ -280,6 +280,24 @@ const TOKEN_FILE = join(HERE, '.voice-token');
 const TOKEN = process.env.VOICE_TOKEN
   || (existsSync(TOKEN_FILE) ? readFileSync(TOKEN_FILE, 'utf8').trim() : '')
   || randomUUID();
+
+// --- session memory: the SERVER owns the conversation per session id, so it
+// survives client reload / iOS tab-suspend (the in-memory client array got wiped →
+// "随时忘记"). Persisted to disk so a server restart keeps it too. Source of truth.
+const SESS_FILE = join(HERE, '.sessions.json');
+const SESS_MAX = 60;                 // keep last 60 turns per session
+const sessions = (() => {
+  try { return new Map(Object.entries(JSON.parse(readFileSync(SESS_FILE, 'utf8')))); } catch { return new Map(); }
+})();
+let sessT;
+function persistSessions() { clearTimeout(sessT); sessT = setTimeout(() => { try { writeFileSync(SESS_FILE, JSON.stringify(Object.fromEntries(sessions))); } catch {} }, 1500); }
+function sessHistory(id) { return sessions.get(id) || []; }
+function sessAppend(id, role, text) {
+  const h = sessions.get(id) || [];
+  h.push({ role, text: String(text || '').slice(0, 2000) });
+  while (h.length > SESS_MAX) h.shift();
+  sessions.set(id, h); persistSessions();
+}
 function isLocalHost(req) {
   const h = String(req.headers.host || '').split(':')[0];
   return h === '127.0.0.1' || h === 'localhost' || h === '';
@@ -345,12 +363,17 @@ const server = createServer(async (req, res) => {
       return send(res, 200, 'audio/wav', wav);
     }
     if (req.method === 'POST' && path === '/chat') {
-      const { history, text, confirmBeforeFile } = JSON.parse((await readBody(req)).toString() || '{}');
+      const { history: clientHistory, text, confirmBeforeFile, session } = JSON.parse((await readBody(req)).toString() || '{}');
       if (!text) return send(res, 400, 'application/json', JSON.stringify({ ok: false, error: 'no text' }));
+      const sid = String(session || 'default').slice(0, 64);
+      // Server-owned history is the source of truth (survives client reload/suspend);
+      // fall back to client-sent history only if the server has none for this session.
+      const history = sessHistory(sid).length ? sessHistory(sid) : (Array.isArray(clientHistory) ? clientHistory : []);
       const t0 = performance.now();
-      console.log(`[chat] ← ${String(text).slice(0, 100)}`);
+      console.log(`[chat] ← (sess ${sid.slice(0, 8)}, ${history.length}h) ${String(text).slice(0, 90)}`);
       try {
         const out = await conciergeTurn(history, text, { confirmBeforeFile: !!confirmBeforeFile });   // Gemini + mesh tools (auto 串联)
+        sessAppend(sid, 'user', text); sessAppend(sid, 'assistant', out.reply);   // persist the turn
         const ms = Math.round(performance.now() - t0);
         console.log(`[chat] → (${ms}ms) tools=[${(out.actions || []).map((a) => a.name).join(',')}] reply: ${String(out.reply).slice(0, 100).replace(/\n/g, ' ')}`);
         return send(res, 200, 'application/json', JSON.stringify({ ok: true, ...out, ms }));
@@ -358,6 +381,10 @@ const server = createServer(async (req, res) => {
         console.log(`[chat] ✗ (${Math.round(performance.now() - t0)}ms): ${String(e.message).slice(0, 200)}`);
         throw e;
       }
+    }
+    if (req.method === 'GET' && path === '/history') {
+      const sid = String(url.searchParams.get('session') || 'default').slice(0, 64);
+      return send(res, 200, 'application/json', JSON.stringify({ ok: true, turns: sessHistory(sid) }));
     }
     if (req.method === 'POST' && path === '/stt') {
       const lang = url.searchParams.get('lang') || 'auto';
