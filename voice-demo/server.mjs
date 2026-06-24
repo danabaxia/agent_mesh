@@ -20,6 +20,11 @@ import { tmpdir } from 'node:os';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.VOICE_DEMO_PORT || 7099);
 
+// Stay alive: a stray error in an async tool/handler must NOT take the whole voice
+// server down mid-conversation. Log and keep serving.
+process.on('uncaughtException', (e) => { try { console.log('[uncaught]', String(e && e.stack || e).slice(0, 300)); } catch {} });
+process.on('unhandledRejection', (e) => { try { console.log('[unhandledRejection]', String(e && e.stack || e).slice(0, 300)); } catch {} });
+
 // --- whisper discovery -----------------------------------------------------
 function findWhisperBin() {
   for (const b of ['whisper-cli', 'whisper-cpp', 'main']) {
