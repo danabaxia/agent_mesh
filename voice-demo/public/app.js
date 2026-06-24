@@ -295,6 +295,7 @@ function onCvFrame(e) {
   }
 }
 async function handleCvUtterance(samples) {
+  const myGen = cvGen;              // snapshot gen so a stale callback can't corrupt a new session
   if (samples.length < cvInRate * 0.3) { if (cvOn) { cvState = 'listen'; setStatus('🎧 在听…'); } return; }
   cue('heard');                       // earcon: "got it, processing" (eyes-free)
   const wav = encodeWav(downsample(samples, cvInRate));
@@ -309,7 +310,7 @@ async function handleCvUtterance(samples) {
       await send(d.text);             // chat + speak (awaits playback end)
     } else setStatus('没听清…');
   } catch (e) { setStatus('识别失败：' + e.message); cue('error'); }
-  if (cvOn) { cvState = 'listen'; cvBuf = []; cvSpeech = 0; cvSilence = 0; cue('listen'); setStatus('🎧 在听…说吧'); }
+  if (cvOn && cvGen === myGen) { cvState = 'listen'; cvBuf = []; cvSpeech = 0; cvSilence = 0; cue('listen'); setStatus('🎧 在听…说吧'); }
 }
 if ($('convo')) $('convo').onclick = () => { unlockAudio(); cvOn ? stopContinuous() : startContinuous(); };
 
