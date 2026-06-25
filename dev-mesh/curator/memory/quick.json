@@ -1830,5 +1830,16 @@
       "source": "PR #513: spec: Separate voice and text module testing for agents (#512)",
       "ts": "2026-06-24"
     }
+  },
+  "stream-json-tao-trajectory-tradeoff": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "stream-json gives per-turn TAO events; terminal type:result line has same result/usage as json envelope.",
+    "l1": "PR #519 spec (Issue #517): `--output-format json` emits only the terminal envelope (one-shot). `--output-format stream-json` emits newline-delimited events per turn: thought, tool_use, tool_result, run_end. The terminal line with type:\"result\" carries the same result and usage fields as the json envelope — parseResultEnvelope adapts to scan for it instead of parsing the whole stdout. Cost capture (summary, tokens, cost_usd, num_turns) is byte-identical. Disable via AGENT_MESH_TRAJECTORY_DISABLED=1 to revert to the simpler json parse path.",
+    "value": "Pattern for adding per-turn observability (TAO trajectories) to delegated claude -p runs without changing cost capture.\n\n(1) Switch the worker spawn from `--output-format json` to `--output-format stream-json`. The stream is newline-delimited JSON; each line is one event.\n\n(2) Classify each line by type: thought / tool_use / tool_result / run_end. Append classified events to `<run-id>-trajectory.jsonl` in AGENT_MESH_LOG_DIR — streaming, so partial runs leave a partial but valid file.\n\n(3) Adapt parseResultEnvelope: scan the NDJSON stream for the last line with `type: \"result\"`. This carries the same `result` and `usage` fields (summary, total_cost_usd, num_turns, api_ms) as the json envelope. Aggregate log and cost capture write unchanged.\n\n(4) Disable path: AGENT_MESH_TRAJECTORY_DISABLED=1 reverts to `--output-format json` and the original single-object parse. Behavior is byte-identical to pre-change.\n\n(5) Partial trajectory on failure: a timeout or crash leaves a valid partial JSONL without a `run_end` event — diagnosable because it shows exactly where the run stopped.\n\n(6) Sanitize and cap: secret-bearing tool results are redacted; oversized payloads are truncated with `truncated:true`. Per-event sanitization at the stream consumer, not at parse time.\n\n(7) Tradeoff origin: the 2026-06-13 cost-capture spec chose `json` over `stream-json` because 'the worker is one-shot; we want the terminal envelope.' TAO trajectory capture is the first reason to prefer `stream-json` — the terminal `type:result` line makes the switch reversible: adapt the parser, preserve all downstream behavior unchanged.\n\nProvenance: PR #519 / Issue #517 (2026-06-25).",
+    "provenance": {
+      "source": "PR #519: spec: delegation trajectory capture — TAO JSONL from delegated runs (Issue #517)",
+      "ts": "2026-06-25"
+    }
   }
 }
