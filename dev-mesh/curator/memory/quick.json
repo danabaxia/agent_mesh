@@ -1841,5 +1841,16 @@
       "source": "PR #519: spec: delegation trajectory capture — TAO JSONL from delegated runs (Issue #517)",
       "ts": "2026-06-25"
     }
+  },
+  "pre-do-planning-pass": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Gate do-mode delegation with plan_peer_task — ask-mode dry-run returning PlanResult before any writes.",
+    "l1": "`plan_peer_task({peer, task})` on agentmesh_peerbridge force-spawns ask mode (caller cannot override) with `<planning-pass>` suffix. Returns `PlanResult {files_to_change, risks, ambiguities, confidence, summary, usage}`. Routing: `confidence:\"low\"` or non-empty `ambiguities` → human escalation. Failure-as-data: malformed output → `status:error`, never a throw. Three layers: plan (pre-do) → do-mode → post-do validation (#509). Spec 2026-06-25 / PR #521 / Issue #518.",
+    "value": "Apply when an orchestrator or concierge is authorizing a do-mode delegation and you want a structured approval gate before any writes occur.\n\nVerb: `plan_peer_task({peer, task})` on the agentmesh_peerbridge MCP server.\n- Framework force-spawns ask mode regardless of caller intent (anti-spoof invariant).\n- Framework appends `<planning-pass>` suffix to the task text; caller's task is treated as data.\n- Returns PlanResult schema: `{ status, plan: { files_to_change, risks, ambiguities, confidence: \"high\"|\"medium\"|\"low\", summary, usage } }`.\n\nRouting rules:\n- `confidence: \"low\"` OR non-empty `ambiguities` → escalate to human (do not auto-execute).\n- `confidence: \"high\"` + acceptable risk → auto-proceed if config policy permits.\n- Default: surface plan for explicit confirm on task board / concierge.\n\nDecision outcomes:\n- Approve → `delegate_to_peer` in do-mode with the same task. Post-do validation (#509) and branch isolation (#458) still apply.\n- Reject → close task; zero writes occurred at any point.\n\nFailure-as-data: malformed/non-JSON worker output → `{ status: \"error\" }` or `confidence: \"low\"` with raw preserved. Never a throw.\n\nThree-layer composition (additive, independent):\n1. plan_peer_task — pre-do ask-mode probe; surfaces scope before writes.\n2. delegate_to_peer do-mode — executes writes after approval.\n3. post-do validation (#509) — declarative validators run after do-mode.\n\nCost rationale: ask-mode planning pass is materially cheaper than a failed or misdirected do-mode run; a planning pass that surfaces a misunderstood task short-circuits before any file writes occur.\n\nRegistry gate: same marker-validated registry.json gate as delegate_to_peer — unknown peer rejected before any spawn.\n\nSpec: docs/superpowers/specs/2026-06-25-idea-pre-do-planning-pass-ask-mode-dry-run-that-returns-a-st-design.md. PR #521 / Issue #518 (2026-06-25).",
+    "provenance": {
+      "source": "PR #521: spec: idea: pre-do planning pass — ask-mode dry-run that returns a structured impact plan before any writes (#518)",
+      "ts": "2026-06-25"
+    }
   }
 }
