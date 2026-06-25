@@ -1852,5 +1852,16 @@
       "source": "PR #521: spec: idea: pre-do planning pass — ask-mode dry-run that returns a structured impact plan before any writes (#518)",
       "ts": "2026-06-25"
     }
+  },
+  "mir-null-passrate-no-data-alert": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "null/absent eval passRate = no-data hard finding, not silent pass; blocks all-green rollup (PR #528)",
+    "l1": "MIR aggregate.js: if behavior.passRate is null/absent, emit hardFinding({ id: 'behavior:overall:no-data' }) + summary.behavior.status = 'no-data'. Healthy rollup requires all required tiers to have a real passing measurement. Renderer shows ⚠ no-data (not —). Mirrors SRE absent() / Grafana no-data-is-alert convention. Applies to all tiered passRates. Distinct from fail: missing run ≠ measured failure.",
+    "value": "Spec PR #528 (2026-06-25): When the behavioral eval tier produces no measurement (behavior.passRate === null), the MIR must surface an explicit no-data signal — a hard finding plus a distinct status field — rather than silently equating absence of data with a pass.\n\nImplementation pattern:\n(1) aggregate.js: guard typeof behavior?.aggregate?.passRate === 'number'; if false, emit hardFinding({ id: 'behavior:overall:no-data', cluster: 'behavior-no-data', evidence: { trace: 'behavior scorecard absent or passRate missing' } }).\n(2) summary.behavior.status = typeof passRate === 'number' ? 'ok' : 'no-data'. Additive field; backward-compatible.\n(3) render.js: show ⚠ no-data for status==='no-data', not —.\n(4) No change to policy.js, baseline.js, issues.js, collect.js — ledger handles the new hard finding automatically.\n\nWhy hard (not soft): no measurement is epistemically equivalent to unknown health, not a pass. A behavioral regression during an outage of the eval harness would be invisible if null = pass.\n\nRisk: meshes that never run L2 evals get a daily no-data issue — this is the correct signal. Ledger dedup ensures one open issue per cluster at a time.\n\nThe pattern generalizes: any required tier with null passRate should follow the same classifier (no-data state). v1 targets behavior tier; perf/adversarial extension is a separate issue.",
+    "provenance": {
+      "source": "PR #528 (2026-06-25): spec: MIR: treat null behavior passRate as a no-data alert, not a silent pass (#526)",
+      "ts": "2026-06-25"
+    }
   }
 }
