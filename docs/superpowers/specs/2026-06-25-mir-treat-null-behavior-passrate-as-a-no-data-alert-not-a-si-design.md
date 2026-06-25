@@ -72,9 +72,9 @@ The ledger handles `behavior:overall:no-data` like any hard finding. On recovery
 ## Components
 
 - **Behavior-state classifier (pure)** — `(behaviorSummary, threshold) → "pass" | "fail" | "no-data"`. Returns `no-data` when `passRate` is `null`/absent/non-numeric. The core seam; pure and table-testable.
-- **Rollup health evaluator (`mesh-improvement` summary logic)** — extended so that a `no-data` in any required tier prevents a healthy/"all green" rollup and yields the warning state instead.
-- **Report renderer** — adds the distinct `no-data` warning presentation for the behavior tier and adjusts the top-line summary accordingly.
-- **Config** — the set of **required** tiers (which tiers' `no-data` blocks "healthy"), and the `no-data` severity policy (warning vs. hard-fail). Defaults: behavior tier required, `no-data` = warning that blocks "healthy."
+- **Rollup health evaluator (`mesh-improvement` summary logic)** — extended so that a `no-data` in any required tier prevents a healthy/"all green" rollup and raises a hard finding (error severity).
+- **Report renderer** — adds the distinct `no-data` presentation for the behavior tier and adjusts the top-line summary accordingly.
+- **Config** — the set of **required** tiers (which tiers' `no-data` blocks "healthy"). Default: behavior tier required. Severity is always error (hard finding); no configurable severity policy — Design §1 hardcodes `hardFinding()`.
 - **(Optional) triage/daily-review hook** — surfaces the `no-data` warning in the daily review output so it isn't buried.
 
 ## Data flow
@@ -84,7 +84,7 @@ The ledger handles `behavior:overall:no-data` like any hard finding. On recovery
 3. The rollup evaluator computes overall health:
    - all required tiers `pass` → **healthy / all green**.
    - any required tier `fail` → **regression** state.
-   - any required tier `no-data` → **warning** state; **healthy claim is blocked** (this is the 2026-06-25 case: tests 268/268 + adversarial 35/35 but behavior `no-data` → *not* "all green").
+   - any required tier `no-data` → **hard finding** (error severity); **healthy claim is blocked** (this is the 2026-06-25 case: tests 268/268 + adversarial 35/35 but behavior `no-data` → *not* "all green").
 4. The renderer emits the report: the behavior tier shows a distinct `no-data` warning; the summary reflects the non-healthy state.
 5. The daily review presents the warning so a missing/broken behavioral tier is visible and actionable.
 
@@ -99,7 +99,7 @@ Pure-classifier and rollup tests (hermetic):
 - **Healthy requires all measured:** rollup reads healthy **only** when all required tiers produced a real passing measurement.
 - **no-data ≠ fail:** the `no-data` state renders distinctly from a measured behavioral regression (different message/severity), not collapsed into "red."
 - **Rendering:** the report output contains the explicit behavioral no-data warning string and the summary reflects the non-healthy state.
-- **Config:** marking the behavior tier non-required allows healthy despite its `no-data`; the `no-data` severity policy (warning vs. hard-fail) is honored.
+- **Config:** marking the behavior tier non-required allows healthy despite its `no-data`. (Severity is always error/hard as hardcoded in Design §1 — no separate severity-policy parameter to test.)
 - **Delta handling:** `delta: null` alongside `passRate: null` does not crash or render a spurious numeric delta.
 
 Note: the existing `empty.findings.length === 0` assertion in `test/mesh-improvement-aggregate.test.js` line 51 must be updated to `=== 1` when this is implemented.
