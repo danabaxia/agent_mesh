@@ -1,4 +1,58 @@
-s `confidence`/`ambiguities` to escalate low-confidence plans to a human rather than auto-executing.
+# Pre-Do Planning Pass — Ask-Mode Dry-Run That Returns a Structured Impact Plan
+
+## Goal
+
+Before a `delegate_to_peer` do-mode run mutates a peer's codebase, the
+orchestrator/concierge can optionally invoke a lightweight **planning pass** —
+an ask-mode probe that inspects the target codebase and returns a structured
+`PlanResult` (affected files, risks, ambiguities, confidence) — so the caller
+can approve, reject, or escalate the plan before a single write occurs.
+
+## Motivation
+
+Three concrete gaps the planning pass closes:
+
+1. **Blind do-mode execution**: today a caller invoking `delegate_to_peer` in
+   do-mode gets no preview of what the worker will touch or what risks it sees.
+   An unexpected large-scope change only surfaces in the post-do diff.
+2. **Human escalation surface**: there is currently no structured moment for a
+   human or orchestrator to say "this plan touches too many files — reject it"
+   before any writes. The planning pass creates that gate.
+3. **Cost efficiency**: a planning-pass ask-mode run is materially cheaper than
+   a failed or misdirected do-mode run; catching a high-risk plan early saves
+   tokens on the do-mode run and avoids revert work.
+
+## Background
+
+- **`delegate_to_peer` (do-mode)** ([`src/a2a/peer-bridge.js`](src/a2a/peer-bridge.js)):
+  currently restricted to ask-only in v1; the do-mode path is the extension
+  point this planning pass gates. The planning pass itself is always ask-mode.
+- **Task board / concierge surface**: plans are surfaced through the existing
+  task-board and concierge UI rather than requiring a new display mechanism.
+- **Post-do validation (#509) / branch isolation (#458)**: complementary
+  *post*-do layers that remain unchanged and applicable after approval.
+- **Anti-spoof invariant** (PROJECT.md): the `<planning-pass>` suffix is
+  framework-injected; the caller's task text is treated as data and cannot
+  alter the plan-only instruction.
+
+## Design
+
+New bridge verb `plan_peer_task({ peer, task })` on the `agentmesh_peerbridge`
+MCP server — ask-only, returns a structured `PlanResult`, never spawns writes:
+
+- **`plan_peer_task` verb** — validates peer against the marker-validated
+  registry (same gate as `delegate_to_peer`), force-spawns ask mode with the
+  `<planning-pass>` suffix appended to the task. Returns a `PlanResult`.
+- **`PlanResult` schema** — `{ files_to_change: string[], risks: string[],
+  ambiguities: string[], confidence: "high"|"medium"|"low", summary: string,
+  usage: UsageBlock | null }`. Parser is tolerant: malformed worker output
+  produces `status: error` (or `confidence: low` with raw preserved), never a
+  throw.
+- **Ask-mode enforcement** — the planning pass always runs ask mode regardless
+  of what the caller requests; the `<planning-pass>` suffix is the
+  framework-level signal to the worker that writes are forbidden and a JSON
+  plan is expected.
+- **Routing hook** — uses `confidence`/`ambiguities` to escalate low-confidence plans to a human rather than auto-executing.
 - **Config** — optional auto-proceed policy thresholds (e.g. auto-execute only on `confidence: high` + risk below a bar); a disable flag.
 
 ## Data flow
