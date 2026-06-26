@@ -14,6 +14,12 @@ import { createA2AClient } from '../src/a2a/stdio-client.js';
 
 const execFileAsync = promisify(execFile);
 
+// Tmp-dir teardown options. `force` only swallows ENOENT; it does NOT retry the
+// EBUSY/ENOTEMPTY/EPERM race that git's background pack writers can lose against
+// `rm` on node 20 / linux (issue #542). maxRetries+retryDelay gives a short
+// linear backoff (50/100/150ms) which clears the inner .git/objects/pack races.
+const RM_OPTS = { recursive: true, force: true, maxRetries: 3, retryDelay: 50 };
+
 /** Random ground-truth token — unguessable from world knowledge. */
 export function plant(prefix = 'FACT') {
   return `${prefix}-${randomUUID().replace(/-/g, '').slice(0, 8)}`;
@@ -84,8 +90,8 @@ export async function buildMesh({ agents = {}, claude, timeoutMs = 120_000 } = {
     }
     return out;
   } catch (err) {
-    await rm(meshRoot, { recursive: true, force: true }).catch(() => {});
-    await rm(logsBase, { recursive: true, force: true }).catch(() => {});
+    await rm(meshRoot, RM_OPTS).catch(() => {});
+    await rm(logsBase, RM_OPTS).catch(() => {});
     throw err;
   }
 }
@@ -195,9 +201,9 @@ export async function cleanupMesh(mesh) {
   for (const a of Object.values(mesh.agents)) {
     try {
       const enc = encodeProjectDir(await realpath(a.root));
-      await rm(join(homedir(), '.claude', 'projects', enc), { recursive: true, force: true });
+      await rm(join(homedir(), '.claude', 'projects', enc), RM_OPTS);
     } catch { /* best-effort */ }
   }
-  await rm(mesh.meshRoot, { recursive: true, force: true });
-  await rm(mesh.logsBase, { recursive: true, force: true });
+  await rm(mesh.meshRoot, RM_OPTS);
+  await rm(mesh.logsBase, RM_OPTS);
 }
