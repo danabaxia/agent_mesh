@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildReport, syncReport } from '../src/mesh-improvement/run.js';
+import { gate } from '../src/mesh-improvement/policy.js';
 
 const inputs = {
   tests: { summary: { files: 180, green: 180, red: 0 }, results: [] },
@@ -70,6 +71,93 @@ test('no repo provided → --repo omitted (back-compat)', async () => {
     gh: async (args) => { calls.push(args); return args[0] === 'issue' && args[1] === 'create' ? 'https://github.com/o/r/issues/9' : ''; },
     writeFile: () => {}, recoverRuns: 2, scanLabel: 'generated:mesh-scan' });
   assert.ok(calls.filter((a) => a[0] === 'issue').every((a) => !a.includes('--repo')));
+});
+
+test('direction-aware: improvement gets perf-improvement cluster, info severity, fileable=false', () => {
+  const mir = {
+    findings: [{
+      id: 'perf:3x-disjoint:latency_ms', tier: 'soft', cluster: 'perf-regression',
+      metric: { name: 'latency_ms', value: 400, baseline: 500, deltaPct: 20 },
+      fileable: null, severity: null,
+    }],
+  };
+  const result = gate(mir, { noiseBandPct: 10 });
+  const f = result.findings[0];
+  assert.equal(f.cluster, 'perf-improvement');
+  assert.equal(f.severity, 'info');
+  assert.equal(f.fileable, false);
+});
+
+test('direction-aware: regression past noise floor gets perf-regression, warning, fileable=true', () => {
+  // latency_ms has metric-level noiseBandPct: 20, so need > 20% to trigger
+  const mir = {
+    findings: [{
+      id: 'perf:3x-disjoint:latency_ms', tier: 'soft', cluster: 'perf-regression',
+      metric: { name: 'latency_ms', value: 630, baseline: 500, deltaPct: -26 },
+      fileable: null, severity: null,
+    }],
+  };
+  const result = gate(mir, { noiseBandPct: 10 });
+  const f = result.findings[0];
+  assert.equal(f.cluster, 'perf-regression');
+  assert.equal(f.severity, 'warning');
+  assert.equal(f.fileable, true);
+});
+
+test('direction-aware: within-band regression is neutral (fileable=false, severity=null)', () => {
+  const mir = {
+    findings: [{
+      id: 'perf:3x-disjoint:latency_ms', tier: 'soft', cluster: 'perf-regression',
+      metric: { name: 'latency_ms', value: 510, baseline: 500, deltaPct: -2 },
+      fileable: null, severity: null,
+    }],
+  };
+  const result = gate(mir, { noiseBandPct: 10 });
+  const f = result.findings[0];
+  assert.equal(f.fileable, false);
+  assert.equal(f.severity, null);
+});
+
+test('direction-aware: cold-start (no baseline) has fileable=false, severity=null', () => {
+  const mir = {
+    findings: [{
+      id: 'perf:3x-disjoint:latency_ms', tier: 'soft', cluster: 'perf-regression',
+      metric: { name: 'latency_ms', value: 500, baseline: null, deltaPct: null },
+      fileable: null, severity: null,
+    }],
+  };
+  const result = gate(mir, { noiseBandPct: 10 });
+  const f = result.findings[0];
+  assert.equal(f.fileable, false);
+  assert.equal(f.severity, null);
+});
+
+test('direction-aware: favorable latency_ms move (−17%) via buildReport is never perf-regression', () => {
+  const perfInputs = {
+    tests: { summary: { files: 1, green: 1, red: 0 }, results: [] },
+    behavior: null, adversarial: null, runLogs: [],
+    perf: {
+      scenarios: [{
+        cell: { peers: 3, overlap: 'disjoint' },
+        summary: { latency_ms: { p50: 415 } },
+        scorecardPath: null,
+      }],
+    },
+  };
+  const prevMir = {
+    schema: 'mesh-improvement-report/v1', at: '2026-06-23T06:30:00Z', ref: { commit: 'prev' },
+    summary: { behavior: { passRate: null }, perf: { quality_per_1k_tokens_p50: null }, tests: { green: 1, red: 0 }, adversarial: { invariantsPassed: null } },
+    findings: [{ id: 'perf:3x-disjoint:latency_ms', metric: { name: 'latency_ms', value: 500 } }],
+    ledger: { 'perf:3x-disjoint:latency_ms': { firstSeen: '2026-06-23', lastSeen: '2026-06-23', occurrences: 1, cleanRuns: 0, issueNumber: null } },
+    trend: { passRate: [], quality_per_1k_tokens: [] },
+  };
+  const mir = buildReport({ inputs: perfInputs, previousMir: prevMir, at: '2026-06-24T06:30:00Z',
+    ref: { commit: 'cur', branch: 'main' }, noiseBandPct: 10, trendN: 10 });
+  const f = mir.findings.find((x) => x.id === 'perf:3x-disjoint:latency_ms');
+  assert.ok(f, 'finding must exist');
+  assert.notEqual(f.cluster, 'perf-regression', 'favorable latency move must not be perf-regression');
+  assert.equal(f.cluster, 'perf-improvement');
+  assert.equal(f.fileable, false);
 });
 
 test('live-run self-heals labels: every create label is `gh label create`d before the first issue create', async () => {
