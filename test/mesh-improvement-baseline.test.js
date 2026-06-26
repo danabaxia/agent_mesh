@@ -41,6 +41,51 @@ test('second run computes signed deltas vs previous finding values', () => {
   assert.deepEqual(cur.trend.passRate, [0.9, 0.889]);
 });
 
+// Direction-aware classification (issue #515): a favorable-direction move is an
+// improvement, never a perf-regression. deltaPct is signed toward "better".
+test('favorable-direction perf move is reclassified out of perf-regression into improvement', () => {
+  const cost = (v) => ({ id: 'perf:3x-disjoint:cost_usd', tier: 'soft', cluster: 'perf-regression',
+    severity: null, metric: { name: 'cost_usd', value: v, baseline: null,
+    direction: 'lower_is_better', deltaPct: null }, weakestCell: null, evidence: {}, fileable: null });
+  const lat = (v) => ({ id: 'perf:3x-disjoint:latency_ms', tier: 'soft', cluster: 'perf-regression',
+    severity: null, metric: { name: 'latency_ms', value: v, baseline: null,
+    direction: 'lower_is_better', deltaPct: null }, weakestCell: null, evidence: {}, fileable: null });
+  // prev: cost 0.10, latency 1000; cur: cost cheaper (0.093), latency faster (829, ≈ −17%)
+  const prev = applyBaseline(mk(0.9, 0.9, [cost(0.10), lat(1000)]), null,
+    { at: '2026-06-19T06:30:00.000Z', trendN: 10 });
+  const cur = applyBaseline(mk(0.9, 0.9, [cost(0.093), lat(829)]), prev, { at: AT, trendN: 10 });
+  const c = cur.findings.find((f) => f.id === 'perf:3x-disjoint:cost_usd');
+  const l = cur.findings.find((f) => f.id === 'perf:3x-disjoint:latency_ms');
+  assert.equal(c.metric.deltaPct, 7);    // cheaper → favorable
+  assert.equal(c.cluster, 'improvement');
+  assert.equal(l.metric.deltaPct, 17.1); // faster → favorable
+  assert.equal(l.cluster, 'improvement');
+  // Acceptance: no favorable move remains under cluster=perf-regression.
+  assert.equal(cur.findings.some((f) => f.metric.deltaPct > 0 && f.cluster === 'perf-regression'), false);
+});
+
+test('unfavorable-direction perf move stays in perf-regression', () => {
+  const prec = (v) => ({ id: 'perf:6x-confusable:precision', tier: 'soft', cluster: 'perf-regression',
+    severity: null, metric: { name: 'precision', value: v, baseline: null,
+    direction: 'higher_is_better', deltaPct: null }, weakestCell: null, evidence: {}, fileable: null });
+  const prev = applyBaseline(mk(0.9, 0.9, [prec(0.9)]), null, { at: '2026-06-19T06:30:00.000Z', trendN: 10 });
+  const cur = applyBaseline(mk(0.9, 0.9, [prec(0.6)]), prev, { at: AT, trendN: 10 });
+  const f = cur.findings.filter((x) => x.id === 'perf:6x-confusable:precision').at(-1);
+  assert.equal(f.metric.deltaPct, -33.3);
+  assert.equal(f.cluster, 'perf-regression');
+});
+
+test('no-change and cold-start (null delta) keep their regression cluster', () => {
+  // Cold start: first run, null baseline → null delta → stays perf-regression.
+  const first = applyBaseline(mk(0.9, 0.9), null, { at: '2026-06-19T06:30:00.000Z', trendN: 10 });
+  assert.equal(first.findings.find((f) => f.id === 'perf:6x-confusable:precision').cluster, 'perf-regression');
+  // No change: delta 0 is not on the favorable side → stays perf-regression.
+  const same = applyBaseline(mk(0.9, 0.9), first, { at: AT, trendN: 10 });
+  const prec = same.findings.find((f) => f.id === 'perf:6x-confusable:precision');
+  assert.equal(prec.metric.deltaPct, 0);
+  assert.equal(prec.cluster, 'perf-regression');
+});
+
 test('absent id carries forward with cleanRuns++ until GC; present id resets cleanRuns', () => {
   const stale = { id: 'perf:3x-disjoint:cost_usd', tier: 'soft', cluster: 'perf-regression', severity: null,
     metric: { name: 'cost_usd', value: 0.02, baseline: null, direction: 'lower_is_better', deltaPct: null },
