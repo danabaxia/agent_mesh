@@ -1885,5 +1885,16 @@
       "source": "PR #533 (2026-06-26): spec: per-peer extended thinking budget — registry thinking_effort field threads --effort to delegated workers (#530)",
       "ts": "2026-06-26"
     }
+  },
+  "mir-policy-direction-before-magnitude": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR policy: deltaPct>0 (signed toward better) → perf-improvement; never check magnitude until direction is unfavorable.",
+    "l1": "deltaPct() in metrics.js is signed toward 'better': positive = improvement (latency lower, precision higher), negative = regression. Before PR #535, policy.gate() ignored direction — every soft finding with a baseline was classified perf-regression/warning. Issue #515 caught latency −17%, cost −7%, precision +3.4% filed as regression warnings. Fix: gate direction first. deltaPct>0 → perf-improvement (info, fileable:false). deltaPct≤0 within noise band → null severity, fileable:false. deltaPct≤0 past noise floor → perf-regression (warning, fileable:true). No baseline → null severity.",
+    "value": "Apply when reading or modifying MIR policy classification in src/mesh-improvement/policy.js.\n\nThe MIR deltaPct convention: deltaPct() in src/mesh-improvement/metrics.js returns a signed-toward-better value. Positive = metric improved in its own direction (latency went down, precision went up). Negative = regression. The sign already encodes direction — no separate direction field needed at the gate layer.\n\nThe four-state direction-aware model (post-PR #535):\n\n(1) No baseline — cold-start:\n  Condition: baseline == null\n  Result: { fileable: false, severity: null }\n  No historical reference point; cannot classify.\n\n(2) Favorable direction:\n  Condition: deltaPct > 0\n  Result: { cluster: 'perf-improvement', fileable: false, severity: 'info' }\n  The metric moved toward better — NEVER a perf-regression, regardless of magnitude.\n  Short-circuit BEFORE calling isRegression() — isRegression only handles the unfavorable case.\n  Rendered in the '## Improvements this run' section in MIR markdown.\n\n(3) Unfavorable, within noise band:\n  Condition: deltaPct ≤ 0 AND !isRegression(name, deltaPct, noiseBandPct)\n  Result: { fileable: false, severity: null }\n  Moved in the wrong direction but below the noise floor. Statistically insignificant.\n\n(4) Unfavorable, past noise floor:\n  Condition: deltaPct ≤ 0 AND isRegression(name, deltaPct, noiseBandPct)\n  Result: { cluster: 'perf-regression', fileable: true, severity: 'warning' }\n  The ONLY state that files a regression issue. isRegression() checks |dPct| > noiseBand.\n\nAnti-pattern to avoid: calling isRegression() on ALL findings with a baseline (the pre-fix behavior). This conflates improvements with regressions and pollutes the regression signal reviewers triage.\n\nRelated: [[mir-noise-band-reversion]] (Math.max override semantics in isRegression), [[mir-null-passrate-no-data-alert]] (null passRate = no-data, not pass).\n\nProvenance: PR #535 (2026-06-26), closing Issue #515.",
+    "provenance": {
+      "source": "PR #535: fix(mir): classify direction-correct metric moves as improvements",
+      "ts": "2026-06-26"
+    }
   }
 }

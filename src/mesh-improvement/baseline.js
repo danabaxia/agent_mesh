@@ -7,6 +7,18 @@ const TREND_KEYS = ['passRate', 'quality_per_1k_tokens'];
 // rolling-window median. Matches the Phase-0 evidence threshold (≥3 runs).
 const MEDIAN_WINDOW_MIN = 3;
 
+// `deltaPct` is signed toward "better" per the metric's direction (positive = favorable).
+// A move on the favorable side is an improvement, not a regression — reserve the
+// `*-regression` cluster for the unfavorable side only (one-sided, like Bencher's
+// boundaries / Criterion's Improved-vs-Regressed split). This keeps direction-correct
+// wins (e.g. latency_ms −17%) out of the perf-regression signal reviewers triage.
+function classify(f, dPct) {
+  if (f.tier === 'soft' && /-regression$/.test(f.cluster) && typeof dPct === 'number' && dPct > 0) {
+    return 'improvement';
+  }
+  return f.cluster;
+}
+
 export function applyBaseline(current, previous, { at, trendN }) {
   const day = at.slice(0, 10);
   const prevFindings = new Map((previous?.findings ?? []).map((f) => [f.id, f]));
@@ -28,7 +40,7 @@ export function applyBaseline(current, previous, { at, trendN }) {
       newHistory[f.id] = [...priorValues, f.metric.value].slice(-trendN);
     }
     const dPct = deltaPct(f.metric.name, f.metric.value, base);
-    return { ...f, metric: { ...f.metric, baseline: base, deltaPct: dPct } };
+    return { ...f, cluster: classify(f, dPct), metric: { ...f.metric, baseline: base, deltaPct: dPct } };
   });
 
   // Summary deltas (numeric headline fields only).
