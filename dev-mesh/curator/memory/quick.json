@@ -1908,6 +1908,17 @@
       "ts": "2026-06-26"
     }
   },
+  "fs-rm-git-repo-enotempty-retry": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "fs.rm tmp git repo: add maxRetries+retryDelay against ENOTEMPTY races from git background pack writers (Node 20).",
+    "l1": "Node 20's fs.rm races with git background pack writers (post-index-pack, gc --auto) that keep .git/objects/pack file handles open after the foreground command resolves. { recursive:true, force:true } alone is insufficient — force only swallows ENOENT, not ENOTEMPTY/EBUSY/EPERM. Adding maxRetries:3, retryDelay:50 gives a 50/100/150ms linear backoff that clears the race for small seed repos. Belt-and-suspenders: disable gc at repo creation with git -c gc.auto=0; this prevents the background worker from spawning entirely.",
+    "value": "Define a shared RM_OPTS = { recursive: true, force: true, maxRetries: 3, retryDelay: 50 } constant and apply it to EVERY rm call site in the harness teardown — error path, success path, AND the .claude/projects/<enc> transcript cleanup — a missed site can still flake. Apply uniformly (a shared constant makes coverage trivial to audit). Optionally add git -c gc.auto=0 at commit/init time to make the fix deterministic rather than probabilistic for seed repos large enough to hit the gc threshold. Note: retries are probabilistic — if a background gc worker runs longer than ~300ms (3×100ms total) the ENOTEMPTY can recur. In practice, tiny one-commit seed repos don't cross the loose-object threshold triggering gc --auto, so retries are very likely sufficient. Provenance: PR #543 / Issue #542 (2026-06-26, adversarial-harness ENOTEMPTY on ubuntu/node-20).",
+    "provenance": {
+      "source": "PR #543 / Issue #542: flake: adversarial-harness ENOTEMPTY race on tmp/.git/objects/pack cleanup",
+      "ts": "2026-06-26"
+    }
+  },
   "mir-policy-direction-before-magnitude": {
     "status": "active",
     "valid_to": null,
