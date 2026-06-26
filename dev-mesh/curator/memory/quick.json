@@ -1929,5 +1929,16 @@
       "source": "PR #535: fix(mir): classify direction-correct metric moves as improvements",
       "ts": "2026-06-26"
     }
+  },
+  "eval-zero-cases-tristate": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Zero eval cases: passRate:null not 0 + exit 2 (zeroIsError) + hard MIR finding — no-measurement ≠ 0% pass rate.",
+    "l1": "PR #549 fixed a silent failure mode: zero eval cases returned passRate:0 (looks like all-failed) rather than null (nothing ran). Four-part fix: (1) casesExecuted===0 → passRate:null; (2) exitCode({zeroIsError:true}) returns 2 for zero cases so CI fails loudly; (3) aggregate.js emits hard finding behavior:overall:zero-cases (cluster behavior-coverage) when scorecard present but casesExecuted===0; (4) MIR render uses tristate: numeric passRate | ⚠ zero-cases (0 trials scored) | — (no scorecard data). casesExecuted field added to scorecard aggregate. PR #549 / Issue #548 (2026-06-26).",
+    "value": "Apply when writing or reviewing any eval/scorecard harness.\n\nThree-state model for eval pass rate (post-PR #549):\n\n(1) No scorecard / tool not run:\n  Condition: scorecard absent\n  passRate: null; casesExecuted: absent\n  Render: — (no-data)\n  No finding generated.\n\n(2) Scorecard present, zero cases executed:\n  Condition: casesExecuted === 0\n  passRate: null (NOT 0 — 0 means measured-and-all-failed)\n  exitCode({zeroIsError:true}): 2 → fails CI\n  Hard finding: behavior:overall:zero-cases (cluster behavior-coverage)\n  Render: ⚠ zero-cases (0 trials scored)\n  Use: scorecard ran but produced nothing — a coverage gap, not a pass/fail result.\n\n(3) Scorecard present, cases executed:\n  Condition: casesExecuted > 0\n  passRate: number 0.0–1.0\n  exitCode: 0 pass / 1 fail (existing behavior)\n  Render: numeric e.g. 83%\n\nAnti-pattern: passRate:0 for zero cases misleads callers into thinking all tests failed when nothing ran — a pipeline gating on passRate===1 fails for the wrong reason with no diagnostic signal.\n\nField casesExecuted must be emitted in the aggregate output so the MIR aggregator can read it without re-running the eval. Backward-compat: read ?? trials when old scorecards lack the field.\n\nThe {zeroIsError:true} opt-in on exitCode() keeps the gate explicit: callers that test zero-trial behavior omit it and get exit 0 for a valid empty run.\n\nSame pattern applies to any metric where no-data is qualitatively different from 0: test coverage %, latency baselines, budget utilization.\n\nRelated: [[mir-null-passrate-no-data-alert]] (null passRate = no-data at MIR layer).\n\nProvenance: PR #549 (2026-06-26), Issue #548 (auto-closed on merge).",
+    "provenance": {
+      "source": "PR #549: feat(#548): behavior eval coverage gate — casesExecuted field and zero-case exit",
+      "ts": "2026-06-26"
+    }
   }
 }
