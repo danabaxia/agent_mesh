@@ -44,6 +44,9 @@ export const MAX_ACTIVITY_SUMMARY = 240;        // activity event summary char c
 export const MAX_FAN_OUT_PEERS = 10;
 
 export const WRITE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+// Per-peer extended thinking effort (issue #530). Registry-only — the model cannot
+// set this through tool arguments. "low" is the explicit suppression form.
+export const VALID_THINKING_EFFORT = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 // Read-only network egress tools, granted ONLY to manifest-opted ask agents
 // (see agentWantsWebTools). Never granted in `do` mode or on the digest route.
 export const WEB_TOOLS = ['WebSearch', 'WebFetch'];

@@ -113,3 +113,38 @@ test('buildClaudeInvocation do-mode: session {id, resume:false} produces --sessi
   assert.equal(args[args.indexOf('--session-id') + 1], sessionId, 'session id value correct');
   assert.ok(!args.includes('--resume'), '--resume not present when resume:false');
 });
+
+// Per-peer thinking effort (issue #530)
+test('buildClaudeInvocation: thinkingEffort absent → no --effort flag (regression lock)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'di-effort-'));
+  await writeFile(join(root, 'agent.json'), JSON.stringify({ name: 'a' }), 'utf8');
+  const env = { AGENT_MESH_LOG_DIR: '.agent-mesh/logs' };
+  const { args } = await buildClaudeInvocation({ root, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: { ...env } });
+  assert.ok(!args.includes('--effort'), 'no --effort when thinkingEffort absent');
+});
+
+test('buildClaudeInvocation: thinkingEffort "max" → --effort max threaded (issue #530)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'di-effort-'));
+  await writeFile(join(root, 'agent.json'), JSON.stringify({ name: 'a' }), 'utf8');
+  const env = { AGENT_MESH_LOG_DIR: '.agent-mesh/logs' };
+  const { args } = await buildClaudeInvocation({ root, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: { ...env }, thinkingEffort: 'max' });
+  const i = args.indexOf('--effort');
+  assert.notEqual(i, -1, '--effort flag present');
+  assert.equal(args[i + 1], 'max');
+});
+
+test('buildClaudeInvocation: thinkingEffort "xhigh" → --effort xhigh (issue #530)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'di-effort-'));
+  await writeFile(join(root, 'agent.json'), JSON.stringify({ name: 'a' }), 'utf8');
+  const env = { AGENT_MESH_LOG_DIR: '.agent-mesh/logs' };
+  const { args } = await buildClaudeInvocation({ root, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: { ...env }, thinkingEffort: 'xhigh' });
+  assert.equal(args[args.indexOf('--effort') + 1], 'xhigh');
+});
+
+test('buildClaudeInvocation: thinkingEffort "low" → --effort low (explicit suppression form, issue #530)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'di-effort-'));
+  await writeFile(join(root, 'agent.json'), JSON.stringify({ name: 'a' }), 'utf8');
+  const env = { AGENT_MESH_LOG_DIR: '.agent-mesh/logs' };
+  const { args } = await buildClaudeInvocation({ root, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: { ...env }, thinkingEffort: 'low' });
+  assert.equal(args[args.indexOf('--effort') + 1], 'low');
+});

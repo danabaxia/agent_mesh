@@ -311,11 +311,14 @@ async function handleMessage({ message, root, env, card, doQueue, agentModes, ag
       session = await deriveCallerSession({ root, env, metadata: validation.value.metadata || {} });
     }
 
+    // Per-peer thinking effort (issue #530): threaded via A2A message metadata by
+    // the caller's peer bridge (registry-set, never model-arg-injectable).
+    const thinkingEffort = validation.value.metadata?.['agentmesh/thinking_effort'];
     const run = toolCall
       ? () => fastPathExecute({ root, env, toolCall, task: validation.value.input.task, parentRunId })
       : agentRole === 'orchestrator'
         ? () => orchestrate({ root, env, input: validation.value.input, parentRunId })
-        : () => delegateTask({ root, env, input: validation.value.input, parentRunId, session });
+        : () => delegateTask({ root, env, input: validation.value.input, parentRunId, session, thinkingEffort });
     const result =
       validation.value.input.mode === 'do'
         ? await runSerialized({ queue: doQueue, run, started })

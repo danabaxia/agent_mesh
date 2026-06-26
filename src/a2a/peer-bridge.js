@@ -178,6 +178,9 @@ export function createBridge({ root, env = process.env, createClient = createA2A
     const parentRunId = env?.AGENT_MESH_RUN_ID;
     if (parentRunId) message.metadata['agentmesh/parent_run_id'] = parentRunId;
     if (new_conversation === true) message.metadata['agentmesh/reset_conversation'] = true;
+    // Per-peer thinking effort (issue #530): registry-only, never from tool args.
+    const peerThinkingEffort = managed.registry.peers[peer]?.thinking_effort;
+    if (peerThinkingEffort !== undefined) message.metadata['agentmesh/thinking_effort'] = peerThinkingEffort;
 
     await logRec({ state: 'started', message_id: message.messageId });
     try {

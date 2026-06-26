@@ -763,3 +763,52 @@ test('buildTools includes fan_out_to_peers with correct schema', () => {
   // the lever for the quality_per_1k_tokens regression in the 3x-disjoint cell (#404).
   assert.match(tool.description, /prefer delegate_to_peer/i);
 });
+
+// ---------------------------------------------------------------------------
+// Per-peer thinking effort (issue #530)
+// ---------------------------------------------------------------------------
+
+test('delegateToPeer: peer with thinking_effort in registry threads agentmesh/thinking_effort into A2A message metadata', async () => {
+  const markedWithEffort = {
+    'x-agentmesh-generated': true,
+    peers: {
+      coder: {
+        root: '/tmp/coder',
+        command: 'node',
+        args: ['/bin/agent-mesh.js', 'serve-a2a', '/tmp/coder'],
+        thinking_effort: 'max'
+      }
+    }
+  };
+  const { root, meshRoot, name } = await meshAgentRootWith(markedWithEffort);
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MODE: 'ask', AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  await bridge.delegateToPeer({ peer: 'coder', mode: 'ask', task: 'write a function' });
+  assert.equal(calls.sent.length, 1);
+  assert.equal(calls.sent[0].message.metadata['agentmesh/thinking_effort'], 'max');
+});
+
+test('delegateToPeer: peer without thinking_effort → no agentmesh/thinking_effort in metadata (issue #530)', async () => {
+  const { root, meshRoot } = await meshAgentRootWith(MARKED);
+  const { factory, calls } = fakeClientFactory();
+  const bridge = createBridge({ root, env: { AGENT_MESH_MODE: 'ask', AGENT_MESH_MESH_CEILING: meshRoot }, createClient: factory });
+
+  await bridge.delegateToPeer({ peer: 'library', mode: 'ask', task: 'find Dune' });
+  assert.equal(calls.sent.length, 1);
+  assert.equal(calls.sent[0].message.metadata['agentmesh/thinking_effort'], undefined);
+});
+
+test('normalizePeer: thinking_effort preserved when present, absent when not set (issue #530)', async () => {
+  const { normalizeRegistry } = await import('../src/a2a/registry.js');
+  const coderRoot = await mkdtemp(join(tmpdir(), 'pb-effort-coder-'));
+  const triageRoot = await mkdtemp(join(tmpdir(), 'pb-effort-triage-'));
+  const peers = await normalizeRegistry({
+    peers: {
+      coder: { root: coderRoot, command: 'node', args: [], thinking_effort: 'xhigh' },
+      triage: { root: triageRoot, command: 'node', args: [] }
+    }
+  });
+  assert.equal(peers.coder.thinking_effort, 'xhigh', 'thinking_effort preserved');
+  assert.equal(peers.triage.thinking_effort, undefined, 'absent when not set');
+});
