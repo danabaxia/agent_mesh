@@ -1875,6 +1875,17 @@
       "ts": "2026-06-26"
     }
   },
+  "per-peer-thinking-effort-spawn-flag": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Per-peer effort budget: `thinking_effort` in registry.json → `--effort` at spawn; same anti-spoof path as `model`.",
+    "l1": "PR #537: Set `thinking_effort: \"low\"|\"medium\"|\"high\"|\"xhigh\"|\"max\"` on a registry.json peer entry to control extended thinking for that peer. Registry-gate + anti-spoof: calling model cannot inject effort via tool args — only operator's registry value reaches `--effort`. Invalid value → `status:error`, no spawn. Absent → no `--effort` flag (regression lock). Parallels `per-peer-model-tier-spawn-flag` (PR #467): second operator spawn flag on the same 5-layer threading path.",
+    "value": "Threading path (5 layers): (1) `normalizePeer` preserves field (undefined when absent); (2) `peer-bridge.js` sets `agentmesh/thinking_effort` in A2A metadata; (3) `stdio-server` extracts from metadata; (4) `delegateTask` validates against allowed set {low,medium,high,xhigh,max}; (5) `buildClaudeInvocation` appends `--effort <level>` to `claude -p` argv iff set.\n\nDesign: v1 is static/operator-configured per peer — no dynamic per-task override, no model-facing injection. Invalid value returns `status:error` before any spawn (failure-as-data, no spawn). Absent → no flag (backward-compatible, argv byte-identical).\n\nTest coverage: absent → no `--effort` (regression lock); each valid level (max, xhigh, low) → correct argv; invalid value (\"ultra\") → `status:error`; peer-bridge metadata carries field iff set; normalizePeer preserves field.\n\nPattern: two operator-controlled spawn flags (`--model` PR #467 and `--effort` PR #537) follow the same 5-layer path. Adding a third (e.g. `--max-turns`) requires the same threading: normalizePeer → A2A metadata field → stdio-server extraction → delegateTask validation → buildClaudeInvocation flag injection. The invariants are identical: registry-only source (anti-spoof), invalid → status:error, absent → no flag (regression lock). Provenance: PR #537 (2026-06-26), closes Issue #530.",
+    "provenance": {
+      "source": "PR #537: feat(delegate): per-peer thinking effort budget (issue #530)",
+      "ts": "2026-06-26"
+    }
+  },
   "registry-gate-spawn-flag-template": {
     "status": "active",
     "valid_to": null,
