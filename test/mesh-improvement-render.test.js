@@ -18,3 +18,16 @@ test('renders the idempotent marker, summary, and fileable findings', () => {
   assert.match(md, /precision/);
   assert.match(md, /-33\.3/);
 });
+
+test('behavior passRate tristate: numeric / zero-cases / no-data renders distinctly', () => {
+  const base = { ...mir, findings: [] };
+  // numeric passRate → shows the number
+  const mdNum = renderMarkdown({ ...base, summary: { ...base.summary, behavior: { passRate: 0.75, casesExecuted: 3, delta: null } } });
+  assert.match(mdNum, /behavior passRate.*0\.75/);
+  // casesExecuted === 0 → zero-cases label
+  const mdZero = renderMarkdown({ ...base, summary: { ...base.summary, behavior: { passRate: null, casesExecuted: 0, delta: null } } });
+  assert.match(mdZero, /zero-cases/);
+  // casesExecuted null (no-data / behavior absent) → em-dash
+  const mdNone = renderMarkdown({ ...base, summary: { ...base.summary, behavior: { passRate: null, casesExecuted: null, delta: null } } });
+  assert.match(mdNone, /behavior passRate.*—/);
+});

@@ -46,8 +46,29 @@ test('summary + schema are populated; missing inputs tolerated', () => {
   assert.equal(mir.schema, 'mesh-improvement-report/v1');
   assert.equal(mir.summary.tests.red, 1);
   assert.equal(mir.summary.behavior.passRate, 0.889);
+  assert.equal(mir.summary.behavior.casesExecuted, 9);
   assert.equal(mir.summary.adversarial.invariantsPassed, '6/7');
   const empty = aggregate({ tests: null, behavior: null, adversarial: null, perf: null, runLogs: [] }, { at: AT, ref: REF });
   assert.equal(empty.findings.length, 0);
   assert.equal(empty.summary.behavior.passRate, null);
+  assert.equal(empty.summary.behavior.casesExecuted, null);
+});
+
+test('behavior zero-cases: hard finding when scorecard present but casesExecuted=0', () => {
+  const zeroBehavior = {
+    aggregate: { trials: 0, passed: 0, casesExecuted: 0, passRate: null },
+    scenarios: []
+  };
+  const mir = aggregate(
+    { tests: null, behavior: zeroBehavior, adversarial: null, perf: null, runLogs: [] },
+    { at: AT, ref: REF }
+  );
+  const ids = mir.findings.map((f) => f.id);
+  assert.ok(ids.includes('behavior:overall:zero-cases'), 'zero-cases hard finding present');
+  assert.ok(!ids.includes('behavior:overall:pass-rate'), 'no pass-rate soft finding when casesExecuted=0');
+  assert.equal(mir.summary.behavior.casesExecuted, 0);
+  assert.equal(mir.summary.behavior.passRate, null);
+  const finding = mir.findings.find((f) => f.id === 'behavior:overall:zero-cases');
+  assert.equal(finding.tier, 'hard');
+  assert.equal(finding.cluster, 'behavior-coverage');
 });

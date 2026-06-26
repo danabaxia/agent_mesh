@@ -124,12 +124,27 @@ test('scorecard: aggregation, markdown, threshold exit code', () => {
   assert.equal(report.scenarios[0].passRate, 0.5);
   assert.equal(report.aggregate.passRate, 0.5);          // compare entries excluded
   assert.equal(report.aggregate.trials, 2);
+  assert.equal(report.aggregate.casesExecuted, 2);
   const md = renderMarkdown(report);
   assert.match(md, /s1.*50%/s);
   assert.match(md, /s4/);
   assert.equal(exitCode(report, undefined), 0);          // no threshold → always 0
   assert.equal(exitCode(report, 0.4), 0);
   assert.equal(exitCode(report, 0.9), 1);
+  assert.equal(exitCode(report, undefined, { zeroIsError: true }), 0);  // cases > 0, no zero-exit
+});
+
+test('scorecard: zero-trial aggregate — casesExecuted=0, passRate=null, exitCode=2 when zeroIsError', () => {
+  const zero = aggregate([]);
+  assert.equal(zero.aggregate.casesExecuted, 0);
+  assert.equal(zero.aggregate.passRate, null);
+  assert.equal(exitCode(zero, undefined), 0);                           // no zeroIsError → still 0
+  assert.equal(exitCode(zero, undefined, { zeroIsError: true }), 2);    // zero-case exit
+  assert.equal(exitCode(zero, 0.5, { zeroIsError: true }), 2);          // zero-case takes priority
+  // per-scenario null passRate
+  const withZero = aggregate([{ name: 'empty', trials: [] }]);
+  assert.equal(withZero.scenarios[0].passRate, null);
+  assert.equal(withZero.aggregate.casesExecuted, 0);
 });
 
 async function fakeClaude(body) {
