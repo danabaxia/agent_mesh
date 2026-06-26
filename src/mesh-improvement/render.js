@@ -1,4 +1,9 @@
 // src/mesh-improvement/render.js — pure: MIR → human markdown with an idempotent marker.
+const behaviorLabel = (b) => {
+  if (b.casesExecuted === 0) return '⚠ zero-cases (0 trials scored)';
+  return b.passRate !== null ? String(b.passRate) : '—';
+};
+
 export function renderMarkdown(mir) {
   const day = mir.at.slice(0, 10);
   const d = (v) => (typeof v === 'number' ? (v >= 0 ? `+${v}` : `${v}`) : '—');
@@ -9,7 +14,7 @@ export function renderMarkdown(mir) {
     `commit \`${mir.ref?.commit ?? '?'}\` · baseline \`${mir.baseline?.commit ?? 'none'}\``, '',
     '| signal | value | Δ |', '|---|---|---|',
     `| tests green/red | ${s.tests.green}/${s.tests.red} | ${d(s.tests.delta)} |`,
-    `| behavior passRate | ${s.behavior.passRate ?? '—'} | ${d(s.behavior.delta)} |`,
+    `| behavior passRate | ${behaviorLabel(s.behavior)} | ${d(s.behavior.delta)} |`,
     `| adversarial | ${s.adversarial.invariantsPassed ?? '—'} | ${d(s.adversarial.delta)} |`,
     `| perf q/1k p50 | ${s.perf.quality_per_1k_tokens_p50 ?? '—'} | ${d(s.perf.delta)} |`,
     '', '## Fileable findings', '',

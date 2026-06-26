@@ -6,7 +6,7 @@ export function aggregate(scenarioReports) {
   const scenarios = scenarioReports.map((s) => {
     if (s.compare) return s;                               // A/B entries pass through
     const passed = s.trials.filter((t) => t.pass).length;
-    return { ...s, passed, passRate: s.trials.length ? passed / s.trials.length : 0 };
+    return { ...s, passed, passRate: s.trials.length ? passed / s.trials.length : null };
   });
   const scored = scenarios.filter((s) => !s.compare);
   const trials = scored.reduce((n, s) => n + s.trials.length, 0);
@@ -14,7 +14,7 @@ export function aggregate(scenarioReports) {
   return {
     at: new Date().toISOString(),
     scenarios,
-    aggregate: { trials, passed, passRate: trials ? passed / trials : 0 }
+    aggregate: { trials, passed, casesExecuted: trials, passRate: trials ? passed / trials : null }
   };
 }
 
@@ -52,8 +52,9 @@ export async function writeScorecard(outDir, report) {
   return { json: join(outDir, 'scorecard.json'), md: join(outDir, 'scorecard.md') };
 }
 
-/** 0 always, unless a threshold is set and the aggregate falls below it. */
-export function exitCode(report, minPassRate) {
+/** 0 unless zero cases executed (exits 2 when zeroIsError) or threshold not met (exits 1). */
+export function exitCode(report, minPassRate, { zeroIsError = false } = {}) {
+  if (zeroIsError && report.aggregate.casesExecuted === 0) return 2;
   if (minPassRate === undefined || minPassRate === null) return 0;
   return report.aggregate.passRate >= Number(minPassRate) ? 0 : 1;
 }

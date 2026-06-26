@@ -96,4 +96,4 @@ const report = aggregate(reports);
 const paths = await writeScorecard(outDir, report);
 console.log(`\n${renderMarkdown(report)}`);
 console.log(`scorecard: ${paths.md}`);
-process.exit(exitCode(report, opts.minPassRate));
+process.exit(exitCode(report, opts.minPassRate, { zeroIsError: true }));

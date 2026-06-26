@@ -64,7 +64,15 @@ export function aggregate(inputs, { at, ref }) {
       }));
     }
   }
-  // SOFT — behavior overall pass rate.
+  // HARD — behavior eval ran but scored zero trials (casesExecuted === 0).
+  const behaviorCases = behavior?.aggregate?.casesExecuted ?? behavior?.aggregate?.trials ?? null;
+  if (behavior != null && behaviorCases === 0) {
+    findings.push(hardFinding({
+      id: 'behavior:overall:zero-cases', cluster: 'behavior-coverage',
+      evidence: { trace: 'behavior eval ran but scored 0 trials' },
+    }));
+  }
+  // SOFT — behavior overall pass rate (only when casesExecuted > 0).
   if (typeof behavior?.aggregate?.passRate === 'number') {
     findings.push(softFinding({
       id: 'behavior:overall:pass-rate', cluster: 'behavior-regression',
@@ -86,7 +94,9 @@ export function aggregate(inputs, { at, ref }) {
 
   const summary = {
     tests: { green: tests?.summary?.green ?? null, red: tests?.summary?.red ?? null, delta: null },
-    behavior: { passRate: behavior?.aggregate?.passRate ?? null, delta: null },
+    behavior: { passRate: behavior?.aggregate?.passRate ?? null,
+                casesExecuted: behavior?.aggregate?.casesExecuted ?? behavior?.aggregate?.trials ?? null,
+                delta: null },
     adversarial: { invariantsPassed: adversarial?.aggregate
       ? `${adversarial.aggregate.passed}/${adversarial.aggregate.trials}` : null, delta: null },
     perf: { quality_per_1k_tokens_p50: meanOfScenarioStat(perf, 'quality_per_1k_tokens', 'p50'),
