@@ -26,7 +26,7 @@ export function compactArgv(argv) {
   return out;
 }
 
-export async function buildClaudeInvocation({ root, mode, task, env, callEnv, claudeEnv, session = null, route = null }) {
+export async function buildClaudeInvocation({ root, mode, task, env, callEnv, claudeEnv, session = null, route = null, thinkingEffort = undefined }) {
   // Spec §4: prompt is now assembled by agent-context.buildAgentRuntimePrompt
   // (system → memory → workflows → mode prompt → global/local skill summaries).
   // meshRoot is resolved per chunk-2 rule: env override → walk-up to nearest
@@ -104,6 +104,9 @@ export async function buildClaudeInvocation({ root, mode, task, env, callEnv, cl
     // this; caught by the real-claude E2E, not the fake-claude unit test.)
     args.push('--permission-mode', 'acceptEdits');
   }
+  // Per-peer thinking effort (issue #530): append --effort iff present; absence
+  // leaves the binary at its own default — never adds a flag for undefined.
+  if (thinkingEffort !== undefined) args.push('--effort', thinkingEffort);
   return { args };
 }
 

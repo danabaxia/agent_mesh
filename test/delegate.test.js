@@ -1192,3 +1192,16 @@ test('delegateTask do mode + AGENT_MESH_DO_BRANCH=1: git checkout -b fails → e
   assert.equal(result.status, 'error');
   assert.equal(result.error.code, 'branch_create_failed');
 });
+
+test('delegateTask: invalid thinkingEffort → status:error (failure-as-data, no spawn, issue #530)', async () => {
+  const root = await createGitRepo();
+  const result = await delegateTask({
+    root,
+    env: { AGENT_MESH_CLAUDE: '/no/such/claude', AGENT_MESH_TEST_PLATFORM: 'linux' },
+    input: { mode: 'ask', task: 'hi' },
+    thinkingEffort: 'ultra'
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'bad_input');
+  assert.match(result.error.message, /thinking_effort/);
+});

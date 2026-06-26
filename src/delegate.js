@@ -6,6 +6,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   DEFAULT_LOG_DIR,
   WRITE_TOOLS,
+  VALID_THINKING_EFFORT,
   readPositiveInt
 } from './config.js';
 import { readLayer } from './settings-merge.js';
@@ -99,9 +100,15 @@ async function preflightManagedPolicy(env, platform) {
   return null;
 }
 
-export async function delegateTask({ root, env, input, parentRunId = null, route = null, session = null }) {
+export async function delegateTask({ root, env, input, parentRunId = null, route = null, session = null, thinkingEffort = undefined }) {
   const validation = validateDelegateInput(input);
   if (!validation.ok) return badInput(validation.message);
+
+  // Validate per-peer thinking effort before any spawn (issue #530). Failure-as-data:
+  // an invalid value returns status:error so callers see a structured result, not a throw.
+  if (thinkingEffort !== undefined && !VALID_THINKING_EFFORT.has(thinkingEffort)) {
+    return resultError('bad_input', `invalid thinking_effort "${thinkingEffort}"; must be one of: ${[...VALID_THINKING_EFFORT].join(', ')}`);
+  }
 
   const { mode, task } = validation.value;
   if (env.AGENT_MESH_MODE === 'ask' && mode === 'do') {
@@ -230,7 +237,7 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
       });
     } else {
       // ClaudeRunner (default): spawns `claude -p` with the standard invocation.
-      invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, session: taggedSession, route });
+      invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, session: taggedSession, route, thinkingEffort });
       spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
         cwd: root,
         env: claudeEnv,
@@ -262,7 +269,7 @@ export async function delegateTask({ root, env, input, parentRunId = null, route
       const RESUME_FAIL = /no conversation|session not found|could not resume|--resume/i;
       if (taggedSession && taggedSession.resume && spawnResult.code !== 0 && RESUME_FAIL.test(spawnResult.stderr || '')) {
         invocation = await buildClaudeInvocation({ root, mode, task, env, callEnv: entered.env, claudeEnv, route,
-          session: { id: taggedSession.id, resume: false } });
+          session: { id: taggedSession.id, resume: false }, thinkingEffort });
         spawnResult = await spawnFile(env.AGENT_MESH_CLAUDE || 'claude', invocation.args, {
           cwd: root,
           env: claudeEnv,

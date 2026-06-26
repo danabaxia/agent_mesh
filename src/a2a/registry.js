@@ -72,7 +72,9 @@ async function normalizePeer(name, peer, sourcePath) {
   const root = peer.root ? await realpath(resolveRelative(sourcePath, peer.root)) : null;
   const env = peer.env && typeof peer.env === 'object' && !Array.isArray(peer.env) ? peer.env : {};
 
-  return { type: 'stdio', name, root, command, args, env };
+  const normalized = { type: 'stdio', name, root, command, args, env };
+  if (peer.thinking_effort !== undefined) normalized.thinking_effort = peer.thinking_effort;
+  return normalized;
 }
 
 function resolveRelative(sourcePath, path) {
