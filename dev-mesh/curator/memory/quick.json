@@ -1940,5 +1940,16 @@
       "source": "PR #549: feat(#548): behavior eval coverage gate — casesExecuted field and zero-case exit",
       "ts": "2026-06-26"
     }
+  },
+  "agent-cap-prompt-over-shell-step": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Agent retry caps: implement as prompt instruction (agent counts own comments) — not a shell step needing jq/gh-api.",
+    "l1": "PR #550 (#508): prior circuit-breaker spec (#439) used a shell step with jq/gh api to count comments — hit test failures and env fragility. Fix: move cap logic into agent prompt (\"count prior Spec-ready-attempt-N comments; if ≥3, escalate, stop\"). Agent reads own thread naturally; no jq/gh-api dep. Simpler shell = fewer failure modes. Generalizes: any durable-state cap derived from issue comments belongs in the prompt, not a pre-run shell step. See also: attempt-cap-circuit-breaker-durable-state (the what).",
+    "value": "When implementing a circuit-breaker or retry cap that reads from issue comments in an agent workflow:\n\nPREFERRED — prompt instruction:\n  Add to the agent YAML prompt (after the task description):\n  \"Before re-authoring: count all prior Spec-ready-attempt-N comments on this issue. If count >=3: (1) add needs-human label, (2) post ONE deduped escalation comment containing CIRCUIT BREAKER sentinel — check for that marker first to avoid duplicates, (3) stop without re-triggering. Reset on observed green push.\"\n  The model reads gh issue comments as part of its normal context-gathering; no extra tooling.\n\nAVOID — shell preflight step:\n  A step that does: count=$(gh api /repos/.../issues/N/comments | jq \"select comment contains marker | length\")\n  Fragile: jq must be installed, gh api must be authorized, JSON parsing must match exact body format. Env differences break it silently.\n\nWHY IT MATTERS:\n  PR #439 spec described the durable-state pattern correctly but left implementation to a shell step. PR #550 found the shell version had test failures and env fragility; switching to prompt instruction resolved both without adding complexity.\n\nSECONDARY PATTERN (same PR — PAT preflight via curl):\n  Use: curl -s -o /dev/null -w \"%{http_code}\" -H \"Authorization: token $PAT\" URL\n  HTTP status only, no jq. Missing/invalid PAT -> immediate exit 1 before spending API budget.\n\nProvenance: PR #550 (2026-06-26), closes #508.",
+    "provenance": {
+      "source": "PR #550 (2026-06-26): fix(intake): circuit breaker, DEV_MESH_PAT preflight, and 529 soft-exit (#508)",
+      "ts": "2026-06-26"
+    }
   }
 }
