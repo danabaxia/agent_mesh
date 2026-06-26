@@ -22,5 +22,13 @@ export function renderMarkdown(mir) {
       ? `- **[${f.severity}]** \`${f.id}\` — ${f.evidence?.trace ?? f.cluster}`
       : `- **[${f.severity}]** \`${f.id}\` — ${m.name} ${m.value} (base ${m.baseline}, Δ ${m.deltaPct}%)`);
   }
+  const improvements = mir.findings.filter((f) => f.cluster === 'perf-improvement');
+  if (improvements.length) {
+    lines.push('', '## Improvements this run', '');
+    for (const f of improvements) {
+      const m = f.metric;
+      lines.push(`- **[info]** \`${f.id}\` — ${m.name} ${m.value} (base ${m.baseline}, Δ +${m.deltaPct}%)`);
+    }
+  }
   return lines.join('\n') + '\n';
 }
