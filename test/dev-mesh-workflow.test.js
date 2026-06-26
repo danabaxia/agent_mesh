@@ -447,6 +447,11 @@ test('CIRCUIT BREAKER (#508): intake prompt enforces spec-push attempt cap and n
   // Issue #508 P1b: a runaway re-author loop (no attempt cap) burned credits on 12+ re-authors.
   // The Analyst must count prior "Spec ready attempt N" comments; at N=3 it must add needs-human
   // and leave a deduped "CIRCUIT BREAKER" escalation comment instead of re-authoring again.
+  //
+  // Coverage note: the spec also lists "Reset on success" (green push resets counter to 1) and
+  // "Durable count" (count survives runner restart via comments, not in-memory state) as test
+  // cases. Both are model-instruction behaviors that execute inside a real `claude` turn against
+  // live GitHub state; they cannot be exercised hermetically with stub infrastructure.
   assert.match(wf.intake, /Spec ready attempt/,
     'intake prompt must reference "Spec ready attempt N" as the attempt signal');
   assert.match(wf.intake, /needs-human/,
