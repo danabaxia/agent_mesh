@@ -57,6 +57,28 @@ jobs:
           CLEAN="$(printf '%s' "$RAW_OAUTH" | tr -d '[:space:]')"
           echo "::add-mask::$CLEAN"
           echo "CLAUDE_CODE_OAUTH_TOKEN=$CLEAN" >> "$GITHUB_ENV"
+      - name: Preflight DEV_MESH_PAT (spec-branch write capability)
+        env:
+          DEV_MESH_PAT_VAL: ${{ secrets.DEV_MESH_PAT }}
+        run: |
+          # Issue #508 Fix 2: verify DEV_MESH_PAT is present and can authenticate before
+          # the Analyst spends API budget authoring a spec that cannot be pushed. A missing
+          # or unauthorized PAT causes git push to fail with HTTP 403 after the agent has
+          # already completed — the "silent credential failure" (P3). Failing here avoids
+          # the loop and signals loudly so the operator knows exactly what to fix.
+          if [ -z "$DEV_MESH_PAT_VAL" ]; then
+            echo "::error title=DEV_MESH_PAT missing::DEV_MESH_PAT is not configured — spec-branch pushes will fail (HTTP 403). Configure a fine-grained PAT with Contents:write on this repo as the DEV_MESH_PAT secret."
+            exit 1
+          fi
+          HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $DEV_MESH_PAT_VAL" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}")
+          if [ "$HTTP" = "401" ] || [ "$HTTP" = "403" ]; then
+            echo "::error title=DEV_MESH_PAT unauthorized::DEV_MESH_PAT cannot access this repo (HTTP $HTTP) — grant Contents:write on the fine-grained PAT and update the DEV_MESH_PAT secret."
+            exit 1
+          fi
+          echo "DEV_MESH_PAT preflight OK (HTTP $HTTP)"
       - name: Back-off on retry (jitter for 529 recovery)
         uses: ./.github/actions/mesh-retry-backoff
       - name: Drive the Analyst (discuss → spec → labels)
@@ -126,9 +148,23 @@ jobs:
             `spec:in-review` after approval severs its only route to the coder (it has no
             code-type) and deadlocks it. "Leave labels matching reality" NEVER applies to an
             approved issue.
+
+            SPEC-PUSH CIRCUIT BREAKER (#508, attempt cap N=3): when a spec push (git push)
+            fails, BEFORE re-authoring on a new attempt, count prior "Spec ready attempt N"
+            comments on this issue (use `gh issue view <N> --comments`).
+            - If count < 3: proceed with re-authoring; add a "Spec ready attempt N+1" comment.
+            - If count >= 3 (CIRCUIT BREAKER tripped): do NOT re-author. Instead:
+              (a) Add the `needs-human` label: `gh issue edit <N> --add-label needs-human`
+              (b) Leave ONE deduped escalation comment — check first whether a comment already
+                  contains "CIRCUIT BREAKER"; if one exists, skip the comment entirely.
+                  Otherwise post: "CIRCUIT BREAKER: spec-push has failed 3+ consecutive times.
+                  DEV_MESH_PAT may lack write access or the spec directory is conflicted.
+                  Human intervention required. See .github/actions/mesh-retry-backoff for 529."
+              (c) STOP — do not attempt further spec work on this run.
       - name: Verify the agent worked + capture usage
         if: always()
         uses: ./.github/actions/agent-postrun
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}
           advisory_blocked: "false"
+          infra_soft: "true"

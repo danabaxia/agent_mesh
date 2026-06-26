@@ -119,6 +119,26 @@ test('gate: overload_error in output emits infra_auth annotation and exits 1', (
   assert.doesNotMatch(r.stderr, /\berror::agent run unhealthy\b/, 'overload_error must not emit the generic errored message');
 });
 
+test('gate: 529 with --soft-infra emits warning and exits 0 (#508 Fix 3)', () => {
+  // intake/research 529 soft-exit: transient API overload maps to warning + exit 0 so
+  // the job stays re-runnable (orange) rather than human-blocked (hard red). The Triager
+  // can classify it as infra_auth and trigger a re-run with mesh-retry-backoff jitter.
+  const env = { type: 'result', is_error: true, num_turns: 1, total_cost_usd: 0,
+                result: 'error: HTTP 529 overloaded' };
+  const r = runGate(env, ['--soft-infra']);
+  assert.equal(r.code, 0, '--soft-infra 529 must soft-exit (orange job, not hard red)');
+  assert.match(r.stderr + r.stdout, /::warning\b/, '--soft-infra 529 must emit a warning annotation, not an error');
+  assert.match(r.stderr + r.stdout, /infra_auth/, '--soft-infra 529 must emit the infra_auth title');
+});
+
+test('gate: non-529 error is still fatal with --soft-infra (exit 1) (#508 Fix 3 negative)', () => {
+  // --soft-infra widens ONLY the 529 soft-exit — generic errors must stay fatal so the
+  // flag can't accidentally mask a real broken run.
+  const env = { type: 'result', is_error: true, num_turns: 1, total_cost_usd: 0 };
+  const r = runGate(env, ['--soft-infra']);
+  assert.equal(r.code, 1, '--soft-infra must not soften non-529 errors (real failure stays red)');
+});
+
 test('gate: a no-op run (0 turns) is fatal (exit 1)', () => {
   const r = runGate({ type: 'result', is_error: false, num_turns: 0, total_cost_usd: 0 });
   assert.equal(r.code, 1);

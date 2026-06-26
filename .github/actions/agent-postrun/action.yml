@@ -12,6 +12,10 @@ inputs:
     description: Pass --advisory-blocked (light ask/comment roles)
     required: false
     default: "false"
+  infra_soft:
+    description: Pass --soft-infra to soft-exit on transient HTTP 529 overload (intake/research roles)
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -22,7 +26,7 @@ runs:
         CLAUDE_EXECUTION_FILE: ${{ inputs.execution_file }}
         MESH_USAGE_OUT: ${{ runner.temp }}/mesh-usage.json
       run: |
-        node scripts/assert-run-healthy.mjs ${{ inputs.advisory_blocked == 'true' && '--advisory-blocked' || '' }} || EXIT=$?
+        node scripts/assert-run-healthy.mjs ${{ inputs.advisory_blocked == 'true' && '--advisory-blocked' || '' }} ${{ inputs.infra_soft == 'true' && '--soft-infra' || '' }} || EXIT=$?
         # assert-run-healthy writes MESH_USAGE_OUT before its own fatal exit, so the
         # file exists even when the gate fails; the upload step (always()) still captures it.
         [ -f "$MESH_USAGE_OUT" ] && echo "captured usage at $MESH_USAGE_OUT" || echo "no usage captured"

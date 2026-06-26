@@ -442,3 +442,42 @@ test('PERMISSIONS FLOOR: workflows using any gh pr subcommand or pull_request tr
     }
   }
 });
+
+test('CIRCUIT BREAKER (#508): intake prompt enforces spec-push attempt cap and needs-human circuit-break', () => {
+  // Issue #508 P1b: a runaway re-author loop (no attempt cap) burned credits on 12+ re-authors.
+  // The Analyst must count prior "Spec ready attempt N" comments; at N=3 it must add needs-human
+  // and leave a deduped "CIRCUIT BREAKER" escalation comment instead of re-authoring again.
+  //
+  // Coverage note: the spec also lists "Reset on success" (green push resets counter to 1) and
+  // "Durable count" (count survives runner restart via comments, not in-memory state) as test
+  // cases. Both are model-instruction behaviors that execute inside a real `claude` turn against
+  // live GitHub state; they cannot be exercised hermetically with stub infrastructure.
+  assert.match(wf.intake, /Spec ready attempt/,
+    'intake prompt must reference "Spec ready attempt N" as the attempt signal');
+  assert.match(wf.intake, /needs-human/,
+    'intake prompt must add needs-human label on circuit-break');
+  assert.match(wf.intake, /CIRCUIT BREAKER/,
+    'intake prompt must name the CIRCUIT BREAKER escalation comment (enables dedup check)');
+});
+
+test('DEV_MESH_PAT PREFLIGHT (#508): intake has a preflight step ordered before the claude-code-action', () => {
+  // Issue #508 P3: silent credential failure — DEV_MESH_PAT gaps were closed "COMPLETED"
+  // while the runtime still couldn't push. The preflight step fails loudly before the
+  // Analyst spends API budget, so a missing/unauthorized PAT is caught immediately.
+  assert.match(wf.intake, /Preflight DEV_MESH_PAT/,
+    'intake must have a "Preflight DEV_MESH_PAT" step');
+  const lines = wf.intake.split('\n');
+  const preIdx = lines.findIndex((l) => /Preflight DEV_MESH_PAT/.test(l));
+  const claudeIdx = lines.findIndex((l) => /anthropics\/claude-code-action/.test(l));
+  assert.ok(preIdx > -1, 'DEV_MESH_PAT preflight step must be present');
+  assert.ok(preIdx < claudeIdx, 'DEV_MESH_PAT preflight must precede the claude-code-action step');
+});
+
+test('529 SOFT-EXIT (#508): intake postrun passes infra_soft so 529 maps to warning not exit-1', () => {
+  // Issue #508 P4: persistent HTTP 529 exited hard-1, making every transient 529 a red job
+  // that required a human to unblock. For intake, 529 is transient infra noise; the job
+  // should exit neutral (warning annotation) so the re-run path with mesh-retry-backoff
+  // jitter is the correct recovery without blocking the queue on a human.
+  assert.match(wf.intake, /infra_soft:\s*["']?true/,
+    'intake postrun must pass infra_soft: true (soft-exit on 529)');
+});

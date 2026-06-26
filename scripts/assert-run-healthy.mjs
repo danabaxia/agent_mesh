@@ -16,6 +16,12 @@
 // Without the flag (the default — every do-mode pusher: autofix/mergefix/backlog/
 // curate) 'blocked' stays FATAL: for those, >= 5 denials means a real misconfigured
 // tool grant (the original 2026-06-15 Bash(git) vs git:* bug the gate exists to catch).
+//
+// Flag --soft-infra: map transient HTTP 529 (API overload) to a WARNING + exit-0 for
+// intake/research roles. Without this flag 529 exits 1 (hard red), which blocks the
+// re-run path. With --soft-infra a 529 emits a warning annotation so the Triager can
+// classify it as infra_auth and the runner can re-run with mesh-retry-backoff jitter
+// without a human having to unblock the red job first.
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { buildUsageRecord } from '../src/report/usage-record.js';
 import { join } from 'node:path';
@@ -23,6 +29,7 @@ import { classifyRunHealth, extractResultEnvelope } from '../src/dev-mesh/health
 
 const args = process.argv.slice(2);
 const advisoryBlocked = args.includes('--advisory-blocked');
+const softInfra = args.includes('--soft-infra');
 const path =
   args.find((a) => !a.startsWith('--')) ||
   process.env.CLAUDE_EXECUTION_FILE ||
@@ -69,6 +76,18 @@ if (!health.healthy && FATAL.has(health.status)) {
   // and add a hint to re-run with back-off via .github/actions/mesh-retry-backoff.
   const raw = JSON.stringify(parsed).toLowerCase();
   const is529 = raw.includes('529') || raw.includes('overloaded') || raw.includes('overload_error');
+  if (is529 && softInfra) {
+    // Soft-exit (#508 Fix 3): 529 is transient infra noise for intake/research roles.
+    // Emit a warning (not an error) so the Triager classifies it correctly, and exit 0
+    // so the job shows as orange/skipped rather than hard red — the correct recovery
+    // is "Re-run failed jobs" with mesh-retry-backoff jitter, not human unblocking.
+    console.warn(
+      `::warning title=infra_auth::Claude API overloaded (HTTP 529) — transient; ` +
+      `re-run with back-off (attempt ${process.env.GITHUB_RUN_ATTEMPT || '?'}). ` +
+      `Use "Re-run failed jobs" in the Actions UI; .github/actions/mesh-retry-backoff adds jitter delay.`,
+    );
+    process.exit(0);
+  }
   if (is529) {
     console.error(
       `::error title=infra_auth::Claude API overloaded (HTTP 529) — transient; re-run with back-off ` +
