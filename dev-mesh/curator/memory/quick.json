@@ -1875,6 +1875,17 @@
       "ts": "2026-06-26"
     }
   },
+  "mir-one-sided-classification": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "MIR: reserve `*-regression` for unfavorable moves (dPct<0) — favorable wins classify as `improvement`.",
+    "l1": "PR #536 added `classify()` in `applyBaseline`: gates on `tier==='soft' && /-regression$/.test(cluster) && dPct>0` → relabels to `improvement`. Without this, direction-correct wins (latency −17%) appeared in `perf-regression` cluster, polluting agent triage of `mir-*.json`. Hard findings (tier!=='soft') are never reclassified. `/-regression$/` also covers `behavior-regression` (passRate) — broader than perf only. The fileable gate fires only on `dPct<0`; this fix targets the raw MIR JSON surface, not filed issues.",
+    "value": "For any eval pipeline using `deltaPct` (signed toward 'better'): (1) ONE-SIDED GATE: `dPct>0` → favorable; `dPct<0` → unfavorable. Reserve `*-regression` cluster for unfavorable moves only — favorable wins label as `improvement`. Never funnel both directions through `perf-regression`. Mirrors Bencher one-sided upper-boundary alerts and Criterion's Improved/Regressed/No-change distinction. (2) TIER GUARD: only `tier==='soft'` findings reclassified — hard findings (`test-failure`, `security-invariant`, `delegation-failure`) never change cluster regardless of delta sign. (3) PATTERN SCOPE: `/-regression$/` covers BOTH `perf-regression` AND `behavior-regression` (passRate) — a point fix for perf alone silently misses the behavior cluster. (4) INSERTION POINT: `classify(f, dPct)` belongs inside `applyBaseline` AFTER `deltaPct` is computed and BEFORE the finding is returned — pure function, no side effects. (5) TESTS NEEDED: (a) favorable move must NOT appear under `perf-regression`; (b) unfavorable stays in regression cluster; (c) hard findings never reclassified even when `dPct>0`; (d) no-baseline (`dPct=null`) left unchanged. (6) LATENT RISK: `cluster` is now polysemous (regression OR improvement). If an improvement were ever fileable, issue title templates emit contradictions — guard: improvements stay non-fileable since `dPct>0` never satisfies `dPct<0`. Provenance: PR #536 (2026-06-26), closing Issue #515.",
+    "provenance": {
+      "source": "PR #536: MIR: classify direction-correct metric moves as improvements, not perf-regression warnings (#515)",
+      "ts": "2026-06-26"
+    }
+  },
   "per-peer-thinking-effort-spawn-flag": {
     "status": "active",
     "valid_to": null,
