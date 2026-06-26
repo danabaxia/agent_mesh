@@ -1875,6 +1875,17 @@
       "ts": "2026-06-26"
     }
   },
+  "registry-gate-spawn-flag-template": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Per-peer spawn flag template: registry.json field → 4-layer thread; absent=no-op; invalid=error; never model-facing.",
+    "l1": "Confirmed by two independent flags: `--model` (PR #467/2026-06-23) and `--effort` (PR #533/2026-06-26). New per-peer spawn flags follow the same template: (1) `normalizePeer` preserves the field (undefined when absent), (2) `peer-bridge.js` passes to `delegateTask` options, (3) `delegate.js` threads to `buildClaudeInvocation`, (4) flag appended to argv iff defined; absent → argv unchanged (regression lock). Invalid value → `status:error`, not throw. Field never in model-facing tool description or tool args — registry is sole authority. Multiple flags on the same peer compose independently.",
+    "value": "Apply when adding any new per-peer spawn-time flag (e.g. --model, --effort, future --max-turns, --parallel-tool-calls). The four-layer threading path is always identical:\n\n(1) src/a2a/registry.js normalizePeer: accept the optional field, default undefined when absent. If the flag must not be overridable by peer.env, add it to RESERVED_BRIDGE_ENV (anti-spoof invariant).\n\n(2) src/a2a/peer-bridge.js: look up peer.<field> from the normalized registry entry and pass it into delegateTask's options argument.\n\n(3) src/delegate.js: destructure the option from opts and thread it to buildClaudeInvocation.\n\n(4) src/delegate-invocation.js buildClaudeInvocation: when the option is defined, push ['--flag', value] onto the claude -p argv; when undefined, leave argv unchanged. Absent = byte-identical to today (regression lock).\n\nValidation (pure): accept only a known enum set or validated format; any other value → { error } (failure-as-data); the validation helper is the hermetic test seam for invalid inputs.\n\nError handling: an invalid value causes status:error result, not a throw — consistent with how the mesh treats any spawn failure.\n\nAnti-spoof: the field never surfaces in the model-facing tool description or any tool argument. A delegating model cannot influence the flag value — only the operator-authored registry entry can.\n\nComposition: multiple independent flags on the same peer entry (e.g. model + thinking_effort) thread through the four layers independently without coupling.\n\nTest matrix for each new flag:\n- Absent field → no argv change (regression lock)\n- Valid value → flag threaded to argv\n- Invalid value → status:error (not throw)\n- End-to-end: registry.json → normalizePeer → peer-bridge → delegate → buildClaudeInvocation carries value unbroken\n- Anti-spoof: tool-arg attempt to set/raise value has no effect\n- Composition: peer with two flags threads both correctly and independently\n- Run-record: per-hop metrics reflect the new flag's effect (e.g. higher token use for --effort max)\n\nProvenance: --model (PR #467, 2026-06-23), --effort (PR #533, 2026-06-26). Pattern crystallized after two independent instantiations following identical structure.",
+    "provenance": {
+      "source": "PR #533 (2026-06-26): spec: per-peer extended thinking budget — registry thinking_effort field threads --effort to delegated workers (#530)",
+      "ts": "2026-06-26"
+    }
+  },
   "mir-policy-direction-before-magnitude": {
     "status": "active",
     "valid_to": null,
