@@ -1,6 +1,7 @@
 import { spawn, execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, isAbsolute, extname, dirname } from 'node:path';
+import { MAX_CHILD_OUTPUT_CHARS } from './config.js';
 
 /**
  * Resolve a command to a directly-spawnable target for the current platform,
@@ -117,6 +118,8 @@ export function spawnFile(command, args, options = {}) {
 
     let stdout = '';
     let stderr = '';
+    let stdoutTruncated = false;
+    let stderrTruncated = false;
     let settled = false;
     let timedOut = false;
     let backstop = null;
@@ -128,7 +131,11 @@ export function spawnFile(command, args, options = {}) {
       if (timeout) clearTimeout(timeout);
       if (backstop) clearTimeout(backstop);
       if (probe) clearInterval(probe);
-      resolve(result);
+      resolve({
+        ...result,
+        stdoutTruncated: result.stdoutTruncated ?? stdoutTruncated,
+        stderrTruncated: result.stderrTruncated ?? stderrTruncated,
+      });
     };
 
     const timeout = options.timeoutMs
@@ -165,10 +172,14 @@ export function spawnFile(command, args, options = {}) {
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => {
-      stdout += chunk;
+      const next = appendBounded(stdout, chunk, MAX_CHILD_OUTPUT_CHARS);
+      stdout = next.value;
+      stdoutTruncated ||= next.truncated;
     });
     child.stderr.on('data', (chunk) => {
-      stderr += chunk;
+      const next = appendBounded(stderr, chunk, MAX_CHILD_OUTPUT_CHARS);
+      stderr = next.value;
+      stderrTruncated ||= next.truncated;
     });
     child.on('error', (error) => {
       finish({ code: null, signal: null, stdout, stderr: `${stderr}${error.message}`, error });
@@ -177,6 +188,12 @@ export function spawnFile(command, args, options = {}) {
       finish({ code, signal, stdout, stderr, timedOut });
     });
   });
+}
+
+export function appendBounded(current, chunk, limit) {
+  const text = `${current}${chunk}`;
+  if (text.length <= limit) return { value: text, truncated: false };
+  return { value: text.slice(text.length - limit), truncated: true };
 }
 
 // Default grace before escalating SIGTERM → SIGKILL on a process tree that
