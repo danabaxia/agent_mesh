@@ -37,7 +37,19 @@ jobs:
   intake:
     runs-on: ubuntu-latest
     # Ignore the society's own bot comments to avoid a self-trigger loop.
-    if: github.event.sender.type != 'Bot'
+    # Also skip issue_comment/issues events on post-approval issues (#482): the Analyst
+    # has no work to do there (its role ends at spec:in-review), so firing wastes an API
+    # slot and contributes to concurrent-529 overloads. schedule/workflow_dispatch are
+    # unaffected (github.event.issue is absent → contains() returns false → fires normally).
+    if: |
+      github.event.sender.type != 'Bot' && !(
+        (github.event_name == 'issue_comment' || github.event_name == 'issues') &&
+        (contains(github.event.issue.labels.*.name, 'approved') ||
+         contains(github.event.issue.labels.*.name, 'in-progress') ||
+         contains(github.event.issue.labels.*.name, 'pr:in-review') ||
+         contains(github.event.issue.labels.*.name, 'done') ||
+         contains(github.event.issue.labels.*.name, 'rejected'))
+      )
     steps:
       - uses: actions/checkout@v4
         with:

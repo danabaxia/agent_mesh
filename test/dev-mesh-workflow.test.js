@@ -491,3 +491,25 @@ test('529 INITIAL JITTER (#482): intake passes initial_jitter_max_secs to spread
   assert.match(wf.intake, /initial_jitter_max_secs:\s*["']?\d+/,
     'intake must pass initial_jitter_max_secs to mesh-retry-backoff to spread burst events (#482)');
 });
+
+test('POST-APPROVAL FILTER (#482): intake skips issue_comment/issues events on post-approval issues', () => {
+  // Issue #482: concurrent intake runs on post-approval issues (approved/in-progress/
+  // pr:in-review/done/rejected) — where the Analyst has no work to do — caused 529 API
+  // overloads. The job if: must filter these at the YAML level so no API slot is consumed.
+  // schedule/workflow_dispatch are unaffected (github.event.issue is absent → fires normally).
+  assert.match(
+    wf.intake,
+    /contains\(github\.event\.issue\.labels\.\*\.name,\s*['"]approved['"]\)/,
+    'intake if: must skip issue events on approved-state issues (#482)',
+  );
+  assert.match(
+    wf.intake,
+    /contains\(github\.event\.issue\.labels\.\*\.name,\s*['"]in-progress['"]\)/,
+    'intake if: must skip issue events on in-progress-state issues (#482)',
+  );
+  assert.match(
+    wf.intake,
+    /contains\(github\.event\.issue\.labels\.\*\.name,\s*['"]done['"]\)/,
+    'intake if: must skip issue events on done-state issues (#482)',
+  );
+});
