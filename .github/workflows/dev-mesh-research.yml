@@ -81,3 +81,4 @@ jobs:
         with:
           execution_file: ${{ steps.claude.outputs.execution_file }}
           advisory_blocked: "true"
+          infra_soft: "true"
