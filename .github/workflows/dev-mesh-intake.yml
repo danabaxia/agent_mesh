@@ -79,8 +79,14 @@ jobs:
             exit 1
           fi
           echo "DEV_MESH_PAT preflight OK (HTTP $HTTP)"
-      - name: Back-off on retry (jitter for 529 recovery)
+      - name: Back-off / initial jitter (spread burst triggers + 529 recovery)
         uses: ./.github/actions/mesh-retry-backoff
+        with:
+          # Spread concurrent first-attempt executions across a 60s window.
+          # Multiple issues labeled simultaneously (e.g. by a scheduled poll) all
+          # fire intake at once; without this jitter every run hits the Claude API
+          # simultaneously, causing HTTP 529 overload on all of them (#482).
+          initial_jitter_max_secs: "60"
       - name: Drive the Analyst (discuss → spec → labels)
         uses: anthropics/claude-code-action@v1
         id: claude

@@ -2,15 +2,34 @@
 # Jitter back-off for dev-mesh Claude Code action workflows.
 # On a re-run attempt (run_attempt > 1) this sleeps 3–5 minutes before the
 # Claude step fires, giving the API time to clear a transient 529 overload.
+# With initial_jitter_max_secs > 0 it also sleeps 0–N seconds on the FIRST
+# attempt, spreading out burst concurrent executions (e.g. many issues labeled
+# simultaneously all triggering the intake workflow at once).
 # Usage: add `uses: ./.github/actions/mesh-retry-backoff` immediately before
 # the `anthropics/claude-code-action` step in every affected workflow.
 name: mesh-retry-backoff
 description: >
   Jitter sleep on retry attempts (run_attempt > 1) so a transient Claude API
-  529 overload clears before the next invocation.
+  529 overload clears before the next invocation. Optional initial_jitter_max_secs
+  spreads burst first-attempt executions across a random 0–N second window.
+inputs:
+  initial_jitter_max_secs:
+    description: >
+      Maximum seconds to sleep on the FIRST attempt (run_attempt == 1) to spread
+      out burst concurrent executions. 0 disables initial jitter (default).
+    required: false
+    default: "0"
 runs:
   using: composite
   steps:
+    - name: Initial jitter (spread burst triggers)
+      if: ${{ github.run_attempt == 1 && inputs.initial_jitter_max_secs != '0' }}
+      shell: bash
+      run: |
+        max=${{ inputs.initial_jitter_max_secs }}
+        secs=$(( RANDOM % (max + 1) ))
+        echo "Spreading burst trigger: sleeping ${secs}s (0–${max}s initial jitter)"
+        sleep "$secs"
     - name: Back-off on retry (529 jitter)
       if: ${{ github.run_attempt > 1 }}
       shell: bash
