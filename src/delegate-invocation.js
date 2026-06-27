@@ -198,15 +198,45 @@ function buildClaudeInvocationSync(mode, task, includeSkill = false, extraTools 
   return ['-p', task, '--tools', tools.join(',')];
 }
 
+const DEFAULT_WORKER_ENV_KEYS = new Set([
+  // Process execution / OS basics.
+  'PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE', 'SHELL', 'COMSPEC', 'ComSpec',
+  'SYSTEMROOT', 'SystemRoot', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP', 'APPDATA',
+  'LOCALAPPDATA', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME',
+  // Claude auth/config used by headless runners in local and CI contexts.
+  'CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_USE_BEDROCK',
+  'CLAUDE_CODE_USE_VERTEX', 'AWS_REGION', 'AWS_PROFILE', 'GOOGLE_APPLICATION_CREDENTIALS',
+]);
+
+function parseEnvAllowlist(value) {
+  if (typeof value !== 'string' || !value.trim()) return [];
+  return value.split(',').map((k) => k.trim()).filter(Boolean);
+}
+
+function buildWorkerBaseEnv(source = {}) {
+  const allow = new Set([
+    ...DEFAULT_WORKER_ENV_KEYS,
+    ...parseEnvAllowlist(source.AGENT_MESH_WORKER_ENV_ALLOWLIST),
+  ]);
+  const out = {};
+  for (const key of allow) {
+    if (source[key] !== undefined) out[key] = source[key];
+  }
+  for (const [key, value] of Object.entries(source)) {
+    if (key.startsWith('AGENT_MESH_')) out[key] = value;
+  }
+  return out;
+}
+
 export function buildClaudeEnv({ root, env, mode, callEnv, runId }) {
   const result = {
-    ...process.env,
+    ...buildWorkerBaseEnv(env || process.env),
     // Workers must NOT self-update: any of the many spawned claude processes
     // triggering the npm auto-updater swaps the binary under concurrent
     // spawns → ENOENT races (observed 2026-06-10 and 2026-06-12T02:42Z).
     // Updates belong to the user's interactive claude; explicit env wins.
     DISABLE_AUTOUPDATER: '1',
-    ...env,
     ...callEnv,
     AGENT_MESH_ROOT: root,
     AGENT_MESH_MODE: mode,
