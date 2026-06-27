@@ -24,13 +24,16 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: dev-mesh-intake-${{ github.event.issue.number || 'poll' }}
-  # NEVER cancel an in-flight intake run: the Analyst relabels the issue as it works,
-  # which fires another `labeled` event for the SAME issue-number group — with
-  # cancel-in-progress:true that later event killed the running job mid-`claude -p`,
-  # wasting live API spend (~34-45% of intake runs cancelled). The per-issue group
-  # still SERIALIZES the opened+labeled burst (the next run queues, then no-ops on the
-  # already-handled issue) — same pattern as dev-mesh-backlog (0 cancellations).
+  group: dev-mesh-intake
+  # Global single-queue: at most one intake run executes at a time.
+  # Prior design used a per-issue group (dev-mesh-intake-<N>) to serialise per-issue
+  # bursts while allowing different issues to run in parallel. That parallelism caused
+  # concurrent Claude API calls that exhausted the 7-day rolling quota (#482). A global
+  # group serialises all intake runs, preventing simultaneous API spend.
+  # Self-trigger concern (Analyst relabels as it works): gh label edits via GITHUB_TOKEN
+  # fire as `github-actions[bot]` (type: Bot), already filtered by `if: sender.type != Bot`.
+  # Queued labeled-event runs for the same issue no-op when they eventually start.
+  # cancel-in-progress: false is kept — never kill a running claude -p mid-flight.
   cancel-in-progress: false
 
 jobs:
