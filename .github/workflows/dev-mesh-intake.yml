@@ -25,15 +25,18 @@ permissions:
 
 concurrency:
   group: dev-mesh-intake
-  # Global serialization (issue #482): a single queue for ALL intake runs prevents
-  # concurrent event-triggered runs from different issues from hitting the Claude API
-  # simultaneously and exhausting the 7-day rolling quota. The 60s initial jitter in
-  # mesh-retry-backoff spreads the first-attempt burst so queued runs don't all stack
-  # instantly. With cancel-in-progress:false, at most 1 run is active + 1 pending;
-  # new triggers replace the pending slot — per-issue relabeling follow-ups are no-ops
-  # (the Analyst already advanced the issue), and the scheduled poll recovers anything
-  # that misses its event-triggered run. NEVER set cancel-in-progress:true: killing a
-  # mid-flight `claude -p` wastes API spend already consumed.
+  # Global serialization (#482): a single queue for ALL intake runs prevents concurrent
+  # event-triggered runs from hitting the Claude API simultaneously and exhausting the
+  # 7-day rolling quota. Prior design used per-issue groups (dev-mesh-intake-<N>) that
+  # allowed different issues to run in parallel — that parallelism caused the 529 overloads.
+  # The 60s initial jitter in mesh-retry-backoff spreads the first-attempt burst so queued
+  # runs don't all stack instantly. With cancel-in-progress:false, at most 1 run is active
+  # + 1 pending; new triggers replace the pending slot — per-issue relabeling follow-ups are
+  # no-ops (the Analyst already advanced the issue), and the scheduled poll recovers anything
+  # that misses its event-triggered run.
+  # Self-trigger concern: gh label edits via GITHUB_TOKEN fire as `github-actions[bot]`
+  # (type: Bot), already filtered by `if: sender.type != Bot`.
+  # NEVER set cancel-in-progress:true — killing a mid-flight `claude -p` wastes API spend.
   cancel-in-progress: false
 
 jobs:

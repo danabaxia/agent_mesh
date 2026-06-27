@@ -524,3 +524,16 @@ test('GLOBAL CONCURRENCY (#482): intake uses a single queue to prevent concurren
   // follow-ups (which are no-ops) can tolerate the lost pending slot.
   assert.match(wf.intake, /group:\s*dev-mesh-intake\b(?!-)/, 'intake concurrency group must be global (not per-issue) to serialise all runs (#482)');
 });
+
+test('529 RATE-LIMIT (#482): intake uses a global (not per-issue) workflow concurrency group', () => {
+  // Prior design: group: dev-mesh-intake-${{ github.event.issue.number || 'poll' }}
+  // serialised same-issue runs but allowed different issues to fire in parallel.
+  // That burst (8+ runs at the same second) caused persistent HTTP 529 overload (#482).
+  // Fix: global group "dev-mesh-intake" (no issue-number template) serialises ALL
+  // intake runs — at most 1 executing + 1 queued — while cancel-in-progress: false
+  // keeps in-flight claude -p runs safe.
+  assert.match(wf.intake, /group:\s*dev-mesh-intake\b/,
+    'intake concurrency group must be global (dev-mesh-intake), not per-issue');
+  assert.doesNotMatch(wf.intake, /group:.*issue\.number/,
+    'intake concurrency group must NOT use the per-issue issue.number template (causes 529 burst)');
+});
