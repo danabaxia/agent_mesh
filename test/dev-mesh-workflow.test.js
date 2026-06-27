@@ -480,6 +480,8 @@ test('529 SOFT-EXIT (#508): intake postrun passes infra_soft so 529 maps to warn
   // jitter is the correct recovery without blocking the queue on a human.
   assert.match(wf.intake, /infra_soft:\s*["']?true/,
     'intake postrun must pass infra_soft: true (soft-exit on 529)');
+  assert.match(wf.research, /infra_soft:\s*["']?true/,
+    'research postrun must pass infra_soft: true (soft-exit on 529)');
 });
 
 test('529 INITIAL JITTER (#482): intake passes initial_jitter_max_secs to spread burst API load', () => {
@@ -512,4 +514,13 @@ test('POST-APPROVAL FILTER (#482): intake skips issue_comment/issues events on p
     /contains\(github\.event\.issue\.labels\.\*\.name,\s*['"]done['"]\)/,
     'intake if: must skip issue events on done-state issues (#482)',
   );
+});
+
+test('GLOBAL CONCURRENCY (#482): intake uses a single queue to prevent concurrent API drain', () => {
+  // Issue #482: concurrent intake runs for DIFFERENT issues all hit the Claude API at the
+  // same moment when multiple issues-labeled events fire simultaneously. A global concurrency
+  // group (not per-issue) limits the workflow to 1 active + 1 pending run at any time, so no
+  // two intake runs consume API quota concurrently. The scheduled poll and per-issue relabeling
+  // follow-ups (which are no-ops) can tolerate the lost pending slot.
+  assert.match(wf.intake, /group:\s*dev-mesh-intake\b(?!-)/, 'intake concurrency group must be global (not per-issue) to serialise all runs (#482)');
 });
