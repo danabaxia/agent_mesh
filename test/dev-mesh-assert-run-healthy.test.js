@@ -119,6 +119,16 @@ test('gate: overload_error in output emits infra_auth annotation and exits 1', (
   assert.doesNotMatch(r.stderr, /\berror::agent run unhealthy\b/, 'overload_error must not emit the generic errored message');
 });
 
+test('gate: rate_limit_event in output emits infra_auth annotation and exits 1', () => {
+  const env = {
+    type: 'result', is_error: true, num_turns: 1, total_cost_usd: 0,
+    result: JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { utilization: 1 } }),
+  };
+  const r = runGate(env);
+  assert.equal(r.code, 1, 'rate_limit_event run must still be fatal without --soft-infra');
+  assert.match(r.stderr, /infra_auth/, 'rate_limit_event must emit the infra_auth annotation');
+});
+
 test('gate: 529 with --soft-infra emits warning and exits 0 (#508 Fix 3)', () => {
   // intake/research 529 soft-exit: transient API overload maps to warning + exit 0 so
   // the job stays re-runnable (orange) rather than human-blocked (hard red). The Triager
@@ -129,6 +139,17 @@ test('gate: 529 with --soft-infra emits warning and exits 0 (#508 Fix 3)', () =>
   assert.equal(r.code, 0, '--soft-infra 529 must soft-exit (orange job, not hard red)');
   assert.match(r.stderr + r.stdout, /::warning\b/, '--soft-infra 529 must emit a warning annotation, not an error');
   assert.match(r.stderr + r.stdout, /infra_auth/, '--soft-infra 529 must emit the infra_auth title');
+});
+
+test('gate: rate_limit_event with --soft-infra emits warning and exits 0 (#482)', () => {
+  const env = {
+    type: 'result', is_error: true, num_turns: 1, total_cost_usd: 0,
+    result: JSON.stringify({ type: 'rate_limit_event', rate_limit_info: { utilization: 1 } }),
+  };
+  const r = runGate(env, ['--soft-infra']);
+  assert.equal(r.code, 0, 'rate_limit_event with --soft-infra must soft-exit');
+  assert.match(r.stderr + r.stdout, /::warning\b/);
+  assert.match(r.stderr + r.stdout, /infra_auth/);
 });
 
 test('gate: non-529 error is still fatal with --soft-infra (exit 1) (#508 Fix 3 negative)', () => {
