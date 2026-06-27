@@ -480,6 +480,49 @@ test('529 SOFT-EXIT (#508): intake postrun passes infra_soft so 529 maps to warn
   // jitter is the correct recovery without blocking the queue on a human.
   assert.match(wf.intake, /infra_soft:\s*["']?true/,
     'intake postrun must pass infra_soft: true (soft-exit on 529)');
+  assert.match(wf.research, /infra_soft:\s*["']?true/,
+    'research postrun must pass infra_soft: true (soft-exit on 529)');
+});
+
+test('529 INITIAL JITTER (#482): intake passes initial_jitter_max_secs to spread burst API load', () => {
+  // Issue #482: 8+ persistent 529 overloads caused by many concurrent intake runs firing
+  // simultaneously from burst issue-labeled events (multiple issues relabeled at once by the
+  // scheduled poll). The existing mesh-retry-backoff only adds jitter on run_attempt > 1,
+  // so all first attempts collide at the same moment. Passing initial_jitter_max_secs spreads
+  // concurrent first-attempt runs across a 0–N second window, reducing peak API concurrency.
+  assert.match(wf.intake, /initial_jitter_max_secs:\s*["']?\d+/,
+    'intake must pass initial_jitter_max_secs to mesh-retry-backoff to spread burst events (#482)');
+});
+
+test('POST-APPROVAL FILTER (#482): intake skips issue_comment/issues events on post-approval issues', () => {
+  // Issue #482: concurrent intake runs on post-approval issues (approved/in-progress/
+  // pr:in-review/done/rejected) — where the Analyst has no work to do — caused 529 API
+  // overloads. The job if: must filter these at the YAML level so no API slot is consumed.
+  // schedule/workflow_dispatch are unaffected (github.event.issue is absent → fires normally).
+  assert.match(
+    wf.intake,
+    /contains\(github\.event\.issue\.labels\.\*\.name,\s*['"]approved['"]\)/,
+    'intake if: must skip issue events on approved-state issues (#482)',
+  );
+  assert.match(
+    wf.intake,
+    /contains\(github\.event\.issue\.labels\.\*\.name,\s*['"]in-progress['"]\)/,
+    'intake if: must skip issue events on in-progress-state issues (#482)',
+  );
+  assert.match(
+    wf.intake,
+    /contains\(github\.event\.issue\.labels\.\*\.name,\s*['"]done['"]\)/,
+    'intake if: must skip issue events on done-state issues (#482)',
+  );
+});
+
+test('GLOBAL CONCURRENCY (#482): intake uses a single queue to prevent concurrent API drain', () => {
+  // Issue #482: concurrent intake runs for DIFFERENT issues all hit the Claude API at the
+  // same moment when multiple issues-labeled events fire simultaneously. A global concurrency
+  // group (not per-issue) limits the workflow to 1 active + 1 pending run at any time, so no
+  // two intake runs consume API quota concurrently. The scheduled poll and per-issue relabeling
+  // follow-ups (which are no-ops) can tolerate the lost pending slot.
+  assert.match(wf.intake, /group:\s*dev-mesh-intake\b(?!-)/, 'intake concurrency group must be global (not per-issue) to serialise all runs (#482)');
 });
 
 test('529 RATE-LIMIT (#482): intake uses a global (not per-issue) workflow concurrency group', () => {

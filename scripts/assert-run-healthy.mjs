@@ -75,7 +75,10 @@ if (!health.healthy && FATAL.has(health.status)) {
   // annotation so the Triager classifies it correctly (not as a code/config bug),
   // and add a hint to re-run with back-off via .github/actions/mesh-retry-backoff.
   const raw = JSON.stringify(parsed).toLowerCase();
-  const is529 = raw.includes('529') || raw.includes('overloaded') || raw.includes('overload_error');
+  // rate_limit_event covers quota-exhaustion (7-day rolling limit) which surfaces as
+  // {"type":"rate_limit_event","rate_limit_info":{"utilization":1,...}} in the execution
+  // stream without the string "529" or "overloaded" present (issue #482).
+  const is529 = raw.includes('529') || raw.includes('overloaded') || raw.includes('overload_error') || raw.includes('rate_limit_event');
   if (is529 && softInfra) {
     // Soft-exit (#508 Fix 3): 529 is transient infra noise for intake/research roles.
     // Emit a warning (not an error) so the Triager classifies it correctly, and exit 0
