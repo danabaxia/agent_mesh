@@ -4,7 +4,8 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, writeFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnFile, killProcessTree, resolveSpawnTarget } from '../src/process.js';
+import { spawnFile, killProcessTree, resolveSpawnTarget, appendBounded } from '../src/process.js';
+import { MAX_CHILD_OUTPUT_CHARS } from '../src/config.js';
 
 // A parent script that spawns a grandchild (NOT detached, so it stays in the
 // parent's process group) which records its own pid and then lives forever.
@@ -169,4 +170,43 @@ test('killProcessTree escalates to SIGKILL for a tree that ignores SIGTERM', asy
 
   const died = await waitFor(() => !isAlive(grandchildPid), 5000);
   assert.equal(died, true, `SIGTERM-ignoring grandchild ${grandchildPid} must be SIGKILLed`);
+});
+
+test('appendBounded: below limit → value is concatenated, truncated:false', () => {
+  const result = appendBounded('hello', ' world', 100);
+  assert.equal(result.value, 'hello world');
+  assert.equal(result.truncated, false);
+});
+
+test('appendBounded: exactly at limit → not truncated', () => {
+  const result = appendBounded('aa', 'bb', 4);
+  assert.equal(result.value, 'aabb');
+  assert.equal(result.truncated, false);
+});
+
+test('appendBounded: above limit → keeps tail, truncated:true', () => {
+  // combined='abcdefgh' (8 chars), limit=5 → keep last 5 chars
+  const result = appendBounded('abc', 'defgh', 5);
+  assert.equal(result.value, 'defgh');
+  assert.equal(result.truncated, true);
+});
+
+test('appendBounded: empty current below limit → no truncation', () => {
+  const result = appendBounded('', 'hi', 10);
+  assert.equal(result.value, 'hi');
+  assert.equal(result.truncated, false);
+});
+
+test('spawnFile: process emitting more than MAX_CHILD_OUTPUT_CHARS produces stdoutTruncated:true', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agent-mesh-trunc-'));
+  const script = join(dir, 'flood.mjs');
+  // Emit MAX_CHILD_OUTPUT_CHARS + 10 bytes to stdout in one write to guarantee truncation.
+  await writeFile(
+    script,
+    `const n = ${MAX_CHILD_OUTPUT_CHARS} + 10;\nprocess.stdout.write('x'.repeat(n));\n`,
+    'utf8'
+  );
+  const result = await spawnFile(process.execPath, [script], {});
+  assert.equal(result.stdoutTruncated, true, 'stdoutTruncated must be true when output exceeds MAX_CHILD_OUTPUT_CHARS');
+  assert.equal(result.stdout.length, MAX_CHILD_OUTPUT_CHARS, 'stdout buffer capped at MAX_CHILD_OUTPUT_CHARS');
 });

@@ -214,7 +214,7 @@ function parseEnvAllowlist(value) {
   return value.split(',').map((k) => k.trim()).filter(Boolean);
 }
 
-function buildWorkerBaseEnv(source = {}) {
+export function buildWorkerBaseEnv(source = {}) {
   const allow = new Set([
     ...DEFAULT_WORKER_ENV_KEYS,
     ...parseEnvAllowlist(source.AGENT_MESH_WORKER_ENV_ALLOWLIST),

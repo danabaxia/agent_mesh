@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildAskInvocation, buildClaudeEnv, buildClaudeInvocation } from '../src/delegate-invocation.js';
+import { buildAskInvocation, buildClaudeEnv, buildClaudeInvocation, buildWorkerBaseEnv } from '../src/delegate-invocation.js';
 
 test('buildClaudeEnv: workers get DISABLE_AUTOUPDATER=1 by default (auto-update spawn races), caller override respected', () => {
   // Mesh workers spawn claude constantly; any of them triggering the npm
@@ -147,4 +147,47 @@ test('buildClaudeInvocation: thinkingEffort "low" → --effort low (explicit sup
   const env = { AGENT_MESH_LOG_DIR: '.agent-mesh/logs' };
   const { args } = await buildClaudeInvocation({ root, mode: 'ask', task: 'hi', env, callEnv: env, claudeEnv: { ...env }, thinkingEffort: 'low' });
   assert.equal(args[args.indexOf('--effort') + 1], 'low');
+});
+
+test('buildWorkerBaseEnv: sensitive keys (DATABASE_URL, AWS_SECRET_ACCESS_KEY) are excluded', () => {
+  const source = {
+    PATH: '/usr/bin',
+    DATABASE_URL: 'postgres://secret',
+    AWS_SECRET_ACCESS_KEY: 'supersecret',
+    AGENT_MESH_TIMEOUT_MS: '60000',
+  };
+  const result = buildWorkerBaseEnv(source);
+  assert.equal(result.DATABASE_URL, undefined);
+  assert.equal(result.AWS_SECRET_ACCESS_KEY, undefined);
+});
+
+test('buildWorkerBaseEnv: allowlisted OS keys (PATH, HOME, TMPDIR) are preserved', () => {
+  const source = { PATH: '/usr/bin:/usr/local/bin', HOME: '/home/user', TMPDIR: '/tmp' };
+  const result = buildWorkerBaseEnv(source);
+  assert.equal(result.PATH, '/usr/bin:/usr/local/bin');
+  assert.equal(result.HOME, '/home/user');
+  assert.equal(result.TMPDIR, '/tmp');
+});
+
+test('buildWorkerBaseEnv: AGENT_MESH_* prefix keys pass through', () => {
+  const source = { AGENT_MESH_TIMEOUT_MS: '30000', AGENT_MESH_FOO: 'bar', PATH: '/usr/bin' };
+  const result = buildWorkerBaseEnv(source);
+  assert.equal(result.AGENT_MESH_TIMEOUT_MS, '30000');
+  assert.equal(result.AGENT_MESH_FOO, 'bar');
+});
+
+test('buildWorkerBaseEnv: AGENT_MESH_WORKER_ENV_ALLOWLIST extends the allowlist', () => {
+  const source = {
+    PATH: '/usr/bin',
+    CUSTOM_TOKEN: 'abc123',
+    ANOTHER_VAR: 'xyz',
+    AGENT_MESH_WORKER_ENV_ALLOWLIST: 'CUSTOM_TOKEN,ANOTHER_VAR',
+  };
+  const result = buildWorkerBaseEnv(source);
+  assert.equal(result.CUSTOM_TOKEN, 'abc123');
+  assert.equal(result.ANOTHER_VAR, 'xyz');
+  // vars NOT in the allowlist and not AGENT_MESH_* are still excluded
+  const source2 = { PATH: '/usr/bin', SECRET: 'nope', AGENT_MESH_WORKER_ENV_ALLOWLIST: 'CUSTOM_TOKEN' };
+  const result2 = buildWorkerBaseEnv(source2);
+  assert.equal(result2.SECRET, undefined);
 });

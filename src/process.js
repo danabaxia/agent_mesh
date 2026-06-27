@@ -190,7 +190,7 @@ export function spawnFile(command, args, options = {}) {
   });
 }
 
-function appendBounded(current, chunk, limit) {
+export function appendBounded(current, chunk, limit) {
   const text = `${current}${chunk}`;
   if (text.length <= limit) return { value: text, truncated: false };
   return { value: text.slice(text.length - limit), truncated: true };
