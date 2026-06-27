@@ -7,6 +7,7 @@ Failure policy (spec §9):
 Idempotent on the record id (ULID), so at-least-once delivery => exactly-once storage.
 """
 import json
+import urllib.error
 import urllib.request
 
 
@@ -48,8 +49,11 @@ def http_poster(url, token):
             method="POST",
             headers={"content-type": "application/json", "authorization": f"Bearer {token}"},
         )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return r.status
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code  # 4xx/5xx: let sync_once classify dead vs transient
 
     return post
 

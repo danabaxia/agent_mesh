@@ -37,6 +37,20 @@ test('too many tags rejected', () => {
   assert.equal(r.error, 'tags');
 });
 
+test('overlong title rejected 400', () => {
+  const r = validateCapture({ id: ULID, ts: '2026-06-27T00:00:00Z', text: 'hi', title: 'x'.repeat(201), source: 'voice' });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 400);
+  assert.equal(r.error, 'title');
+});
+
+test('tag longer than 64 chars rejected', () => {
+  const r = validateCapture({ id: ULID, ts: '2026-06-27T00:00:00Z', text: 'hi', tags: ['x'.repeat(65)], source: 'voice' });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 400);
+  assert.equal(r.error, 'tags');
+});
+
 test('put is durable and idempotent on id', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cap-'));
   const store = makeStore(dir);
