@@ -481,3 +481,13 @@ test('529 SOFT-EXIT (#508): intake postrun passes infra_soft so 529 maps to warn
   assert.match(wf.intake, /infra_soft:\s*["']?true/,
     'intake postrun must pass infra_soft: true (soft-exit on 529)');
 });
+
+test('529 INITIAL JITTER (#482): intake passes initial_jitter_max_secs to spread burst API load', () => {
+  // Issue #482: 8+ persistent 529 overloads caused by many concurrent intake runs firing
+  // simultaneously from burst issue-labeled events (multiple issues relabeled at once by the
+  // scheduled poll). The existing mesh-retry-backoff only adds jitter on run_attempt > 1,
+  // so all first attempts collide at the same moment. Passing initial_jitter_max_secs spreads
+  // concurrent first-attempt runs across a 0–N second window, reducing peak API concurrency.
+  assert.match(wf.intake, /initial_jitter_max_secs:\s*["']?\d+/,
+    'intake must pass initial_jitter_max_secs to mesh-retry-backoff to spread burst events (#482)');
+});
