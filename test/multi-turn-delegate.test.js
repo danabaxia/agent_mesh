@@ -231,6 +231,7 @@ test('E2E: B→C multi-turn resumes across real per-call teardown; reset + calle
       AGENT_MESH_CLAUDE: stub,
       AGENT_MESH_PROJECTS_DIR: projects,
       AGENT_MESH_TEST_PLATFORM: platform,
+      AGENT_MESH_WORKER_ENV_ALLOWLIST: 'CAPTURE_PATH',
       CAPTURE_PATH: capture
     }
   };

@@ -230,13 +230,21 @@ function buildWorkerBaseEnv(source = {}) {
 }
 
 export function buildClaudeEnv({ root, env, mode, callEnv, runId }) {
+  // Vars in the caller's env dict that differ from process.env are intentional
+  // overrides (e.g. CAPTURE_PATH in tests, AGENT_MESH_CLAUDE for fake-claude).
+  // In production env === process.env so every key compares equal → empty, no
+  // leakage. In tests/scripts env is a curated sparse dict so these pass through.
+  const intentionalEnv = env
+    ? Object.fromEntries(Object.entries(env).filter(([k, v]) => process.env[k] !== v))
+    : {};
   const result = {
-    ...buildWorkerBaseEnv(env || process.env),
+    ...buildWorkerBaseEnv(process.env),
     // Workers must NOT self-update: any of the many spawned claude processes
     // triggering the npm auto-updater swaps the binary under concurrent
     // spawns → ENOENT races (observed 2026-06-10 and 2026-06-12T02:42Z).
-    // Updates belong to the user's interactive claude; explicit env wins.
-    DISABLE_AUTOUPDATER: '1',
+    // Updates belong to the user's interactive claude; explicit caller env wins.
+    DISABLE_AUTOUPDATER: env?.DISABLE_AUTOUPDATER ?? '1',
+    ...intentionalEnv,
     ...callEnv,
     AGENT_MESH_ROOT: root,
     AGENT_MESH_MODE: mode,
