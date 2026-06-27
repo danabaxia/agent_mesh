@@ -7,6 +7,9 @@ export const MAX_TASK_CHARS = 16_384;
 // buffer before a newline arrives, so a peer cannot grow the receive buffer
 // without limit. Generously above MAX_TASK_CHARS to allow JSON envelope/metadata.
 export const MAX_LINE_CHARS = 1_048_576;
+// Upper bound retained per child stdout/stderr stream. Final logs already store
+// tails; bounding the live buffer prevents a noisy child from exhausting memory.
+export const MAX_CHILD_OUTPUT_CHARS = 1_048_576;
 export const MAX_DESCRIPTION_CHARS = 1200;
 // Below this normalized length an AGENT.md is too thin to route on (issue #184):
 // readAgentDescription supplements/replaces it with an auto-harvested [auto]
