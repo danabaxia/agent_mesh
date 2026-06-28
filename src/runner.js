@@ -58,3 +58,23 @@ export function parseScriptRunnerResult(stdout) {
       : null
   };
 }
+
+/**
+ * Read the brain kind from the served agent's own agent.json
+ * (x-agentmesh.runner.kind). Additive to readRunnerConfig: a {command} script
+ * card has no kind and stays 'claude'-family. Caller input can never set this
+ * (we read the served agent's own card at `root`), preserving the anti-spoof
+ * invariant. Missing/invalid → 'claude'.
+ *
+ * @param {string} root canonical agent root directory
+ * @returns {Promise<'claude' | 'gemini'>}
+ */
+export async function readBrainKind(root) {
+  try {
+    const text = await readFile(join(root, 'agent.json'), 'utf8');
+    const runner = JSON.parse(text)?.['x-agentmesh']?.runner;
+    return runner && runner.kind === 'gemini' ? 'gemini' : 'claude';
+  } catch {
+    return 'claude';
+  }
+}

@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULT_DEPTH, MAX_LINE_CHARS } from '../config.js';
-import { delegateTask } from '../delegate.js';
+import { runAgent } from './run-agent.js';
 import { describeFolder } from '../description.js';
 import { SerialQueue } from '../lock.js';
 import {
@@ -213,7 +213,7 @@ async function handleMessage({ message, root, env, card, doQueue, agentModes }) 
     }
 
     const started = process.hrtime.bigint();
-    const run = () => delegateTask({ root, env, input: validation.value.input });
+    const run = () => runAgent({ root, env, input: validation.value.input });
     const result = validation.value.input.mode === 'do'
       ? await runSerialized({ queue: doQueue, run, started })
       : await runWithMetrics({ run, started, queueWaitMs: 0 });

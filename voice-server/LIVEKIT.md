@@ -37,8 +37,10 @@ mirroring the `/m` PWA. Open `https://<mac>.ts.net/voice/?t=<device secret>` on 
 
 - VAD + end-of-turn detection (`pip install livekit-plugins-silero`).
 - On end-of-turn: write the captured audio segment to disk (`audio_ref`), then
-  `handle_turn(audio_ref, ts, outbox, stt, brain, tts)` with the demo's adapters —
-  faster-whisper STT, Gemini brain, Kokoro **streaming** TTS (first chunk immediately).
+  `handle_turn(audio_ref, ts, outbox, stt, send_a2a, tts, *, context_id, lang, ...)` with
+  the demo's adapters — faster-whisper STT, Kokoro **streaming** TTS (first chunk
+  immediately). The brain (reasoning) now lives in the concierge mesh agent, reached via
+  one A2A SendMessage through `send_a2a`; the voice service holds no logic.
 - Publish the TTS audio back into the room + a data message `{transcript, reply}`.
 - The Phase A syncer drains the outbox to the Mac exactly as before.
 

@@ -9,5 +9,5 @@
     { "id": "mesh-status", "name": "Mesh status", "description": "Ask peers + mesh-health to report health, blocked work, and recent activity.", "tags": ["monitor"] },
     { "id": "propose-action", "name": "Propose action", "description": "Propose a Confirm-gated action (file an issue, assign a task, ask a peer to re-run).", "tags": ["advise"] }
   ],
-  "x-agentmesh": { "modes": ["ask"], "meshVersion": "0.1.0" }
+  "x-agentmesh": { "modes": ["ask"], "meshVersion": "0.1.0", "runner": { "kind": "gemini" } }
 }

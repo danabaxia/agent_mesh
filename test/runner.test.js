@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readRunnerConfig, parseScriptRunnerResult } from '../src/runner.js';
+import { readRunnerConfig, parseScriptRunnerResult, readBrainKind } from '../src/runner.js';
 
 // ── readRunnerConfig ──────────────────────────────────────────────────────────
 
@@ -124,4 +124,41 @@ test('parseScriptRunnerResult: non-finite numbers in usage → null for those fi
   assert.equal(r.usage.input_tokens, null);
   assert.equal(r.usage.output_tokens, null);
   assert.equal(r.usage.total_cost_usd, 0.5);
+});
+
+// ── readBrainKind ────────────────────────────────────────────────────────────
+
+async function agentDir(card) {
+  const root = await mkdtemp(join(tmpdir(), 'brainkind-'));
+  if (card !== undefined) await writeFile(join(root, 'agent.json'), JSON.stringify(card));
+  return root;
+}
+
+test('readBrainKind: gemini card selects gemini', async () => {
+  const root = await agentDir({ 'x-agentmesh': { runner: { kind: 'gemini' } } });
+  assert.equal(await readBrainKind(root), 'gemini');
+});
+
+test('readBrainKind: default/absent is claude', async () => {
+  assert.equal(await readBrainKind(await agentDir(undefined)), 'claude');
+  assert.equal(await readBrainKind(await agentDir({})), 'claude');
+  assert.equal(await readBrainKind(await agentDir({ 'x-agentmesh': {} })), 'claude');
+});
+
+test('readBrainKind: existing {command} script card stays claude-family', async () => {
+  const root = await agentDir({ 'x-agentmesh': { runner: { command: './run.sh' } } });
+  assert.equal(await readBrainKind(root), 'claude');
+});
+
+test('readBrainKind: unknown kind falls back to claude', async () => {
+  const root = await agentDir({ 'x-agentmesh': { runner: { kind: 'gpt5' } } });
+  assert.equal(await readBrainKind(root), 'claude');
+});
+
+test('readBrainKind: runtime is agent-owned — a caller registry cannot override it', async () => {
+  // Plant a registry.json (the caller-controlled peer spawn list) trying to claim a
+  // different runtime. readBrainKind reads the SERVED agent's own agent.json only.
+  const root = await agentDir({ 'x-agentmesh': { runner: { kind: 'gemini' } } });
+  await writeFile(join(root, 'registry.json'), JSON.stringify({ peers: { x: { 'x-agentmesh': { runner: { kind: 'claude' } } } } }));
+  assert.equal(await readBrainKind(root), 'gemini'); // own card wins; registry ignored
 });
