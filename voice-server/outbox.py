@@ -61,6 +61,29 @@ class Outbox:
     def attach_enrichment(self, rid: str, d: dict):
         self.c.execute("UPDATE outbox SET enrichment=? WHERE id=?", (json.dumps(d), rid))
 
+    def apply_enrichment(self, rid: str, enrichment: dict) -> bool:
+        """Durably attach an idea enrichment and mark the row 'enriched'.
+        Idempotent by rid (overwrites the same row). On any write/serialize
+        failure, mark the row 'enrichment_pending' so the next sync re-applies
+        it — the idea is never lost just because the apply raced. Returns True
+        on success, False if the row was left pending."""
+        try:
+            payload = json.dumps(enrichment)
+        except (TypeError, ValueError) as e:
+            self.mark(rid, "enrichment_pending", f"enrich-serialize: {e}")
+            return False
+        try:
+            self.c.execute(
+                "UPDATE outbox SET enrichment=?,"
+                " state=CASE WHEN state IN ('captured','enriched') THEN 'enriched' ELSE state END"
+                " WHERE id=?",
+                (payload, rid),
+            )
+            return True
+        except Exception as e:  # noqa: BLE001 — durability: degrade, never crash the turn
+            self.mark(rid, "enrichment_pending", f"enrich-write: {e}")
+            return False
+
     def mark(self, rid: str, state: str, err: str = None):
         self.c.execute("UPDATE outbox SET state=?, last_error=? WHERE id=?", (state, err, rid))
 
