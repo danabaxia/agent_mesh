@@ -168,7 +168,8 @@ class H(BaseHTTPRequestHandler):
             rid = handle_turn(
                 "/tmp/in.wav", ts, OB, _stt,
                 send_a2a=_client.send, tts=tts,
-                context_id=_SESSION_ID, lang=(forced or "zh"),
+                context_id=_SESSION_ID, lang=(forced or "en"),
+                fallback=("Sorry, I can't reach the assistant right now." if (forced or "en")=="en" else "抱歉，连不上助手，稍后再试"),
             )
             t_stt = time.perf_counter()
 
