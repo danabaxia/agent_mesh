@@ -26,7 +26,7 @@ _client = A2AHttpClient(CONCIERGE_A2A_URL)
 _SESSION_ID = os.environ.get("LK_ROOM", "drive-room")   # stable per-session context_id for conversation memory
 
 print("loading models ...", flush=True)
-WHISPER = WhisperModel(os.environ.get("WHISPER_MODEL", "large-v3"), device="cuda", compute_type="int8")
+WHISPER = WhisperModel(os.environ.get("WHISPER_MODEL", "large-v3"), device="cuda", compute_type="float16")
 PIPES = {"a": KPipeline(lang_code="a", device="cuda"), "z": KPipeline(lang_code="z", device="cuda")}
 GEM = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 OB = Outbox("/opt/voice/turns.db")
@@ -39,6 +39,10 @@ TS = re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?\b")
 def detect_lang(t): return "zh" if CJK.search(t or "") else "en"
 def cfg_for(key): c = CFG["by_lang"][key]; return c["lang_code"], c["voice"]
 
+_STT_PROMPT = {
+    "zh": "这是关于 mesh、agent 等技术的普通话对话，可能夹带 mesh、agent、PR、issue 等英文词。",
+    "en": "A spoken conversation about a mesh of AI agents, mixing technical terms.",
+}
 def stt_local(p, lang=None):
     # lang ("zh"/"en") forces whisper's language → no hallucinating other languages on unclear audio
     samples, sr = wav_samples(p)
@@ -52,6 +56,7 @@ def stt_local(p, lang=None):
         p, vad_filter=True, language=(lang or None),
         beam_size=1, temperature=0, condition_on_previous_text=False,
         no_speech_threshold=0.6, log_prob_threshold=-1.0, compression_ratio_threshold=2.4,
+        initial_prompt=_STT_PROMPT.get(lang or "zh", _STT_PROMPT["zh"]),
         vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=400))
     return " ".join(s.text for s in segs).strip(), (getattr(info, "language", "") or "")
 def stt_gemini(p, lang=None):
