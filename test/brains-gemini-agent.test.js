@@ -78,3 +78,35 @@ test('history persists across turns (same contextId)', async () => {
   await runGeminiAgent({ root, env: {}, input: { mode: 'ask', task: 'second' }, session: { id: 'ctx-h' }, brain: brain2, deps, now: 2 });
   assert.ok(seen.includes('first')); // prior user turn replayed from the store
 });
+
+test('a brain that throws returns a status:error Task (failure-as-data, never an unhandled rejection)', async () => {
+  const root = await conciergeRoot();
+  const brain = async () => { throw new Error('gemini 503 upstream'); };
+  // must RESOLVE (not reject) — a rejection here would crash the unsupervised A2A server.
+  const r = await runGeminiAgent({ root, env: {}, input: { mode: 'ask', task: 'hi' }, session: { id: 'err1' }, brain, deps, now: 1 });
+  assert.equal(r.status, 'error');
+  assert.equal(r.error.code, 'internal');
+  assert.match(r.error.message, /503 upstream/);
+  assert.equal(r.summary, '');
+  assert.ok(r.log_path); // run-log still written
+});
+
+test('a throwing tool backend is absorbed as data — the turn still completes (no crash)', async () => {
+  const root = await conciergeRoot();
+  // The tools layer converts a thrown backend into {error} data, so the loop continues
+  // and the brain can still answer. The turn must NOT error or throw.
+  const script = [{ toolCall: { name: 'ask_peer', args: { agent: 'tester', question: 'x' } } }, { reply: "I couldn't reach that agent, but here's what I know." }];
+  let i = 0;
+  const brain = async () => script[i++];
+  const boomDeps = { ...deps, askPeer: async () => { throw new Error('peer bridge exploded'); } };
+  const r = await runGeminiAgent({ root, env: {}, input: { mode: 'ask', task: 'ask tester' }, session: { id: 'err2' }, brain, deps: boomDeps, now: 1 });
+  assert.equal(r.status, 'done'); // resilient: a tool failure never crashes or fails the whole turn
+  assert.match(r.summary, /couldn't reach/);
+});
+
+test('brain usage reaches the result (observability)', async () => {
+  const root = await conciergeRoot();
+  const brain = async () => ({ reply: 'ok', usage: { total_tokens: 11 } });
+  const r = await runGeminiAgent({ root, env: {}, input: { mode: 'ask', task: 'hi' }, session: { id: 'u1' }, brain, deps, now: 1 });
+  assert.deepEqual(r.usage, { total_tokens: 11 });
+});

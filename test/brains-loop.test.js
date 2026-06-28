@@ -49,3 +49,16 @@ test('hop budget is bounded (no infinite loop)', async () => {
   assert.equal(out.reply, '');
   assert.equal(out.hops, 3);
 });
+
+test('threads the brain usage on the final reply step', async () => {
+  const brain = async () => ({ reply: 'done', usage: { input_tokens: 4, output_tokens: 2, total_tokens: 6 } });
+  const out = await runBrainLoop({ systemPrompt: 's', messages: [{ role: 'user', text: 'hi' }], tools, brain });
+  assert.deepEqual(out.usage, { input_tokens: 4, output_tokens: 2, total_tokens: 6 });
+});
+
+test('usage is null when the brain reports none (and on hop exhaustion)', async () => {
+  const noUsage = await runBrainLoop({ systemPrompt: 's', messages: [{ role: 'user', text: 'hi' }], tools, brain: async () => ({ reply: 'x' }) });
+  assert.equal(noUsage.usage, null);
+  const exhausted = await runBrainLoop({ systemPrompt: 's', messages: [{ role: 'user', text: 'x' }], tools, brain: async () => ({ toolCall: { name: 'mesh_status', args: {} } }), maxHops: 2 });
+  assert.equal(exhausted.usage, null);
+});
