@@ -44,6 +44,14 @@ The **adversarial battery** (scripts/eval-adversarial.mjs + eval/adversarial/, L
 
 `agent-mesh serve-a2a <folder>` is the reference A2A stdio server fronting exactly **one** project folder. `agent-mesh serve-a2a-http <folder>` is the HTTP/JSON-RPC binding of the same contract (standard A2A interop path). A caller wires peers through a static registry, sends `SendMessage` (A2A v1.0), and receives an A2A `Task`. `agent-mesh serve <folder>` remains as the MCP compatibility server from the validated baseline. There is **no central registry, broker, or dispatcher** by design. Read `PROJECT.md` for the full PRD, security rationale, and the pinned wire contract; it is the source of truth and must stay consistent with the code.
 
+## Principles (governing — read before designing any feature)
+
+These are foundational. They override convenience and any prior drift; a design that violates one is wrong, not a trade-off.
+
+1. **A voice/UI service is a data ingress, never logic.** The voice runtime (STT · TTS · transport, e.g. `voice-server/`) only moves data: audio ⇄ text. It holds **no application logic** — no deciding, no mesh-querying, no idea-classifying, no memory. It captures a transcript, hands it to a mesh agent over A2A, and renders that agent's reply text to speech. A "brain" living inside the voice service is the anti-pattern this rule exists to prevent.
+2. **Logic lives only in agents registered in the mesh.** Every piece of reasoning or decision belongs to an agent that is **registered in `mesh.json`**, with its own obeyed prompt (`prompts/system.md`) and `memory/`, served via `serve-a2a`, and reached via A2A `SendMessage`. `AGENT.md` is bounded `describe_self` **data**, never the obeyed prompt. An external/standalone brain that carries logic must be refactored into a registered agent and routed to — never bolted onto an ingress.
+3. **MVP → production, spec-first.** Every feature progresses MVP → production behind a complete spec (`docs/superpowers/specs/`), a defined project framework, and a matching test suite (the project's `node --test` L0 posture for testable units). No production code lands without its spec and its tests.
+
 ## Architecture
 
 Deliberate split: a **pure core** (unit-provable safety logic) plus a **thin impure shell** (only the `claude`/`git` spawns touch the outside world).

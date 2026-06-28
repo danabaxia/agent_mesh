@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent Mesh · Voice Architecture</title>
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#0f151e; --panel2:#131b26; --card:#0c121a; --ink:#e6edf3;
+    --mut:#7d8896; --dim:#586069; --line:#1d2733;
+    --phone:#d29922; --win:#2f81f7; --mac:#3fb950; --git:#a371f7; --data:#3fb950; --ctrl:#2f81f7;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:
+    radial-gradient(1100px 560px at 82% -8%, #11202f 0%, transparent 58%),
+    radial-gradient(820px 460px at -5% 108%, #0e1a14 0%, transparent 52%), var(--bg);
+    color:var(--ink); font:14px/1.55 ui-rounded,-apple-system,"Segoe UI",system-ui,sans-serif;}
+  .wrap{max-width:1200px;margin:0 auto;padding:34px 22px 80px}
+  header{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;border-bottom:1px solid var(--line);padding-bottom:16px}
+  h1{font-size:21px;letter-spacing:.02em;margin:0;font-weight:700}
+  .sub{color:var(--mut);font-size:13px}
+  .tag{font:600 11px/1 var(--mono);padding:5px 9px;border-radius:999px;border:1px solid var(--line);color:var(--mut)}
+  .tag.live{color:#0a0e14;background:var(--mac);border-color:var(--mac)}
+  h3.sec{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin:30px 0 4px;font-weight:700;display:flex;align-items:center;gap:10px}
+  h3.sec::after{content:"";flex:1;height:1px;background:var(--line)}
+  .sechint{color:var(--dim);font-size:12px;margin:2px 0 6px}
+
+  .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;margin:14px 0 2px;color:var(--mut);font-size:12px;font-family:var(--mono)}
+  .flow .n{padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--ink)}
+  .flow .a{color:var(--dim)}
+
+  .row{display:grid;grid-template-columns:1fr 1.25fr 1fr;gap:16px;margin-top:14px}
+  @media(max-width:900px){.row{grid-template-columns:1fr}}
+  .unit{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);border-radius:16px;padding:15px 15px 13px;position:relative;overflow:hidden}
+  .unit::before{content:"";position:absolute;inset:0 0 auto 0;height:3px}
+  .unit.phone::before{background:var(--phone)} .unit.win::before{background:var(--win)} .unit.mac::before{background:var(--mac)}
+  .uhead{display:flex;align-items:center;gap:9px}
+  .uhead .ic{font-size:18px}
+  .uhead h2{font-size:15px;margin:0;font-weight:700}
+  .uhead .meta{margin-left:auto;font:600 10px/1 var(--mono);color:var(--mut)}
+  .uwhere{color:var(--dim);font-size:11px;margin:3px 0 11px;font-family:var(--mono)}
+  .layer{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0;background:var(--card)}
+  .layer .lt{font-size:12px;font-weight:600}
+  .layer .lt .k{color:var(--dim);font-family:var(--mono);font-size:10px;margin-right:6px}
+  .layer .ld{color:var(--mut);font-size:11.5px;margin-top:2px}
+  .layer.hot{border-color:#1e3a2a;box-shadow:inset 2px 0 0 var(--data)}
+  .chip{display:inline-block;font:600 9.5px/1 var(--mono);padding:3px 6px;border-radius:5px;margin-left:6px}
+  .c-gem{background:rgba(163,113,247,.16);color:#c8a6ff} .c-gpu{background:rgba(47,129,247,.14);color:#79b8ff}
+  .c-keep{background:rgba(63,185,80,.14);color:#56d364}
+
+  .planes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  @media(max-width:900px){.planes{grid-template-columns:1fr}}
+  .plane{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card)}
+  .plane h4{margin:0 0 4px;font-size:13px;display:flex;align-items:center;gap:8px}
+  .plane .pd{color:var(--mut);font-size:12px;margin-bottom:10px}
+  .pdot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .meshgrid{display:flex;flex-wrap:wrap;gap:7px}
+  .ag{font:600 11px/1 var(--mono);padding:6px 9px;border-radius:8px;border:1px solid var(--line);background:#0a1018;color:var(--ink)}
+  .ag.gw{border-color:#2f81f7;color:#79b8ff;border-style:dashed}
+  .ag.ext{border-color:#a371f7;color:#c8a6ff}
+  .note{color:var(--dim);font-size:11px;margin-top:9px;font-family:var(--mono)}
+
+  .lanes{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  @media(max-width:900px){.lanes{grid-template-columns:1fr}}
+  .lane{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--card)}
+  .lane h4{margin:0 0 7px;font-size:13px}
+  .lane.cloud h4{color:#79b8ff} .lane.local h4{color:#56d364}
+  .lane .kv{display:flex;gap:8px;font-size:12px;margin:3px 0;color:var(--mut)}
+  .lane .kv b{color:var(--ink);font-weight:600;min-width:64px}
+  .ghbar{margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:11px 15px;background:linear-gradient(90deg,rgba(163,113,247,.10),transparent);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .ghbar .g{font:600 12px/1 var(--mono);color:#c8a6ff}
+
+  .legend{display:flex;flex-wrap:wrap;gap:18px;margin:16px 0 0;font-size:12px;color:var(--mut)}
+  .legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .foot{color:var(--dim);font-size:11px;margin-top:24px;text-align:center;font-family:var(--mono)}
+  code{font-family:var(--mono);font-size:.92em;color:var(--mut)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Agent Mesh · Voice Architecture</h1>
+    <span class="sub">Phone ⇄ GPU Box ⇄ Mac mesh · Tailscale · data plane + control plane</span>
+    <span class="tag live">● LIVE</span>
+    <span class="tag">2026-06-28</span>
+  </header>
+
+  <!-- ============ DATA PLANE ============ -->
+  <h3 class="sec"><span class="pdot" style="background:var(--data)"></span>数据面 · 语音热路径</h3>
+  <div class="sechint">手机按住说话 → Box 上 STT→大脑→TTS 本地共置(零抖动)→ 语音回报。媒体走 Tailscale 直连 UDP。</div>
+
+  <div class="flow">
+    <span class="n" style="border-color:var(--phone)">📱 Phone PWA · 按住说话</span>
+    <span class="a">— Opus/WebRTC · wss 信令 →</span>
+    <span class="n" style="border-color:var(--win)">🖥️ Box · STT → 大脑 → TTS</span>
+    <span class="a">— 语音/字幕回 →</span>
+    <span class="n" style="border-color:var(--phone)">📱 听回复</span>
+  </div>
+
+  <div class="row">
+    <!-- PHONE -->
+    <div class="unit phone">
+      <div class="uhead"><span class="ic">📱</span><h2>Phone · 语音 I/O</h2><span class="meta">PWA</span></div>
+      <div class="uwhere">iOS Safari · Tailscale · enoch.taila74546.ts.net</div>
+      <div class="layer"><div class="lt"><span class="k">L1</span>交互</div><div class="ld">按住圆圈说话、松手处理 · 中/EN 手动切换 · 显示 STT/TTS 硬件</div></div>
+      <div class="layer"><div class="lt"><span class="k">L2</span>媒体</div><div class="ld">LiveKit JS · getUserMedia 推麦 · 播放回复 · talk 信号驱动捕获</div></div>
+      <div class="layer"><div class="lt"><span class="k">L3</span>传输</div><div class="ld">Opus / WebRTC over Tailscale · token-mint 短时 JWT</div></div>
+    </div>
+
+    <!-- BOX -->
+    <div class="unit win">
+      <div class="uhead"><span class="ic">🖥️</span><h2>Box · GPU 语音运行时</h2><span class="meta">RTX 3060</span></div>
+      <div class="uwhere">Win11 25H2 + WSL2 · mirrored networking · tailnet 100.97.133.55</div>
+      <div class="layer hot"><div class="lt"><span class="k">L1</span>传输 / 媒体</div><div class="ld">LiveKit server(config, node_ip=tailnet)+ 自写 rtc 桥 <code>agent_livekit.py</code> · tailscale serve → wss</div></div>
+      <div class="layer hot"><div class="lt"><span class="k">L2</span>捕获</div><div class="ld">push-to-talk(手机 talk 信号界定整句)+ 静音裁剪 · 半双工(说话时静麦)</div></div>
+      <div class="layer hot"><div class="lt"><span class="k">L3</span>STT<span class="chip c-gem">Gemini</span><span class="chip c-gpu">whisper 兜底</span></div><div class="ld">Gemini 听写主 · faster-whisper large-v3 (CUDA) 兜底 · 语言锁提示</div></div>
+      <div class="layer hot"><div class="lt"><span class="k">L4</span>大脑 · Gemini concierge<span class="chip c-gem">Gemini</span></div><div class="ld">mesh 结构进系统提示(懂 mesh ~1-2s)+ 对话记忆 + 工具 record_idea / list_agents / status / ask_agent</div></div>
+      <div class="layer hot"><div class="lt"><span class="k">L5</span>TTS<span class="chip c-gpu">Kokoro · CUDA</span></div><div class="ld">中 zm_yunyang / 英 am_adam · 句级分块合成</div></div>
+      <div class="layer"><div class="lt"><span class="k">L6</span>持久化<span class="chip c-keep">已并 main</span></div><div class="ld">SQLite(WAL) outbox · capture-first(STT/LLM 前先落库)</div></div>
+    </div>
+
+    <!-- MAC -->
+    <div class="unit mac">
+      <div class="uhead"><span class="ic">💻</span><h2>Mac · mesh 状态 + 工具</h2><span class="meta">always-on</span></div>
+      <div class="uwhere">dev-society 内圈 mesh · gh · dashboard :7077</div>
+      <div class="layer"><div class="lt">mesh-tools 服务</div><div class="ld"><code>/agents /status /context /ask</code> — Box 大脑经反向 SSH 隧道(:9100)调用 · 只读 + ask-only</div></div>
+      <div class="layer"><div class="lt">/capture 接收端<span class="chip c-keep">已并 main</span></div><div class="ld">durable-before-200 · 幂等(ULID)· outbox→syncer 异步落地</div></div>
+      <div class="layer"><div class="lt">想法入 mesh</div><div class="ld">大脑 record_idea → 自动建 gh <code>idea</code> issue → dev-society 接手</div></div>
+      <div class="layer"><div class="lt">dev-society 内圈 mesh</div><div class="ld">A2A agents(serve-a2a)· 守护进程 · 看板 · 注册表 · daemon</div></div>
+    </div>
+  </div>
+
+  <!-- ============ CONTROL PLANE ============ -->
+  <h3 class="sec"><span class="pdot" style="background:var(--ctrl)"></span>控制面 · agent mesh(A2A)</h3>
+  <div class="sechint">语音大脑是 mesh 的<b>外部 client</b>(option A):不注册进 mesh.json,但有对全体已服务 agent 的 ask-only 访问。intra-host = stdio/localhost;inter-host = 经各自 border-gw 走 Tailscale。</div>
+
+  <div class="planes">
+    <div class="plane">
+      <h4><span class="pdot" style="background:var(--mac)"></span>Mac 内圈 mesh · dev-society 智能体</h4>
+      <div class="pd">stdio / localhost · realpath-folder 身份 · daemon(外壳:git/gh/test)驱动</div>
+      <div class="meshgrid">
+        <span class="ag">orchestrator</span><span class="ag">coder</span><span class="ag">tester</span>
+        <span class="ag">reviewer</span><span class="ag">analyst</span><span class="ag">triager</span>
+        <span class="ag">maintainer</span><span class="ag">curator</span><span class="ag">security</span>
+        <span class="ag">concierge</span><span class="ag gw">⬡ border-gw</span>
+      </div>
+      <div class="note">概念上的 Claude concierge 仍在 mesh 内(慢,6–87s);语音用的是 Box 上的 Gemini concierge。</div>
+    </div>
+    <div class="plane">
+      <h4><span class="pdot" style="background:var(--git)"></span>语音 client(外部)+ 跨机连接</h4>
+      <div class="pd">Box 语音大脑 → Mac mesh-tools(/ask 桥到内圈 agents,ask-only)</div>
+      <div class="meshgrid">
+        <span class="ag ext">🎙️ Gemini concierge(Box)</span>
+        <span class="ag">⇄ mesh-tools(Mac)</span>
+        <span class="ag gw">↻ reverse SSH :9100</span>
+      </div>
+      <div class="note">媒体面:tailscaled 在 Windows 主机;mirrored 让 WSL 共享 tailnet → LiveKit 媒体手机直连 UDP 7882。</div>
+    </div>
+  </div>
+
+  <!-- ============ DEV WORKFORCE ============ -->
+  <h3 class="sec"><span class="pdot" style="background:var(--git)"></span>自治开发工作流 · 想法 → 上线代码</h3>
+  <div class="sechint">语音捕获的想法落成 GitHub <code>idea</code> issue,进入同一套开发工作流。两条部署道跑<b>同一</b>内圈 mesh 定义(<code>dev-mesh/</code>),经 GitHub 协调。</div>
+
+  <div class="lanes">
+    <div class="lane cloud">
+      <h4>☁️ 云道(主)· GitHub Actions · 临时</h4>
+      <div class="kv"><b>外壳</b><span>~20 个 dev-mesh-*.yml workflow</span></div>
+      <div class="kv"><b>runtime</b><span>claude-code-action@v1</span></div>
+      <div class="kv"><b>触发</b><span>issue label · PR · schedule</span></div>
+      <div class="kv"><b>内圈</b><span>runner 内 stdio A2A 现起</span></div>
+    </div>
+    <div class="lane local">
+      <h4>💻 本地道(dogfood)· Mac dev-society · 常驻</h4>
+      <div class="kv"><b>外壳</b><span>dev-society daemon(git/gh/test)</span></div>
+      <div class="kv"><b>host</b><span>Mac · launchd 常驻</span></div>
+      <div class="kv"><b>触发</b><span>轮询 GitHub(label route:a2a)</span></div>
+      <div class="kv"><b>内圈</b><span>Mac 上常驻 stdio A2A</span></div>
+    </div>
+  </div>
+  <div class="ghbar">
+    <span class="g">⎇ GitHub = 协调面</span>
+    <span class="sub">durable blackboard · 跨道 · 跨机 · 人也在里面 · labels = 路由 + 生命周期状态 · 语音 idea 从这里进</span>
+  </div>
+
+  <div class="legend">
+    <span><span class="dot" style="background:var(--data)"></span>数据面(WebRTC + 推理,热路径)</span>
+    <span><span class="dot" style="background:var(--ctrl)"></span>控制面(A2A · intra/inter-host)</span>
+    <span><span class="dot" style="background:#c8a6ff"></span>Gemini(云)</span>
+    <span><span class="dot" style="background:#79b8ff"></span>本地 GPU(whisper / Kokoro)</span>
+    <span><span class="dot" style="background:#56d364"></span>已并 main</span>
+    <span class="sub">⬡ = border 网关(无 LLM) · 圆 = agent · ext = 外部 client</span>
+  </div>
+
+  <div class="foot">agent_mesh · voice architecture (as-built) · MVP 可用 · 生产化(常驻服务)待办</div>
+</div>
+</body>
+</html>
