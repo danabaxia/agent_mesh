@@ -12,6 +12,7 @@ from google.genai import types
 from outbox import Outbox
 from agent import handle_turn
 from a2a_client import A2AHttpClient
+from audio_gate import has_speech, wav_samples
 
 for line in open("/opt/voice/.voice-env"):
     line = line.strip()
@@ -40,9 +41,23 @@ def cfg_for(key): c = CFG["by_lang"][key]; return c["lang_code"], c["voice"]
 
 def stt_local(p, lang=None):
     # lang ("zh"/"en") forces whisper's language → no hallucinating other languages on unclear audio
-    segs, info = WHISPER.transcribe(p, vad_filter=True, language=(lang or None))
+    samples, sr = wav_samples(p)
+    if not has_speech(samples, sr):
+        return "", ""                        # no real speech → don't let whisper invent text
+    # Anti-hallucination params (research 2026-06-28): vad_filter (Silero) drops non-speech;
+    # condition_on_previous_text=False stops cross-chunk drift; beam_size=1 + temperature=0
+    # avoid creative sampling; no_speech/log_prob/compression thresholds discard low-confidence
+    # and repetitive (hallucinated) segments.
+    segs, info = WHISPER.transcribe(
+        p, vad_filter=True, language=(lang or None),
+        beam_size=1, temperature=0, condition_on_previous_text=False,
+        no_speech_threshold=0.6, log_prob_threshold=-1.0, compression_ratio_threshold=2.4,
+        vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=400))
     return " ".join(s.text for s in segs).strip(), (getattr(info, "language", "") or "")
 def stt_gemini(p, lang=None):
+    samples, sr = wav_samples(p)
+    if not has_speech(samples, sr):
+        return ""                            # no real speech → skip the LLM (it would confabulate)
     hint = {"zh": " The audio is in Chinese (Mandarin); transcribe in Chinese characters.",
             "en": " The audio is in English; transcribe in English."}.get(lang, "")
     r = GEM.models.generate_content(model=GSTT, config=STTCFG, contents=[
