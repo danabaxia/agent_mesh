@@ -4,7 +4,7 @@
    All reasoning lives in the concierge agent (P1: voice = data ingress only)."""
 import os, io, re, json, time, datetime, urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
-import numpy as np, soundfile as sf
+import numpy as np, soundfile as sf, wave
 from faster_whisper import WhisperModel
 from kokoro import KPipeline
 from google import genai
@@ -90,6 +90,23 @@ ACKS = {k: [(t, synth(*cfg_for(k), t)) for t in ACK_TEXT[k]] for k in ACK_TEXT}
 
 REPLY_MODE = os.environ.get("REPLY_MODE", "brain")   # 'brain' = A2A agent reply; 'ack' = instant cached confirm
 
+def preprocess_audio(raw):
+    """Gain-normalize + light trim before STT — quiet/noisy phone audio (low SNR,
+    long PTT holds) transcribes far better after RMS normalization. Raw is kept for diagnosis."""
+    with wave.open(io.BytesIO(raw), "rb") as w:
+        sr = w.getframerate(); pcm = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(np.float32)
+    x = pcm / 32768.0
+    win = int(0.02 * sr); floor = 0.015
+    if len(x) > win:
+        e = np.array([np.sqrt(np.mean(x[i:i+win]**2)) for i in range(0, len(x)-win, win)])
+        v = np.where(e >= floor)[0]
+        if len(v): x = x[max(0,(v[0]-5)*win):min(len(x),(v[-1]+6)*win)]
+    rms = float(np.sqrt(np.mean(x*x))) + 1e-9
+    x = np.clip(x * min(0.15/rms, 6.0), -1, 1)
+    out = (x * 32767).astype("<i2")
+    b = io.BytesIO(); ww = wave.open(b, "wb"); ww.setnchannels(1); ww.setsampwidth(2); ww.setframerate(sr); ww.writeframes(out.tobytes()); ww.close()
+    return b.getvalue()
+
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_POST(self):
@@ -101,9 +118,15 @@ class H(BaseHTTPRequestHandler):
         forced = _q.get("lang", [""])[0].lower()
         forced = forced if forced in ("zh", "en") else ""   # manual UI language lock
         raw = self.rfile.read(int(self.headers.get("content-length", 0)))
-        with open("/tmp/in.wav", "wb") as f: f.write(raw)
+        try: clean = preprocess_audio(raw)
+        except Exception: clean = raw
+        with open("/tmp/in.wav", "wb") as f: f.write(clean)
         try:
             open("/opt/voice/last_in.wav", "wb").write(raw)   # keep the most recent turn for diagnosis
+            import glob
+            os.makedirs("/opt/voice/clips", exist_ok=True)
+            open(f"/opt/voice/clips/{int(time.time()*1000)}.wav","wb").write(raw)
+            for old in sorted(glob.glob("/opt/voice/clips/*.wav"))[:-24]: os.remove(old)
         except Exception:
             pass
         t0 = time.perf_counter()
