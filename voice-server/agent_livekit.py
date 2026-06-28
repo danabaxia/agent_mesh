@@ -23,7 +23,10 @@ LK_URL = os.environ.get("LIVEKIT_WS_URL", "ws://127.0.0.1:7880")
 LK_KEY = os.environ.get("LIVEKIT_API_KEY", "devkey")
 LK_SECRET = os.environ.get("LIVEKIT_API_SECRET", "secret")
 ROOM = os.environ.get("LK_ROOM", "drive-room")
-TURN_URL = os.environ.get("TURN_URL", "http://127.0.0.1:8780/turn?stt=gemini")
+# Default STT = local whisper-large-v3 (GPU): a dedicated ASR with Silero VAD + anti-hallucination
+# params, robust on noisy/short in-car Mandarin. Gemini STT (an LLM) confabulates on unclear audio;
+# it stays available via ?stt=gemini for manual A/B.
+TURN_URL = os.environ.get("TURN_URL", "http://127.0.0.1:8780/turn?stt=local")
 
 SR = 16000                                            # serve_turn expects 16k mono
 GATE = float(os.environ.get("VAD_GATE", "0.022"))     # RMS (0..1) speech threshold (above mic noise floor)
