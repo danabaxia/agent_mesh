@@ -2018,5 +2018,16 @@
       "source": "PR #626: fix(voice): whisper float16 + domain initial_prompt — kill subtitle hallucination + keep loanwords",
       "ts": "2026-06-28"
     }
+  },
+  "voice-stt-language-default": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "STT language default: use the language reliable on worst-case real hardware; surface others via per-session toggle.",
+    "l1": "PR #630: Chinese STT on the in-car phone path was unreliable (acoustic noise, degraded audio) despite working in lab; English STT on the same pipeline was flawless. Fix: default lang='en' across all three layers (PWA app.js, agent_livekit DEFAULT_LANG, serve_turn handler). The 中 toggle still switches per session. Pending noise-cancellation (LiveKit+Krisp) may restore Chinese as default later.",
+    "value": "Apply when a voice feature supports multiple STT languages deployed to a real-world environment (car, factory, outdoor, degraded phone audio):\n\n(1) TEST ON THE ACTUAL DEPLOYMENT HARDWARE — not a laptop mic or quiet room. Lab-passing STT is not production STT. In-car phone audio has acoustic noise, gain issues, and compression that break non-English phoneme detection while English survives.\n\n(2) DEFAULT = RELIABLE LANGUAGE. Set the STT default to the language verified end-to-end on the worst-case real hardware. Never default to the majority language, preferred locale, or most-requested feature when it fails on the primary deployment path.\n\n(3) PER-SESSION TOGGLE, not persistent override. Users who need a non-default language switch in-session via a chip/button; the toggle writes to session state, not localStorage as a permanent override — one new session restores the default.\n\n(4) THREE-LAYER DEFAULT: wire the default at ALL layers — (a) PWA JS initial value, (b) server-side DEFAULT_LANG, (c) request-handler lang fallback. A missing layer means different clients see different languages unexpectedly.\n\n(5) DEFER NON-DEFAULT LANGUAGE UNTIL FIXED. If a language's STT is unreliable and the fix is known (noise-cancellation upgrade), ship with the reliable default and file an issue referencing the fix. Do not hold the product on a broken default pending a future upgrade.\n\nProvenance: PR #630 (2026-06-28).",
+    "provenance": {
+      "source": "PR #630 (2026-06-28): fix(voice): default to English interaction (Chinese STT unreliable on degraded phone audio)",
+      "ts": "2026-06-28"
+    }
   }
 }
