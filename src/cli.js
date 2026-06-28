@@ -22,6 +22,7 @@ function usage() {
     '  agent-mesh deploy <scan-root> --mesh <mesh-root> [--modes ask,do] [--depth N] [--apply]   # one-click discover→add→doctor',
     '  agent-mesh dashboard <mesh-root> [--port 7077] [--no-open] [--allow-shell] [--enable-chat] [--no-replace]',
     '  agent-mesh shell <mesh-root> <agent>   # open native claude in an agent folder',
+    '  agent-mesh serve-capture [dir]   # tailnet sink for voice-captured ideas (env: MAC_CAPTURE_TOKEN, CAPTURE_PORT=8787)',
     '',
     '  agent-mesh dev-society status [--repo OWNER/REPO]      # daemon + ledger + queue snapshot',
     '  agent-mesh dev-society ledger [--last N]               # pretty-print ledger.jsonl',
@@ -618,6 +619,25 @@ export async function main(argv, env = process.env) {
         process.on('SIGTERM', resolve_);
       });
       await server.close();
+    } catch (err) {
+      process.stderr.write(`error: ${err.message}\n`);
+      process.exitCode = 1;
+    }
+    return;
+  }
+
+  if (command === 'serve-capture') {
+    // Tailnet-only Mac sink for voice-captured ideas (the box syncer POSTs here).
+    try {
+      const { buildCaptureServer } = await import('./voice-capture/serve-capture-cmd.js');
+      const { server, port, host, dir } = buildCaptureServer(argv.slice(1), env);
+      await new Promise((r) => server.listen(port, host, r));
+      process.stdout.write(`capture listening ${host}:${port} dir=${dir}\n`);
+      await new Promise((resolve_) => {
+        process.on('SIGINT', resolve_);
+        process.on('SIGTERM', resolve_);
+      });
+      server.close();
     } catch (err) {
       process.stderr.write(`error: ${err.message}\n`);
       process.exitCode = 1;
