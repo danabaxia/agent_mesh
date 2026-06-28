@@ -2007,5 +2007,16 @@
       "source": "PR #624 (2026-06-28): fix(voice): kill STT hallucination — whisper-large-v3 primary + VAD/energy gate + anti-hallucination params",
       "ts": "2026-06-28"
     }
+  },
+  "whisper-initial-prompt-multilingual": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Whisper STT: set initial_prompt for domain/multilingual audio — prevents subtitle hallucination and loanword garbling.",
+    "l1": "PR #626: real phone audio (zh+en) exposed two failures synth tests missed: (1) subtitle hallucination on unclear clips (Whisper subtitle-training → '歡迎收看…'); (2) Mandarin-locked decoding garbles English loanwords (mesh→Mess, agent→安). Fix: initial_prompt with domain hint kills both. float16 over int8 lifts accuracy when VRAM allows. Synth clips pass without the fix — always test on real saved clips.",
+    "value": "Apply when deploying Whisper for real-world audio — especially multilingual (zh+en code-switching), technical domain, or unclear input.\n\n(1) ROOT CAUSE: Whisper is trained on subtitle/transcript data. Without context, it pattern-matches unclear audio to subtitle phrases. In multilingual decoding it can lock to one language and transliterate loanwords phonetically (mesh→Mess, agent→安). Synth (pure-zh, pure-en) test clips PASS without the fix — failures emerge only on real-user, real-mic, unclear audio.\n\n(2) initial_prompt — primary fix:\n  Set the `initial_prompt` arg on every `model.transcribe()` call. Include:\n  - The primary spoken language (e.g. '普通话')\n  - Domain-specific loanwords the user regularly speaks (e.g. 'mesh/agent/PR/issue 等英文词')\n  Keep it concise — it seeds the decoder's context window, not a full prior transcript.\n  Without it: subtitle hallucination + loanword garbling. With it: both disappear on the same clips.\n\n(3) PRECISION — secondary gain:\n  Prefer float16 over int8 when GPU VRAM allows. int8 quantization trades accuracy for speed; float16 catches phonetic nuance the quantized model misses.\n\n(4) VERIFY ON REAL AUDIO:\n  Save a representative real-mic clip (e.g. last_in.wav). Run A/B before and after:\n  - No prompt → observe failure mode (hallucination or garbling)\n  - With prompt → verify correct output\n  Synth clips are insufficient — they lack the spectral irregularities that trigger the failure.\n\n(5) REMAINING LIMITS: homophones (e.g. 胎压→泰亚) are inherent ASR limits, not addressable by initial_prompt. Document as accepted trade-offs.\n\nRelated: [[stt-hallucination-ingress-gate]] (PR #624 — audio gate + anti-hallucination params, the complementary pre-transcription fix).\n\nProvenance: PR #626 (2026-06-28) — fix(voice): whisper float16 + domain initial_prompt (kill subtitle hallucination + keep loanwords).",
+    "provenance": {
+      "source": "PR #626: fix(voice): whisper float16 + domain initial_prompt — kill subtitle hallucination + keep loanwords",
+      "ts": "2026-06-28"
+    }
   }
 }
