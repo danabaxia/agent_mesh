@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0f14" />
+  <title>Mesh Voice</title>
+  <style>
+    :root { --bg:#0b0f14; --fg:#e6edf3; --muted:#7d8896; --ok:#3fb950; --idle:#d29922; --accent:#2f81f7; }
+    * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+    html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+      font:16px/1.5 ui-rounded,-apple-system,system-ui,sans-serif; }
+    .wrap { display:flex; flex-direction:column; height:100%; padding:max(20px,env(safe-area-inset-top)) 20px 28px; }
+    h1 { font-size:15px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0 0 auto; font-weight:600; }
+    .orb { width:170px; height:170px; border-radius:50%; margin:0 auto; align-self:center;
+      background:radial-gradient(circle at 35% 30%, #16324f, #0b0f14 70%);
+      border:1px solid #1d2733; display:grid; place-items:center; transition:.3s; }
+    .orb.live { border-color:var(--ok); box-shadow:0 0 60px -12px var(--ok); cursor:pointer;
+      user-select:none; -webkit-user-select:none; touch-action:none; }
+    .orb.talking { box-shadow:0 0 90px -4px var(--ok); transform:scale(1.07); }
+    .orb .dot { width:14px; height:14px; border-radius:50%; background:var(--muted); transition:.3s; }
+    .orb.live .dot { background:var(--ok); animation:pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{transform:scale(1);opacity:.8} 50%{transform:scale(1.6);opacity:1} }
+    .status { text-align:center; color:var(--muted); min-height:1.5em; margin:18px 0 6px; }
+    .hwinfo { text-align:center; color:#586069; font-size:12px; letter-spacing:.04em; margin:0 0 auto; }
+    button { font:inherit; font-weight:600; border:0; border-radius:16px; padding:18px; width:100%;
+      background:var(--accent); color:#fff; transition:.15s; }
+    button:active { transform:scale(.98); }
+    button.stop { background:#21262d; color:var(--fg); border:1px solid #30363d; }
+    button:disabled { opacity:.4; }
+    .log { font-size:13px; color:var(--muted); max-height:34vh; overflow:auto; margin-top:14px; }
+    .log .you { color:var(--fg); } .log .bot { color:var(--accent); }
+    .langtoggle { display:flex; gap:8px; justify-content:center; margin:6px 0 0; }
+    .langbtn { width:auto; padding:8px 20px; border-radius:999px; background:#161b22; color:var(--muted);
+      border:1px solid #30363d; font-size:14px; font-weight:600; }
+    .langbtn.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Mesh Voice</h1>
+    <div class="langtoggle">
+      <button class="langbtn on" data-lang="zh" id="lang-zh">中文</button>
+      <button class="langbtn" data-lang="en" id="lang-en">EN</button>
+    </div>
+    <div class="orb" id="orb"><div class="dot"></div></div>
+    <div class="status" id="status">tap to connect</div>
+    <div class="hwinfo" id="hwinfo">STT: Gemini ☁️ · TTS: GPU 🖥️</div>
+    <button id="go">Connect &amp; talk</button>
+    <div class="log" id="log"></div>
+  </div>
+  <audio id="sink" autoplay playsinline></audio>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
