@@ -26,3 +26,12 @@ test('buildCaptureServer honors CAPTURE_PORT and CAPTURE_DIR env', () => {
   assert.equal(built.dir, '/tmp/capdir');
   built.server.close();
 });
+
+test('CAPTURE_HOST widens the bind (default stays loopback)', () => {
+  const def = buildCaptureServer([], { MAC_CAPTURE_TOKEN: 's' });
+  assert.equal(def.host, '127.0.0.1');
+  def.server.close();
+  const lan = buildCaptureServer([], { MAC_CAPTURE_TOKEN: 's', CAPTURE_HOST: '0.0.0.0' });
+  assert.equal(lan.host, '0.0.0.0');
+  lan.server.close();
+});

@@ -8,7 +8,9 @@ export function buildCaptureServer(args, env = process.env) {
   if (!token) throw new Error('MAC_CAPTURE_TOKEN is required for serve-capture');
   const dir = args[0] || env.CAPTURE_DIR || '.captures';
   const port = Number(env.CAPTURE_PORT || 8787);
-  const host = '127.0.0.1';                       // tailnet-only; expose via Tailscale, never public
+  // Default loopback-only (plan: expose via Tailscale). CAPTURE_HOST widens the bind
+  // (e.g. 0.0.0.0) for direct LAN/tailnet sync from the voice box — still bearer-gated.
+  const host = env.CAPTURE_HOST || '127.0.0.1';
   const server = createCaptureServer({ token, dir });
   return { server, port, host, dir };
 }
