@@ -14,7 +14,36 @@ const DEVICE_SECRET = localStorage.getItem('mesh_voice_token') || '';
 const MINT_URL = (localStorage.getItem('mesh_mint_url') || '/token');
 
 let room = null;
+let lang = localStorage.getItem('mesh_voice_lang') || 'zh';   // manual language lock
 function setStatus(s) { statusEl.textContent = s; }
+
+function applyLang(l) {
+  lang = l; localStorage.setItem('mesh_voice_lang', l);
+  document.getElementById('lang-zh').classList.toggle('on', l === 'zh');
+  document.getElementById('lang-en').classList.toggle('on', l === 'en');
+  if (room && room.localParticipant) {
+    try { room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ lang: l })), { reliable: true }); } catch {}
+  }
+}
+document.getElementById('lang-zh').onclick = () => applyLang('zh');
+document.getElementById('lang-en').onclick = () => applyLang('en');
+
+let holding = false;
+function talk(on) {
+  if (!room || !room.localParticipant || on === holding) return;
+  holding = on;
+  try { room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ talk: on })), { reliable: true }); } catch {}
+  orb.classList.toggle('talking', on);
+  setStatus(on ? '🎤 listening — release when done' : '⏳ processing…');
+}
+function setupHold() {
+  const down = (e) => { if (room) { e.preventDefault(); talk(true); } };
+  const up = (e) => { if (holding) { e.preventDefault(); talk(false); } };
+  orb.addEventListener('pointerdown', down);
+  orb.addEventListener('pointerup', up);
+  orb.addEventListener('pointercancel', up);
+  orb.addEventListener('pointerleave', up);
+}
 function log(who, text) {
   const d = document.createElement('div');
   d.className = who; d.innerHTML = `<span class="${who}">${who === 'you' ? 'you' : 'bot'}:</span> ${text}`;
@@ -44,15 +73,30 @@ async function connect() {
     room.on(LK.RoomEvent.DataReceived, (payload) => {
       try {
         const m = JSON.parse(new TextDecoder().decode(payload));
+        // half-duplex: mute our mic while the agent speaks so its voice isn't re-captured
+        if (m.speaking === true) {
+          room.localParticipant.setMicrophoneEnabled(false);
+          orb.classList.remove('live'); setStatus('🔊 speaking…');
+        } else if (m.speaking === false) {
+          setTimeout(() => {
+            room.localParticipant.setMicrophoneEnabled(true);
+            orb.classList.add('live'); setStatus('listening — just talk');
+          }, 450);
+        }
+        if (m.stt) {
+          const s = m.stt.startsWith('gemini') ? 'Gemini ☁️' : 'GPU 🖥️ (whisper)';
+          document.getElementById('hwinfo').textContent = `STT: ${s} · TTS: GPU 🖥️ (Kokoro)`;
+        }
         if (m.transcript) log('you', m.transcript);
-        if (m.reply) log('bot', m.reply);
+        if (m.reply) log('bot', m.reply + (m.idea ? `  ✓ saved: ${m.idea}` : ''));
       } catch {}
     });
     room.on(LK.RoomEvent.Disconnected, () => { orb.classList.remove('live'); setStatus('disconnected'); resetBtn(); });
 
     await room.connect(wsUrl, token);
     await room.localParticipant.setMicrophoneEnabled(true);  // continuous publish
-    orb.classList.add('live'); setStatus('listening — just talk');
+    applyLang(lang);                                         // tell the agent the chosen language
+    orb.classList.add('live'); setStatus('按住圆圈说话 · hold the circle to talk');
     goBtn.textContent = 'Disconnect'; goBtn.className = 'stop'; goBtn.disabled = false;
     goBtn.onclick = disconnect;
   } catch (e) {
@@ -69,4 +113,6 @@ function resetBtn() {
 }
 
 goBtn.onclick = connect;
+applyLang(lang);   // initialize the toggle to the stored language
+setupHold();       // push-to-talk: hold the orb to capture a clean utterance
 if (!DEVICE_SECRET) setStatus('open the /?t=… link from your dashboard');
