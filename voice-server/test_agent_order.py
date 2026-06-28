@@ -87,6 +87,7 @@ class TestTurnOrder(unittest.TestCase):
                           send_a2a=lambda t, **kw: {"status": {"state": "TASK_STATE_COMPLETED"}, "artifacts": []},
                           tts=self._tts)
         self.assertEqual(self.spoken, [FALLBACK])
+        self.assertEqual(self.ob.get(rid)["transcript"], "hello")  # transcript durably kept
 
     def test_tts_failure_after_enrichment_keeps_idea(self):
         def boom_tts(t):

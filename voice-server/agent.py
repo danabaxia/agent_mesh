@@ -23,10 +23,7 @@ def default_validate(text) -> bool:
 
 
 def task_completed(task) -> bool:
-    try:
-        return (task or {}).get("status", {}).get("state") == "TASK_STATE_COMPLETED"
-    except AttributeError:
-        return False
+    return (task or {}).get("status", {}).get("state") == "TASK_STATE_COMPLETED"
 
 
 def task_reply(task):
@@ -64,6 +61,9 @@ def handle_turn(audio_ref, ts, outbox, stt, send_a2a, tts, *,
     try:
         task = send_a2a(candidate, context_id=context_id, lang=lang, capture_id=rid)
     except Exception as e:  # noqa: BLE001
+        # "enriched" = transcript-attached (the outbox's existing state convention, set by
+        # attach_transcript above) — NOT "has idea". No enrichment payload is applied here;
+        # we only record why A2A failed. The captured turn stays durable + re-syncable.
         outbox.mark(rid, "enriched", f"a2a: {e}")
         _say(tts, fallback)
         return rid
