@@ -1974,6 +1974,18 @@
       "ts": "2026-06-28"
     }
   },
+  "brain-runtime-failure-as-data": {
+    "status": "active",
+    "valid_to": null,
+    "core": false,
+    "l0": "New brain runtimes: wrap the brain-loop in try/catch — an unhandled rejection crashes the Node A2A server process.",
+    "l1": "PR #622: runGeminiAgent's brain-loop lacked try/catch. A transient Gemini API error propagated as an unhandled rejection — Node exits on these, crashing the A2A server (one bad turn killed the voice concierge until supervisor restart). Fix: wrap the brain-loop in try/catch → return status:'error' Task (failure-is-data invariant). Also: brain usage was silently dropped by runBrainLoop — null in all records, breaking observability parity with the Claude path. The voice ingress already handles non-COMPLETED Tasks with a fixed fallback, so no ingress change needed.",
+    "value": "When integrating a new brain runtime (Gemini or any future provider), two structural requirements apply beyond run-record field names (see multi-brain-run-record-parity):\n\n(1) WRAP THE BRAIN-LOOP IN TRY/CATCH — NEVER LET EXCEPTIONS ESCAPE.\nThe main brain-loop section must be enclosed in try/catch and return a structured status:'error' Task on failure. Node.js terminates the process on unhandled rejections. In a long-running A2A server, one transient API error without a catch takes the entire server down. The mesh's \"failure is data, not an exception\" invariant (PROJECT.md) applies to ALL brain implementations, not just the canonical Claude path.\n\nPattern:\n  try {\n    const result = await runBrainLoop(...)\n    return buildTask({ status: 'done', ...result })\n  } catch (err) {\n    runLog.write({ event: 'error', error: err.message })\n    return buildTask({ status: 'error', summary: err.message })\n  }\n\nConfirm the caller (voice ingress or other) already handles non-COMPLETED Tasks with a fixed fallback before relying on degraded-gracefully behavior.\n\n(2) THREAD BRAIN USAGE THROUGH TO THE RUN RECORD.\nThe brain function (runBrainLoop or equivalent) must return the token/cost usage block and the outer caller must carry it to the run record and Task result. Silently dropping usage leaves usage:null — indistinguishable from a zero-turn run and hides real API spend from the observability stack. Match the Claude path: cost, tokens, and latency all reach the run record.\n\n(3) TEST COVERAGE FROM DAY ONE.\nAdd a test for \"brain that throws → status:'error' Task returned, never an unhandled rejection\" on initial integration — the crash path is not exercised by any happy-path test. PR #622 added this test as the crash repro.\n\nCompanion: multi-brain-run-record-parity (PR #620) — run-record field names.",
+    "provenance": {
+      "source": "PR #622: fix(brains): gemini agent failure-as-data (don't crash the A2A server) + usage threading",
+      "ts": "2026-06-28"
+    }
+  },
   "worker-env-explicit-allowlist": {
     "status": "active",
     "valid_to": null,
