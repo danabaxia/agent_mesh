@@ -29,10 +29,6 @@ function prune(turns, { maxTurns, ttlMs, now }) {
   return fresh.slice(Math.max(0, fresh.length - maxTurns));
 }
 
-function pruneCap(turns, maxTurns) {
-  return turns.slice(Math.max(0, turns.length - maxTurns));
-}
-
 /** Load capped, non-expired history (oldest-first). Never throws. */
 export async function loadHistory(root, contextId, opts = {}) {
   const { maxTurns = DEFAULT_MAX_TURNS, ttlMs = DEFAULT_TTL_MS, now = Date.now() } = opts;
@@ -43,16 +39,20 @@ export async function loadHistory(root, contextId, opts = {}) {
   }));
 }
 
-/** Append one turn atomically, pruning to the caps. */
+/** Append one turn atomically, pruning with TTL+cap. */
 export async function appendTurn(root, contextId, turn, opts = {}) {
-  const { maxTurns = DEFAULT_MAX_TURNS } = opts;
-  const now = typeof opts.now === 'number' ? opts.now : Date.now();
+  const { maxTurns = DEFAULT_MAX_TURNS, ttlMs = DEFAULT_TTL_MS } = opts;
+  let now = typeof opts.now === 'number' ? opts.now : Date.now();
   const entry = {
     role: turn.role === 'assistant' ? 'assistant' : 'user',
     text: String(turn.text ?? '').slice(0, MAX_TURN_CHARS),
     ts: typeof turn.ts === 'number' ? turn.ts : now,
   };
-  const next = pruneCap([...(await readTurns(root, contextId)), entry], maxTurns);
+  // Use entry's ts as the reference point if now wasn't explicitly provided.
+  if (typeof opts.now !== 'number') {
+    now = entry.ts;
+  }
+  const next = prune([...(await readTurns(root, contextId)), entry], { maxTurns, ttlMs, now });
   await mkdir(storeDir(root), { recursive: true });
   const path = storePath(root, contextId);
   const tmp = `${path}.${randomUUID()}.tmp`;
