@@ -1952,6 +1952,17 @@
       "ts": "2026-06-26"
     }
   },
+  "cross-network-sync-multi-transport": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Cross-network sync runbook: ≥3 topologies (tailnet, LAN, mac-pull) — topology is a deploy-time config, not code.",
+    "l1": "PR #595 productionized PR #592's outbox/syncer by adding: (1) serve-capture CLI (agent-mesh serve-capture) — auth-gated (MAC_CAPTURE_TOKEN), binds 127.0.0.1, CAPTURE_HOST widens to LAN/tailnet; (2) syncer_daemon.py — reconcile-on-start then interval-drain; (3) docs/voice-capture-deploy.md — three transport options for box→Mac sync. Live proof: 131 ideas drained; 3 captured offline → all pending → synced on reconnect, none lost.",
+    "value": "When shipping any edge-to-home or device-to-desktop sync feature:\n\n(1) SERVE-CAPTURE ENDPOINT PATTERN\n  - Bind the receiving server to 127.0.0.1 by default; widen only via CAPTURE_HOST.\n  - Require an auth token (MAC_CAPTURE_TOKEN) on every request — even on LAN.\n  - Factor as `buildCaptureServer(args, env)` so all config comes from injected args/env, making the server hermetically testable without a real tailnet.\n  - Require idempotency on the receiver: the sender may POST the same ULID multiple times on retry; the receiver deduplicates by id.\n\n(2) SYNCER DAEMON PATTERN\n  - Reconcile-on-start: at daemon boot, reset any record stuck in 'in-flight' to 'pending' (a prior crash may have halted mid-POST).\n  - Interval-drain: on every tick, send all pending records to CAPTURE_URL. Transient failures (network down) keep the record 'pending' and retry next tick. Permanent failures (4xx) move to 'dead'. Never silently drop.\n  - Background / decoupled: never block the capture turn loop on outbound sync.\n\n(3) MULTI-TOPOLOGY RUNBOOK\n  Always document ≥3 network paths in the same runbook. Operators pick at install time based on their network:\n  - Tailscale serve: `tailscale serve --bg --http=80 <port>`. NAT-piercing, WireGuard-encrypted. Set CAPTURE_URL to the MagicDNS http:// URL. Zero firewall config needed.\n  - Direct LAN: set CAPTURE_HOST to the Mac's LAN IP; set CAPTURE_URL to http://<LAN-IP>:<port>. Fast, simple, works only on same subnet.\n  - Mac-pull / reverse-pull: firewalled box → add a read-only export endpoint on the box; Mac polls it on a cron. Useful when the box is behind CG-NAT with no inbound connection possible.\n  The server code is topology-agnostic — CAPTURE_URL is the only env var that selects the topology.\n\n(4) LIVE PROOF REQUIRED\n  Verify Acceptance B before shipping: capture ≥3 ideas while the Mac is offline → all 'pending' → sync when Mac returns → none lost. Documents the offline-durability guarantee independent of topology.\n\nRelated: [[capture-first-voice-pipeline]] (PR #592 — the outbox/syncer/agent core that this productionizes). Provenance: PR #595 (2026-06-28).",
+    "provenance": {
+      "source": "PR #595: Voice demo → product: serve-capture CLI + syncer daemon (ideas reach the mesh)",
+      "ts": "2026-06-28"
+    }
+  },
   "worker-env-explicit-allowlist": {
     "status": "active",
     "valid_to": null,
