@@ -18,7 +18,7 @@ export async function runBrainLoop({ systemPrompt, messages, tools, brain, maxHo
       convo.push({ role: 'tool', name, content: JSON.stringify(visible) });
       continue;
     }
-    return { reply: String(step?.reply ?? ''), enrichment, hops };
+    return { reply: String(step?.reply ?? ''), enrichment, hops, usage: step?.usage ?? null };
   }
-  return { reply: '', enrichment, hops };
+  return { reply: '', enrichment, hops, usage: null };
 }

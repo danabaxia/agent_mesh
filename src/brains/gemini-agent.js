@@ -67,20 +67,29 @@ export async function runGeminiAgent({ root, env = {}, input, session = {}, pare
   const tools = buildToolAdapters({ root, env, callEnv: entered.env, deps });
   const messages = [...history.map((t) => ({ role: t.role, text: t.text })), { role: 'user', text: String(input.task ?? '') }];
 
-  // AbortController so the timeout branch can signal in-flight brain/tool work to stop.
-  const controller = new AbortController();
-  const out = await withDeadline(runBrainLoop({ systemPrompt, messages, tools, brain, signal: controller.signal }), AGENT_TIMEOUT_MS, controller);
-  if (out?.__timeout) {
-    await appendRunLog(logPath, { id: runId, state: 'done', status: 'timeout', finished_at: new Date().toISOString(), route: 'a2a', root });
-    return { ...base, status: 'timeout', summary: '', error: { code: 'internal', message: 'brain timeout' } };
+  // Failure is DATA, never an exception (PROJECT invariant). A brain/tool/API error
+  // must NOT propagate out of here — an unhandled rejection would crash the A2A server
+  // process. Any throw becomes a status:'error' Task; the ingress speaks its fallback.
+  try {
+    // AbortController so the timeout branch can signal in-flight brain/tool work to stop.
+    const controller = new AbortController();
+    const out = await withDeadline(runBrainLoop({ systemPrompt, messages, tools, brain, signal: controller.signal }), AGENT_TIMEOUT_MS, controller);
+    if (out?.__timeout) {
+      await appendRunLog(logPath, { id: runId, state: 'done', status: 'timeout', finished_at: new Date().toISOString(), route: 'a2a', root });
+      return { ...base, status: 'timeout', summary: '', error: { code: 'internal', message: 'brain timeout' } };
+    }
+
+    // Persist the turn pair (durable, capped history).
+    await appendTurn(root, contextId, { role: 'user', text: String(input.task ?? ''), ts: now });
+    if (out.reply) await appendTurn(root, contextId, { role: 'assistant', text: out.reply, ts: now });
+
+    const result = { ...base, status: 'done', summary: out.reply, usage: out.usage ?? null };
+    if (out.enrichment) result.enrichment = out.enrichment;
+    await appendRunLog(logPath, { id: runId, state: 'done', status: 'done', summary: out.reply, hops: out.hops, finished_at: new Date().toISOString(), route: 'a2a', root });
+    return result;
+  } catch (e) {
+    const message = String(e?.message || e);
+    await appendRunLog(logPath, { id: runId, state: 'done', status: 'error', error: message, finished_at: new Date().toISOString(), route: 'a2a', root }).catch(() => {});
+    return { ...base, status: 'error', summary: '', error: { code: 'internal', message } };
   }
-
-  // Persist the turn pair (durable, capped history).
-  await appendTurn(root, contextId, { role: 'user', text: String(input.task ?? ''), ts: now });
-  if (out.reply) await appendTurn(root, contextId, { role: 'assistant', text: out.reply, ts: now });
-
-  const result = { ...base, status: 'done', summary: out.reply, usage: out.usage ?? null };
-  if (out.enrichment) result.enrichment = out.enrichment;
-  await appendRunLog(logPath, { id: runId, state: 'done', status: 'done', summary: out.reply, hops: out.hops, finished_at: new Date().toISOString(), route: 'a2a', root });
-  return result;
 }
