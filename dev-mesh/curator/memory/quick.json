@@ -1996,5 +1996,16 @@
       "source": "PR #588: fix(security): harden delegated worker environment and output capture",
       "ts": "2026-06-27"
     }
+  },
+  "stt-hallucination-ingress-gate": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "STT hallucination is an ingress problem — add an energy+duration audio gate before any transcriber, not a bigger model.",
+    "l1": "PR #624: recognizers (whisper/Gemini) cannot return empty on short/quiet/noisy clips — they invent plausible text. Three fixes: (1) energy+duration audio gate before any transcriber (returns '' on rejection — biggest impact); (2) `condition_on_previous_text=False` for whisper (single biggest lever; stops cross-chunk drift); (3) whisper-large-v3 over turbo for Mandarin. A bigger model (flash→pro, turbo→large) does NOT fix hallucination on genuine silence/noise — the gate does.",
+    "value": "Apply when building any voice pipeline with STT (whisper, Gemini, Deepgram, etc.).\n\n**Root cause**: Recognizers cannot return empty — on short/quiet/noisy clips they generate plausible-sounding text (coin-counting, stray phrases). This is a model constraint, not a model quality problem. A bigger model produces the same hallucination.\n\n**Three-layer fix (priority order):**\n\n(1) PRE-TRANSCRIPTION AUDIO GATE — highest-value fix:\n  `has_speech(chunk) → False → return ''` before calling any STT.\n  Gate criteria:\n  - Frame energy (RMS) below noise floor → reject\n  - Voiced duration < min_speech_ms → reject\n  Implement as a PURE, unit-tested function (numpy-optional stdlib fallback).\n  Five test cases: too-short, silence, quiet-hiss, loud-voiced-accepted, tiny-blip-rejected.\n  Apply to EVERY transcriber path (whisper AND gemini) — the gate centralizes protection.\n  The ingress already skips empty transcripts, so '' is a safe return.\n\n(2) `condition_on_previous_text=False` for whisper — single biggest lever:\n  Without it, whisper conditions each decode chunk on the prior chunk's text, so an initial hallucination propagates (\"cross-chunk drift\"). Setting False makes each chunk decode independently.\n  Full anti-hallucination param set: `beam_size=1, temperature=0, no_speech_threshold=0.6, log_prob_threshold=-1.0, compression_ratio_threshold=2.4` + tuned `vad_parameters` (Silero VAD).\n\n(3) Model choice for non-English:\n  whisper-large-v3 over whisper-turbo for Mandarin — turbo is measurably weaker on Chinese.\n  Cloud code-switch engines (Deepgram, Chirp) lack Mandarin; on-box whisper is correct.\n  large-v3 handles zh+en code-switching via its single multilingual decoder.\n\n**Gemini STT note**: flash-lite and flash are identical on clean audio — both hallucinate on noise. A `?stt=gemini` override is acceptable as a manual A/B path; whisper+gate is the primary.\n\n**Required test coverage**: `test_audio_gate.py` — must be stdlib-only (numpy-optional) to run in every CI environment. Five cases minimum.\n\nProvenance: PR #624 (2026-06-28).",
+    "provenance": {
+      "source": "PR #624 (2026-06-28): fix(voice): kill STT hallucination — whisper-large-v3 primary + VAD/energy gate + anti-hallucination params",
+      "ts": "2026-06-28"
+    }
   }
 }
