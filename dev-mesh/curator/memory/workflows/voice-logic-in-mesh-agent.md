@@ -94,5 +94,13 @@ The current MVP violated P1/P2 (`serve_turn.py` brain living inside the voice se
 the spec is the corrective path. Review: 6 Codex (gpt-5.5) rounds, every blocking/major
 finding accepted, zero rebuttals.
 
+PR #620 (2026-06-28): **implemented** the full spec. 278/278 JS tests + 18/18 Python tests green;
+no live model in the gate (fake brain / fake transport throughout). Key implementation note:
+run records from `gemini-agent.js` must carry the exact field names delegate.js uses
+(`started_at`, `finished_at`, `route`, `root`) or health-model silently drops all Gemini runs.
+This was an Important finding in the final review wave — see `multi-brain-run-record-parity`
+in quick.json. Negative test (`test_ingress_no_logic.py`) asserts no system prompt, no tool
+loop, and no direct mesh query remain in the voice ingress beyond the single A2A SendMessage.
+
 Source issue: #616 (user-requested: connect voice assistant with all mesh agents on
 Windows and Mac via direct A2A routing).

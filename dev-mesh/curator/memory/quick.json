@@ -1963,6 +1963,17 @@
       "ts": "2026-06-28"
     }
   },
+  "multi-brain-run-record-parity": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New AI brain runtimes: run records must match delegate.js field names — health-model silently ignores mismatched agents.",
+    "l1": "PR #620 fix: gemini-agent.js initially omitted started_at/finished_at/route/root from its START and FINAL records. health-model.js bumpSeen() and activity-stats filters key on these exact field names — Gemini runs were silently dropped from health views and activity dashboards. The Important finding in the final review wave caught it; adding the missing fields made Gemini runs visible alongside Claude runs with no other change.",
+    "value": "When integrating a new AI brain runtime into the mesh (Gemini, or any future provider):\n\n(1) Audit your run records against delegate.js's schema. The START record must include: started_at, route, root. FINAL records (both done and timeout paths) must include: finished_at, route, root in addition to the standard result fields.\n\n(2) The health monitoring stack keys on these EXACT field names. health-model.js bumpSeen() and the activity-stats filters use them for: showing the agent in the Vital Signs view, counting recent runs, inferring idle/dead state, computing cognition metrics. A mismatch — even a minor rename like start_time vs started_at — causes complete silent exclusion.\n\n(3) The failure mode is silent: no error, no warning, no partial data. Health views simply show no activity for the agent. Particularly deceptive when a Gemini brain routes alongside Claude: Claude runs appear correctly while Gemini runs vanish.\n\n(4) Test coverage: add assertions for the exact field names in your brain agent test, not just presence of a record:\n  - START record: assert record.started_at, record.route, record.root\n  - FINAL record: assert record.finished_at, record.route, record.root\n  PR #620 had zero tests for run-record field names — the gap was caught only by a code review finding.\n\n(5) Scope: applies each time a new monitoring consumer is added too. If health-model gains a new field it reads (e.g., a latency field), existing brain runtimes silently omit it — re-audit each new field against all registered brain implementations.\n\nProvenance: PR #620 (2026-06-28), Important finding in the final review wave — zero test coverage for run-record field names at the time.",
+    "provenance": {
+      "source": "PR #620: feat(voice): logic in the mesh — Gemini-brained concierge agent + logic-free voice ingress",
+      "ts": "2026-06-28"
+    }
+  },
   "worker-env-explicit-allowlist": {
     "status": "active",
     "valid_to": null,
