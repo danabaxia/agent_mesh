@@ -179,7 +179,7 @@ class H(BaseHTTPRequestHandler):
         self.send_response(200); self.send_header("Content-Type", "audio/wav")
         self.send_header("X-STT", stt_b); self.send_header("X-Lang", key if REPLY_MODE == "ack" or parts else "zh"); self.send_header("X-Voice", voice if REPLY_MODE == "ack" or parts else "")
         self.send_header("X-Idea", urllib.parse.quote(idea_title) if idea_title else "")
-        self.send_header("X-Transcript", urllib.parse.quote(transcript) if REPLY_MODE == "ack" else urllib.parse.quote(transcript))
+        self.send_header("X-Transcript", urllib.parse.quote(transcript))
         self.send_header("X-Reply", urllib.parse.quote(reply))
         self.send_header("X-Timing", urllib.parse.quote(timing))
         self.send_header("Content-Length", str(len(audio))); self.end_headers(); self.wfile.write(audio)

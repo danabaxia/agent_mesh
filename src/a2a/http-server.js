@@ -2,7 +2,6 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DEFAULT_DEPTH, MAX_LINE_CHARS } from '../config.js';
-import { delegateTask } from '../delegate.js';
 import { runAgent } from './run-agent.js';
 import { describeFolder } from '../description.js';
 import { SerialQueue } from '../lock.js';

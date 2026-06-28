@@ -27,7 +27,19 @@ test('ask turn returns a done result with the brain reply', async () => {
   assert.equal(r.summary, 'Three issues are open.');
   assert.equal(r.files_changed, null);
   assert.ok(r.log_path);
-  assert.ok((await readFile(r.log_path, 'utf8')).length > 0, 'run-log written to disk');
+  const logContents = await readFile(r.log_path, 'utf8');
+  assert.ok(logContents.length > 0, 'run-log written to disk');
+  // FIX 1: run-log records must include started_at/finished_at/route/root so the
+  // health dashboard and activity-stats readers see the gemini agent as alive.
+  const lines = logContents.trim().split('\n').map((l) => JSON.parse(l));
+  const startRecord = lines.find((l) => l.state === 'started');
+  const doneRecord = lines.find((l) => l.state === 'done');
+  assert.ok(startRecord?.started_at, 'start record has started_at');
+  assert.ok(startRecord?.route === 'a2a', 'start record has route=a2a');
+  assert.ok(startRecord?.root, 'start record has root');
+  assert.ok(doneRecord?.finished_at, 'done record has finished_at');
+  assert.ok(doneRecord?.route === 'a2a', 'done record has route=a2a');
+  assert.ok(doneRecord?.root, 'done record has root');
 });
 
 test('propose_idea surfaces enrichment on the result', async () => {
