@@ -14,7 +14,7 @@ const DEVICE_SECRET = localStorage.getItem('mesh_voice_token') || '';
 const MINT_URL = (localStorage.getItem('mesh_mint_url') || '/token');
 
 let room = null;
-let lang = localStorage.getItem('mesh_voice_lang') || 'zh';   // manual language lock
+let lang = 'en';   // temporary default: English interaction (tap 中 to switch per session)   // manual language lock
 function setStatus(s) { statusEl.textContent = s; }
 
 function applyLang(l) {

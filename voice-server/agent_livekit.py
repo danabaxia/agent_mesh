@@ -68,7 +68,7 @@ class Bridge:
         self.busy = False      # don't capture our own playback / overlap turns
         self.preroll = deque() # rolling ~400ms before speech, so the onset isn't clipped
         self.preroll_n = 0
-        self.lang = os.environ.get("DEFAULT_LANG", "zh")   # manual UI language lock (zh|en)
+        self.lang = os.environ.get("DEFAULT_LANG", "en")   # manual UI language lock (zh|en)
         self.talking = False   # push-to-talk: capture only while the user holds the button
         self.src = rtc.AudioSource(24000, 1)
         self.track = rtc.LocalAudioTrack.create_audio_track("agent-voice", self.src)
