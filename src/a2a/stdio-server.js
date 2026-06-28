@@ -2,6 +2,7 @@ import { readFile, readdir, access, realpath } from 'node:fs/promises';
 import { join, dirname, normalize } from 'node:path';
 import { MAX_LINE_CHARS, readPositiveInt, DEFAULT_CONTEXT_WINDOW } from '../config.js';
 import { delegateTask } from '../delegate.js';
+import { runAgent } from './run-agent.js';
 import { fastPathExecute } from '../fast-path.js';
 import { orchestrate } from '../orchestrator.js';
 import { describeFolder } from '../description.js';
@@ -318,7 +319,7 @@ async function handleMessage({ message, root, env, card, doQueue, agentModes, ag
       ? () => fastPathExecute({ root, env, toolCall, task: validation.value.input.task, parentRunId })
       : agentRole === 'orchestrator'
         ? () => orchestrate({ root, env, input: validation.value.input, parentRunId })
-        : () => delegateTask({ root, env, input: validation.value.input, parentRunId, session, thinkingEffort });
+        : () => runAgent({ root, env, input: validation.value.input, parentRunId, session, thinkingEffort });
     const result =
       validation.value.input.mode === 'do'
         ? await runSerialized({ queue: doQueue, run, started })
