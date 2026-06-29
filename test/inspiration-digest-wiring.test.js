@@ -23,3 +23,18 @@ test('dev-society-daemon.mjs imports runInspirationDigest', () => {
     'daemon must import and use runInspirationDigest',
   );
 });
+
+test("analyst schedule.json contains an 'inspiration-digest' job with daily cadence", () => {
+  const scheduleJson = readFileSync(
+    join(__dirname, '..', 'dev-mesh', 'analyst', '.agent', 'schedule.json'),
+    'utf8',
+  );
+  const schedule = JSON.parse(scheduleJson);
+  const job = schedule.jobs.find((j) => j.builtin === 'inspiration-digest');
+  assert.ok(job, "schedule.json must contain a job with builtin === 'inspiration-digest'");
+  assert.strictEqual(
+    job.cadence?.kind,
+    'daily',
+    "inspiration-digest job cadence must be 'daily'",
+  );
+});
