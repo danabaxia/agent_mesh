@@ -2084,5 +2084,16 @@
       "source": "PR #638: fix(concierge): list_mesh_agents reads the real registry (was always empty)",
       "ts": "2026-06-29"
     }
+  },
+  "stt-entity-roster-bias": {
+    "l0": "STT initial_prompt: roster names beat homophones — generic mesh vocab (mesh/agent/PR) lets 'coder' transcribe as 'road'.",
+    "l1": "PR #640: whisper only had generic terms (mesh/agent/PR/issue) — no entity names. Fix: stt_prompt(lang) in stt_bias.py includes the live agent roster; STT_BIAS_WORDS env extends at runtime (registry never drifts). Agent layer: concierge system.md now calls list_mesh_agents to fuzzy-resolve unknown peer names before claiming a peer is absent. Pattern: every new mesh entity (agent, code-name, team handle) must be added to STT_BIAS_WORDS.",
+    "value": "PR #640 root cause: stt_bias.py initial_prompt had only generic mesh vocabulary (mesh, agent, PR, issue). Whisper has no phoneme-level constraint — it picks the most plausible word, so coder → road/Corder. Two-layer fix:\n\n(1) Ingress (stt_bias.py): stt_prompt(lang) returns fixed mesh terms PLUS the live agent roster. STT_BIAS_WORDS env var (comma-separated) extends at runtime without a code change — supervisor injects live registry names here. serve_turn.py calls stt_prompt(lang) instead of an inline dict.\n\n(2) Agent (concierge/prompts/system.md): brain now calls list_mesh_agents on any unknown name and fuzzy-resolves to closest peer (one-word confirm if ambiguous); never claims no agents without checking first.\n\nFix generalizes: any domain entity that phonetically collides with common words (agent names, project codes, team handles) must appear in the STT bias vocabulary.",
+    "status": "active",
+    "valid_to": null,
+    "provenance": {
+      "source": "PR #640 (2026-06-29): fix(voice): bias STT + concierge toward the real agent roster",
+      "ts": "2026-06-29"
+    }
   }
 }
