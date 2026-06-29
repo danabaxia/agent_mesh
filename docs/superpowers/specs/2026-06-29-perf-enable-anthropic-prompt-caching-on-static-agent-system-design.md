@@ -2,7 +2,7 @@
 
 **Status:** in-review  
 **Issue:** #659  
-**Governs:** `src/delegate-invocation.js` · `src/config.js`
+**Governs:** `src/delegate-invocation.js` · `src/agent-context.js` · `src/config.js`
 
 ## Goal
 
@@ -44,11 +44,14 @@ sufficient budget headroom to absorb the one-time cache-write premium.
 
 | Module | Responsibility | Purity |
 |---|---|---|
-| `src/delegate-invocation.js` | Insert `cache_control` breakpoint after the static system-prompt prefix (base + brain layer) and before the dynamic task-specific `--append-system-prompt` content | impure shell |
+| `src/delegate-invocation.js` | Insert `cache_control` breakpoint after the static system-prompt prefix (base + brain layer) and before the dynamic task-specific content — **mechanism TBD, gated on Phase 0 feasibility check** | impure shell |
+| `src/agent-context.js` | `buildAgentRuntimePrompt` assembles the static identity/memory/mode prefix; may need to expose a structured boundary so the breakpoint can be inserted at the right split | impure shell |
 | `src/config.js` | `AGENT_MESH_PROMPT_CACHE_DISABLED` escape hatch; `AGENT_MESH_PROMPT_CACHE_PREWARM` toggle; sane defaults | pure |
 
-- **Telemetry analyzer (Phase 0)** — a pre-implementation inspection of existing delegated-run `cache_read_input_tokens` / `cache_creation_input_tokens` from recent usage logs to determine whether the static prefix is already being cached and what the per-peer hit/miss rate is across disjoint runs. Phase 0 gates Phase 1: confirm caching is not already happening before adding the breakpoint, and establish the current hit-rate baseline.
-- **Pre-warmer** — a cheap priming call for the shared static prefix before a disjoint fan-out, so concurrent peers read instead of each writing.
+- **Telemetry analyzer (Phase 0)** — a pre-implementation inspection of existing delegated-run `cache_read_input_tokens` / `cache_creation_input_tokens` from recent usage logs to determine whether the static prefix is already being cached and what the per-peer hit/miss rate is across disjoint runs. Phase 0 gates Phase 1 with two explicit checks:
+  1. **Hit/miss baseline:** confirm caching is not already happening before adding the breakpoint, and establish the current hit-rate baseline.
+  2. **CLI feasibility gate:** confirm whether the `claude` CLI exposes a mechanism (e.g. a structured `--system-prompt-file`, a special annotation, or an env var) for expressing `cache_control: {"type":"ephemeral"}` breakpoints in a text system prompt. `src/delegate-invocation.js` currently passes the assembled prompt as a plain-text string via `--append-system-prompt` (line 62); `cache_control` is an Anthropic API message-block property, not a plain-text concept. **If no CLI mechanism exists, Phase 1 must either (a) switch to direct Anthropic API calls or (b) reframe the approach (e.g. rely on the CLI's automatic TTL-based caching if it handles this internally).** Phase 1 implementation approach is TBD until this gate passes.
+- **Pre-warmer** — a cheap priming call for the shared static prefix before a disjoint fan-out, so concurrent peers read instead of each writing. **Failure-mode:** the pre-warm call is best-effort; if it fails (network error, timeout), the fan-out proceeds without it (peers cold-write their own prefixes on the first wave). The pre-warmer never blocks or gates the fan-out — it is a latency optimization only, consistent with the failure-is-data posture.
 - **Perf benchmark hook (`eval-perf.mjs`)** — measures 3x-disjoint `latency_ms` in **warm-cache steady state**, and surfaces cache read/write attribution per peer.
 - **Config** — cache TTL choice (5m vs 1h), pre-warm on/off, and a disable flag to revert to the current behavior.
 
@@ -57,9 +60,10 @@ sufficient budget headroom to absorb the one-time cache-write premium.
 1. **Phase 0:** the telemetry analyzer inspects delegated-run usage → determines whether the static system prompt is cached and whether disjoint peers read or write.
 2. **Phase 1:** the system-prompt assembler emits a static prefix (base + brain layer) followed by the `cache_control` breakpoint, then dynamic content.
 3. A delegated worker's Claude call sends the structured prompt; Anthropic caches the static prefix (write) or serves it from cache (read), keyed on exact prefix + org.
-4. **3x-disjoint fan-out:** three peers send identical static prefixes.
-   - **Warm cache** (prior run within TTL, or pre-warmed) → all three **read** → lower TTFT, compounded latency recovery.
-   - **Cold simultaneous** → first writes, others may still write (race) → little first-wave gain; steady-state subsequent waves read.
+4. **3x-disjoint fan-out:** three peers send identical static prefixes. Two distinct warm-cache scenarios (different cost structures and guarantees):
+   - **Warm cache via prior run within TTL** — a previous fan-out already wrote the prefix to cache; all three peers read immediately. Full steady-state gain; no write premium in this wave.
+   - **Warm cache via pre-warmer** — the pre-warm call fires before the fan-out and writes the prefix; peers then read. One write premium paid upfront (pre-warm call), then three reads. Gain depends on pre-warm completing before the fan-out's first peer call.
+   - **Cold simultaneous (no prior run, pre-warmer disabled or failed)** → all three write the prefix (race; the "first" write wins, others may also write) → no first-wave latency gain; steady-state subsequent waves read.
 5. `eval-perf.mjs` measures warm-state 3x-disjoint latency and per-peer cache attribution → confirms the regression is recovered.
 
 ## Testing
