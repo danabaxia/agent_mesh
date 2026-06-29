@@ -108,6 +108,27 @@ export const DEFAULT_HEALTH_HISTORY_DAYS = 14;            // activity-history sp
 // AGENT_MESH_HEALTH_ALERT_DISABLED) disables. See CLAUDE.md Config.
 export const DEFAULT_HEALTH_ALERT_INTERVAL_MS = 900_000;  // 15m health-alert tick (0 disables)
 
+// Inspiration digest (dev-society daemon, mesh-aware ideation partner).
+// AGENT_MESH_INSPIRATION_FILE: where the digest JSON is written.
+// AGENT_MESH_INSPIRATION_INTERVAL_MS: how often the daemon re-runs the digest (daily default).
+// AGENT_MESH_INSPIRATION_MAX_SEEDS: cap on seeds emitted per run.
+// AGENT_MESH_INSPIRATION_STALE_MS: how old a signal must be before it's considered degraded.
+export const DEFAULT_INSPIRATION_FILE_SUFFIX = '.dev-society/inspiration.json'; // resolved under mesh-root
+export const DEFAULT_INSPIRATION_INTERVAL_MS = 86_400_000;  // 24h
+export const DEFAULT_INSPIRATION_MAX_SEEDS = 7;
+export const DEFAULT_INSPIRATION_STALE_MS = 172_800_000;   // 48h
+
+// resolveInspirationConfig: pure resolver for the inspiration-digest builtin.
+// `joinPath` is injected so this file stays import-free (matching the rest of config.js).
+export function resolveInspirationConfig(env = {}, meshRoot = '', joinPath = (a, b) => `${a}/${b}`) {
+  return {
+    file: env.AGENT_MESH_INSPIRATION_FILE || (meshRoot ? joinPath(meshRoot, DEFAULT_INSPIRATION_FILE_SUFFIX) : DEFAULT_INSPIRATION_FILE_SUFFIX),
+    intervalMs: readPositiveInt(env.AGENT_MESH_INSPIRATION_INTERVAL_MS, DEFAULT_INSPIRATION_INTERVAL_MS),
+    maxSeeds: readPositiveInt(env.AGENT_MESH_INSPIRATION_MAX_SEEDS, DEFAULT_INSPIRATION_MAX_SEEDS),
+    staleMs: readPositiveInt(env.AGENT_MESH_INSPIRATION_STALE_MS, DEFAULT_INSPIRATION_STALE_MS),
+  };
+}
+
 // Resolve the health thresholds from an env-like bag, falling back to the defaults
 // above. Pure: no process access of its own. Used by health-collect + /api/health.
 export function resolveHealthThresholds(env = {}) {
