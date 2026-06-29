@@ -1,4 +1,54 @@
-e-warmer** — a cheap priming call for the shared static prefix before a disjoint fan-out, so concurrent peers read instead of each writing.
+# Prompt Caching for Static Agent System Prompts — Design
+
+**Status:** in-review  
+**Issue:** #659  
+**Governs:** `src/delegate-invocation.js` · `src/config.js`
+
+## Goal
+
+Recover the `perf:3x-disjoint:latency_ms` regression introduced by PR #620
+(Gemini brain layer), which deepened each agent's static system prompt and
+compounded the cold-start penalty across concurrent disjoint peers.
+
+This spec adds `cache_control: {"type": "ephemeral"}` to the static portion of
+each agent's system-prompt block, so Anthropic's prompt-caching layer serves
+that prefix at ~90% lower token cost and measurably lower time-to-first-token
+across all three peers in a disjoint fan-out. No routing or logic changes.
+
+## Background
+
+The perf benchmark (`scripts/eval-perf.mjs`) measures the `3x-disjoint` latency
+cell — three peers with non-overlapping declared intents, all cold-started in
+parallel. The baseline is **28,634 ms**; after PR #620 the cell regressed to
+**31,372 ms (+9.6%)**, with no wasted hops — meaning the regression is entirely
+in per-peer cold-start latency, not in routing decisions.
+
+Root cause: PR #620 added a Gemini brain layer that deepened each agent's
+`--append-system-prompt` (obeyed `prompts/system.md` + framed memory).
+`src/delegate-invocation.js` assembles this into a static prefix passed on every
+spawn. In a 3-peer disjoint fan-out all three agents send their full system
+prompts cold — no shared context. The deeper prompt compounded the cold-start
+penalty across all three concurrent peers.
+
+Anthropic prompt caching (`cache_control: {"type": "ephemeral"}`) caches a
+static prompt prefix keyed on exact prefix content + org. Subsequent calls
+within the cache TTL pay only the cache-read cost (~90% lower input-token cost,
+with measurably lower TTFT). In a 3-peer disjoint fan-out all peers share the
+same static prefix; in warm steady state all three read it from cache,
+compounding the latency recovery across the concurrent cold starts.
+
+The -3.2% cost improvement already observed in the regressed run suggests
+sufficient budget headroom to absorb the one-time cache-write premium.
+
+## Components
+
+| Module | Responsibility | Purity |
+|---|---|---|
+| `src/delegate-invocation.js` | Insert `cache_control` breakpoint after the static system-prompt prefix (base + brain layer) and before the dynamic task-specific `--append-system-prompt` content | impure shell |
+| `src/config.js` | `AGENT_MESH_PROMPT_CACHE_DISABLED` escape hatch; `AGENT_MESH_PROMPT_CACHE_PREWARM` toggle; sane defaults | pure |
+
+- **Telemetry analyzer (Phase 0)** — a pre-implementation inspection of existing delegated-run `cache_read_input_tokens` / `cache_creation_input_tokens` from recent usage logs to determine whether the static prefix is already being cached and what the per-peer hit/miss rate is across disjoint runs. Phase 0 gates Phase 1: confirm caching is not already happening before adding the breakpoint, and establish the current hit-rate baseline.
+- **Pre-warmer** — a cheap priming call for the shared static prefix before a disjoint fan-out, so concurrent peers read instead of each writing.
 - **Perf benchmark hook (`eval-perf.mjs`)** — measures 3x-disjoint `latency_ms` in **warm-cache steady state**, and surfaces cache read/write attribution per peer.
 - **Config** — cache TTL choice (5m vs 1h), pre-warm on/off, and a disable flag to revert to the current behavior.
 
