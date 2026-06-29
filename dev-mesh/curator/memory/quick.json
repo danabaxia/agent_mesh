@@ -2095,5 +2095,16 @@
       "source": "PR #640 (2026-06-29): fix(voice): bias STT + concierge toward the real agent roster",
       "ts": "2026-06-29"
     }
+  },
+  "pure-routing-helper-no-infra-imports": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Extract routing logic as a pure helper — no infra imports — so it's unit-testable without GPU, cloud, or LiveKit.",
+    "l1": "PR #642: turn_route.build_turn_url(base, backend, lang) (no livekit import) made STT backend selection (Gemini vs. GPU) testable with 5 pytest cases — no hardware required. Before: routing logic lived inside agent_livekit.py, entangled with LiveKit room objects and GPU references. After: pure module, primitives in/out. Edge cases in pure code: strip ?query so UI choice wins; unknown backend → gemini; invalid lang → drop.",
+    "value": "Apply whenever a routing function selects between infra-backed services (cloud API vs. GPU, model A vs. B).\n\n(1) SEAM RULE: if the routing decision is f(primitives) → primitive, extract it as a pure module. Zero imports from infra code (SDKs, sockets, GPU drivers, cloud clients).\n\n(2) SIGNATURE PATTERN (from turn_route.build_turn_url):\n  - Accepts: base_url, backend ('gemini'|'local'), lang (str|None)\n  - Returns: complete URL\n  - Edge cases in pure code:\n    * Strip pre-existing ?query — caller's explicit choice always wins\n    * Unknown backend → safe default, not a throw\n    * Invalid/None input → omit, not a throw\n\n(3) TEST VECTORS (5 from PR #642): strip trailing slash; unknown backend → default; invalid lang dropped; existing ?query stripped; valid inputs produce correct URL.\n\n(4) CALLERS STAY THIN: infra-entangled callers import the pure module and pass data. Only test the pure module.\n\n(5) GENERALIZES: microservices endpoint selection, model routing, feature-flag dispatch. If the routing key is user data (UI toggle, env var), a pure function is the right layer.\n\nProvenance: PR #642 (2026-06-28) — feat(voice): in-PWA STT model selector, default Gemini.",
+    "provenance": {
+      "source": "PR #642 (2026-06-28): feat(voice): in-PWA STT model selector, default Gemini",
+      "ts": "2026-06-28"
+    }
   }
 }
