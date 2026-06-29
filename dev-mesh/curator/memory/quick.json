@@ -2062,5 +2062,16 @@
       "source": "PR #634: fix(brains): relay peer answers on hop exhaustion + concierge prompt",
       "ts": "2026-06-29"
     }
+  },
+  "cross-machine-bridge-as-scripts": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Commit cross-machine bridge setup as idempotent scripts — hand-built machine state is unreproducible from a fresh clone.",
+    "l1": "PR #636: the Mac-mesh/box-concierge A2A bridge lived only on two machines — hand-built launchd jobs, tunnel.sh, registry.json, supervisor env patches. A fresh clone could not recreate it. Fix: committed mac-bridge-setup.sh + box-bridge-setup.sh as idempotent generators plus a README. Idempotency verified: supervisor patch uses grep-before-append; emitted scripts pass bash -n. See [[cross-machine-a2a-url-peer]] for the wiring protocol; this covers persisting the operational glue.",
+    "value": "Apply when any cross-machine A2A bridge setup (tunnels, serve scripts, registries, supervisor patches) has been hand-built on individual machines.\n\n(1) COMMIT AS IDEMPOTENT SCRIPTS:\n  Generators overwrite their output files from current parameters — no residual state.\n  Pattern from PR #636 (scripts/bridge/):\n  - mac-bridge-setup.sh: generates serve-agents.sh (serve N agents over serve-a2a-http, self-restarting) + tunnel.sh (reverse ssh -R per agent) + loads KeepAlive launchd jobs.\n  - box-bridge-setup.sh: writes registry.json (trust marker + HTTP url peers) + patches supervisor to export MESH_ROOT/MESH_CEILING, then restarts.\n\n(2) IDEMPOTENCY CHECKLIST:\n  - File generators: overwrite from params on each run (naturally idempotent).\n  - Patching steps (e.g. supervisor env): use grep-before-append guard: grep -q EXPORT_VAR file || echo export X=Y >> file.\n  - Verify: run script twice, diff output — no duplicate exports, no new files.\n\n(3) VALIDATION:\n  - Emitted scripts: pass bash -n syntax check.\n  - Emitted registry.json: valid JSON with x-agentmesh-generated:true marker (required by readManagedRegistry).\n\n(4) README MUST COVER:\n  Topology diagram, why reverse tunnel (macOS firewall blocks inbound), port map, headless-claude token step, verify commands, add/remove-an-agent procedure, caveats.\n\n(5) COMPLEMENT:\n  [[cross-machine-a2a-url-peer]] (PR #632) covers the framework wiring — url: peer in registry.json, HTTP transport, CLAUDE_CODE_OAUTH_TOKEN in launchd env. This lesson covers PERSISTING that wiring as reproducible scripts.\n\nProvenance: PR #636 (2026-06-29).",
+    "provenance": {
+      "source": "PR #636: feat(bridge): reproducible cross-machine A2A bridge setup (Mac + box scripts + docs)",
+      "ts": "2026-06-29"
+    }
   }
 }
