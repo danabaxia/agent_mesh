@@ -1,4 +1,21 @@
-igin tagging (mobile concierge)** — marks phone-captured ideas so the conveyor can pick them up and route status back to the originating phone session.
+# Phone-to-PR Idea Processing — design
+
+**Status:** design (brainstormed 2026-06-29)
+**Governs:** CLAUDE.md Principles P1–P3 (voice = data ingress · logic = registered mesh agent · MVP→production spec-first)
+
+## Problem
+
+Phone-captured ideas stall. The mobile concierge captures an idea and files it as an `idea` issue, but nothing moves it forward automatically: spec drafting, approval, build, and PR opening all require a human to manually sequence the pipeline. The friction kills most captured ideas before they become PRs.
+
+## Goal
+
+Build a **phone-to-PR conveyor**: once the owner approves the spec on the phone, a phone-origin idea automatically advances through analyst spec-drafting → phone approval tap → branch-isolated do-mode build → PR opened, with the PR link and stage-transition status pushed back to the phone. Every existing stage is reused unchanged; this spec adds only the orchestration glue, origin tagging, and phone surfacing.
+
+## Design
+
+New components:
+
+- **Origin tagging (mobile concierge)** — marks phone-captured ideas so the conveyor can pick them up and route status back to the originating phone session.
 - **Phone-to-PR orchestrator** — the conveyor that advances a phone-origin idea through intake → spec → approval → build → PR, owning the per-idea state record. Reuses existing stage components; adds no new build capability.
 - **State record** — `capture_id → issue → spec → PR` linkage; resumable, queryable for phone status.
 - **Phone approval surface (reused/extended)** — presents the spec/impact plan (pairing with #518's planning pass) for a confirm tap on the phone; approve → build, reject → stop.
