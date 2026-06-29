@@ -15,6 +15,7 @@ const MINT_URL = (localStorage.getItem('mesh_mint_url') || '/token');
 
 let room = null;
 let lang = 'en';   // temporary default: English interaction (tap 中 to switch per session)   // manual language lock
+let stt = localStorage.getItem('mesh_voice_stt') || 'gemini';   // STT model: Gemini default (better code-switch/domain terms), GPU=whisper
 function setStatus(s) { statusEl.textContent = s; }
 
 function applyLang(l) {
@@ -27,6 +28,17 @@ function applyLang(l) {
 }
 document.getElementById('lang-zh').onclick = () => applyLang('zh');
 document.getElementById('lang-en').onclick = () => applyLang('en');
+
+function applyStt(s) {
+  stt = s; localStorage.setItem('mesh_voice_stt', s);
+  document.getElementById('stt-gemini').classList.toggle('on', s === 'gemini');
+  document.getElementById('stt-local').classList.toggle('on', s === 'local');
+  if (room && room.localParticipant) {
+    try { room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ stt: s })), { reliable: true }); } catch {}
+  }
+}
+document.getElementById('stt-gemini').onclick = () => applyStt('gemini');
+document.getElementById('stt-local').onclick = () => applyStt('local');
 
 let holding = false;
 function talk(on) {
@@ -96,6 +108,7 @@ async function connect() {
     await room.connect(wsUrl, token);
     await room.localParticipant.setMicrophoneEnabled(true);  // continuous publish
     applyLang(lang);                                         // tell the agent the chosen language
+    applyStt(stt);                                           // tell the agent the chosen STT model
     orb.classList.add('live'); setStatus('按住圆圈说话 · hold the circle to talk');
     goBtn.textContent = 'Disconnect'; goBtn.className = 'stop'; goBtn.disabled = false;
     goBtn.onclick = disconnect;
@@ -114,5 +127,6 @@ function resetBtn() {
 
 goBtn.onclick = connect;
 applyLang(lang);   // initialize the toggle to the stored language
+applyStt(stt);     // initialize the STT-model toggle to the stored choice (Gemini default)
 setupHold();       // push-to-talk: hold the orb to capture a clean utterance
 if (!DEVICE_SECRET) setStatus('open the /?t=… link from your dashboard');
