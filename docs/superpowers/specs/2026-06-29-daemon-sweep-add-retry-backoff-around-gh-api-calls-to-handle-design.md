@@ -1,4 +1,37 @@
-h` invocation in the daemon sweep/builtin layer: attempt → on failure, classify → retry-with-backoff if transient, else fail immediately → on exhaustion, throw the original error. The single place retry logic lives.
+# Daemon Sweep: Add Retry/Backoff Around gh API Calls to Handle Transient Network Failures — Design
+
+**Status:** spec (authored 2026-06-29)
+**Issue:** [#649](../../issues/649)
+**Governs:** CLAUDE.md Principle 3 (MVP→production, spec-first)
+
+## 1. Goal
+
+Add a lightweight **retry-with-backoff wrapper** around `gh` CLI calls in daemon sweeps and builtins so that a single transient connectivity hiccup (DNS blip, brief proxy outage, momentary API unavailability) does not produce a hard failure and heartbeat escalation. The retry wrapper absorbs transient blips without masking real failures, reducing false-positive `needs-human` escalations (e.g. issue #647).
+
+## 2. Non-goals
+
+- **Changing the heartbeat escalation threshold** — N=3 hard failures still escalate; this only prevents a transient blip from *becoming* a hard failure.
+- **Network-level, auth, proxy, or CI-runner network configuration** — this is an application-layer retry, not an infra fix.
+- **Retrying non-transient failures** — auth/4xx/validation errors fail fast by design; retrying them is explicitly excluded.
+- **Retry for non-daemon `gh` usage** — scoped to daemon sweeps/builtins; other `gh` call sites (e.g. one-shot scripts) are not in scope here, though they could adopt the wrapper later.
+- **Idempotency redesign of `gh` operations** — `list`/`edit`/`create` are assumed safe to retry on a *connection* failure; if a `create`'s idempotency under retry proves risky, that is a known risk and a follow-on consideration (see Out of scope).
+
+## 3. Background
+
+Issue #647 surfaces 3 consecutive failures of `maintainer/label-repair-sweep` with:
+
+```
+error connecting to api.github.com
+check your internet connection
+```
+
+A transient network failure crashes the sweep rather than retrying. The same pattern affects `issue-sweep` and any other daemon builtin that calls `gh`. Currently the daemon has no retry layer: one connectivity blip → immediate hard failure → heartbeat escalation → `needs-human` issue filed, even though the problem is transient and self-resolving.
+
+## 4. Design
+
+Three pure components + a call-site adoption pass:
+
+- **Retry wrapper (pure)** — wraps every `gh` invocation in the daemon sweep/builtin layer: attempt → on failure, classify → retry-with-backoff if transient, else fail immediately → on exhaustion, throw the original error. The single place retry logic lives.
 - **Error classifier (pure)** — `(ghError) → { retryable: bool }`: transient network signals → retryable; auth/4xx/validation → not. Pure, table-testable; the correctness seam.
 - **Backoff calculator (pure)** — `(attempt) → delayMs` (1s, 5s, 15s); bounded by N.
 - **Call-site adoption** — route the affected `gh` calls through the wrapper:
