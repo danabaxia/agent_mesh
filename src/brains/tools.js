@@ -9,6 +9,8 @@ const SPECS = [
     parameters: { type: 'object', properties: { agent: { type: 'string' }, question: { type: 'string' } }, required: ['agent', 'question'] } },
   { name: 'propose_idea', description: 'Capture the user\'s idea as a structured proposal (records it; does not file anything).',
     parameters: { type: 'object', properties: { title: { type: 'string' }, note: { type: 'string' } }, required: ['title'] } },
+  { name: 'brainstorm_seeds', description: 'Get fresh idea seeds drawn from the mesh — recurring problems, gaps, your past ideas, trends — to spark a new idea or develop one you are forming.',
+    parameters: { type: 'object', properties: { topic: { type: 'string' } } } },
 ];
 
 function withTimeout(promise, ms, signal) {
@@ -48,6 +50,15 @@ export function buildToolAdapters({ root, env = {}, callEnv = {}, deps = {} } = 
       return [];
     }
   });
+  const brainstorm = deps.brainstorm || (async ({ topic } = {}) => {
+    try {
+      const { readInspiration } = await import('./inspiration-reader.js');
+      const url = process.env.INSPIRATION_URL || (process.env.MAC_CAPTURE_URL || '').replace(/\/capture\b.*$/, '/inspiration');
+      const d = await readInspiration({ url, token: process.env.MAC_INSPIRATION_TOKEN, /* cache wired in the run shell */ });
+      const seeds = topic ? (d.seeds || []).filter((s) => `${s.theme} ${s.spark}`.toLowerCase().includes(String(topic).toLowerCase())) : (d.seeds || []);
+      return { seeds, generatedAt: d.generatedAt ?? null, degraded: d.degraded ?? [] };
+    } catch { return { seeds: [] }; }
+  });
 
   async function run(name, args) {
     switch (name) {
@@ -63,6 +74,8 @@ export function buildToolAdapters({ root, env = {}, callEnv = {}, deps = {} } = 
         return meshStatus();
       case 'list_mesh_agents':
         return { agents: await listAgents() };
+      case 'brainstorm_seeds':
+        return brainstorm({ topic: args?.topic != null ? String(args.topic) : undefined }).catch(() => ({ seeds: [] }));
       default:
         return { error: 'unknown_tool' };
     }

@@ -17,9 +17,9 @@ function adapters(overrides = {}) {
   });
 }
 
-test('exposes exactly the four ask-only tools', () => {
+test('exposes exactly the five ask-only tools', () => {
   const names = adapters().specs.map((s) => s.name).sort();
-  assert.deepEqual(names, ['ask_peer', 'list_mesh_agents', 'mesh_status', 'propose_idea']);
+  assert.deepEqual(names, ['ask_peer', 'brainstorm_seeds', 'list_mesh_agents', 'mesh_status', 'propose_idea']);
 });
 
 test('propose_idea returns enrichment and performs NO write', async () => {
@@ -70,6 +70,26 @@ test('default list_mesh_agents ignores a markerless registry', async () => {
   const { dispatch } = buildToolAdapters({ root: dir, env: {}, callEnv: {}, deps: {} });
   const r = await dispatch('list_mesh_agents', {});
   assert.deepEqual(r.agents, []);
+});
+
+test('brainstorm_seeds returns digest seeds and filters by topic', async () => {
+  const seeds = [{ theme: 'voice latency', spark: 'cache STT' }, { theme: 'docs', spark: 'auto-changelog' }];
+  const { dispatch } = buildToolAdapters({ root: '/tmp/agent', env: {}, callEnv: {}, deps: {
+    brainstorm: async ({ topic }) => ({ seeds: topic ? seeds.filter((s) => (s.theme + s.spark).includes(topic)) : seeds, generatedAt: 'z', degraded: [] }),
+  }});
+  const all = await dispatch('brainstorm_seeds', {});
+  assert.equal(all.seeds.length, 2);
+  const filtered = await dispatch('brainstorm_seeds', { topic: 'voice' });
+  assert.equal(filtered.seeds.length, 1);
+  assert.equal(filtered.seeds[0].spark, 'cache STT');
+});
+
+test('brainstorm_seeds default backend degrades to {seeds:[]} on read failure', async () => {
+  const { dispatch } = buildToolAdapters({ root: '/tmp/agent', env: {}, callEnv: {}, deps: {
+    brainstorm: async () => { throw new Error('offline'); },
+  }});
+  const r = await dispatch('brainstorm_seeds', {});
+  assert.deepEqual(r.seeds, []);
 });
 
 test('unknown tool is rejected, not thrown', async () => {
