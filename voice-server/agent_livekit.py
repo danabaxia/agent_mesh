@@ -19,14 +19,18 @@ from collections import deque
 import numpy as np
 from livekit import api, rtc
 
+from turn_route import build_turn_url
+
 LK_URL = os.environ.get("LIVEKIT_WS_URL", "ws://127.0.0.1:7880")
 LK_KEY = os.environ.get("LIVEKIT_API_KEY", "devkey")
 LK_SECRET = os.environ.get("LIVEKIT_API_SECRET", "secret")
 ROOM = os.environ.get("LK_ROOM", "drive-room")
-# Default STT = local whisper-large-v3 (GPU): a dedicated ASR with Silero VAD + anti-hallucination
-# params, robust on noisy/short in-car Mandarin. Gemini STT (an LLM) confabulates on unclear audio;
-# it stays available via ?stt=gemini for manual A/B.
-TURN_URL = os.environ.get("TURN_URL", "http://127.0.0.1:8780/turn?stt=local")
+# STT backend is chosen in the PWA (Gemini ☁️ / GPU 🖥️ whisper) and defaults to
+# Gemini — an LLM transcriber that handles in-car code-switching and domain terms
+# better; whisper stays selectable for low-latency/offline. TURN_URL is just the
+# base; build_turn_url() appends the live ?stt=/&lang= per turn.
+TURN_URL = os.environ.get("TURN_URL", "http://127.0.0.1:8780/turn")
+DEFAULT_STT_UI = os.environ.get("STT_BACKEND_UI", "gemini")
 
 SR = 16000                                            # serve_turn expects 16k mono
 GATE = float(os.environ.get("VAD_GATE", "0.022"))     # RMS (0..1) speech threshold (above mic noise floor)
@@ -69,6 +73,7 @@ class Bridge:
         self.preroll = deque() # rolling ~400ms before speech, so the onset isn't clipped
         self.preroll_n = 0
         self.lang = os.environ.get("DEFAULT_LANG", "en")   # manual UI language lock (zh|en)
+        self.stt_backend = DEFAULT_STT_UI                  # UI STT model lock (gemini|local)
         self.talking = False   # push-to-talk: capture only while the user holds the button
         self.src = rtc.AudioSource(24000, 1)
         self.track = rtc.LocalAudioTrack.create_audio_track("agent-voice", self.src)
@@ -126,7 +131,7 @@ class Bridge:
             return
         self.busy = True; spoke = False
         try:
-            url = TURN_URL + (f"&lang={self.lang}" if self.lang in ("zh", "en") else "")
+            url = build_turn_url(TURN_URL, self.stt_backend, self.lang)
             body, H = await asyncio.get_event_loop().run_in_executor(None, post_turn, pcm16_to_wav(samples), url)
             transcript = urllib.parse.unquote(H.get("X-Transcript", ""))
             reply = urllib.parse.unquote(H.get("X-Reply", ""))
@@ -197,6 +202,10 @@ async def main():
             if m.get("lang") in ("zh", "en"):
                 bridge.lang = m["lang"]
                 print(f"language set to {bridge.lang}", flush=True)
+            # the PWA's Gemini/GPU toggle sends {"stt":"gemini"|"local"} — lock the STT model
+            if m.get("stt") in ("gemini", "local"):
+                bridge.stt_backend = m["stt"]
+                print(f"stt backend set to {bridge.stt_backend}", flush=True)
             if "talk" in m:
                 if m["talk"]:
                     bridge.talking = True; bridge.buf = []      # start capturing this utterance
