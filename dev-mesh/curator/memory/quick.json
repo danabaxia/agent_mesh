@@ -2040,5 +2040,16 @@
       "source": "PR #630 (2026-06-28): fix(voice): default to English interaction (Chinese STT unreliable on degraded phone audio)",
       "ts": "2026-06-28"
     }
+  },
+  "cross-machine-a2a-url-peer": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "url-peer in registry.json = cross-machine A2A; macOS→reverse-SSH for inbound; headless claude token in launchd env.",
+    "l1": "PR #632: cross-machine A2A (box→Mac) needed zero new framework code — registry.json url field + HttpClientSession (PR #151) already handle HTTP peers. Two live prerequisites: (1) Network path: macOS firewall+Tailscale block inbound → Mac initiates reverse-SSH tunnel (`ssh -R <box-P>:127.0.0.1:<mac-Q> box`). (2) Headless auth: CLAUDE_CODE_OAUTH_TOKEN must be in launchd EnvironmentVariables on the target machine — SSH session env doesn't persist to daemon spawns. Transport proven live; auth was the only remaining blocker. Test: localhost tunnel-equivalent, hermetic.",
+    "value": "Apply when wiring cross-machine agent delegation in an A2A mesh.\n\n(1) NO NEW CODE: Check for existing HTTP peer support first. If registry.json normalizeRegistry already handles url: peers and HttpClientSession already exists, cross-machine A2A is WIRING only — not a new framework feature. The framework-level work is done; operational work remains.\n\n(2) NETWORK PATH — macOS inbound-blocked pattern:\n  macOS application firewall blocks inbound. Userspace Tailscale (non-kernel extension) does NOT route inbound on macOS. If the target is a Mac:\n  - Mac INITIATES a reverse SSH tunnel: `ssh -f -N -R <box-P>:127.0.0.1:<mac-Q> <box-host>`\n  - The box WSL/Linux client reaches the Mac agent at `127.0.0.1:<box-P>`\n  - Registry entry: `{ \"<agent>\": { \"url\": \"http://127.0.0.1:<box-P>/rpc\" } }`\n  This is the only reliable inbound path from box to Mac given macOS restrictions.\n\n(3) HEADLESS AUTH — launchd env, not SSH session:\n  `claude -p` in a daemon/launchd service does NOT inherit SSH session env. `CLAUDE_CODE_OAUTH_TOKEN` set in an SSH session is NOT visible to processes started by launchd. Fix: add the token to the launchd job's EnvironmentVariables plist key (or systemd Environment directive), not the shell env.\n  Recovery: `claude setup-token` → set CLAUDE_CODE_OAUTH_TOKEN in the target machine's OS service config.\n\n(4) HERMETIC TEST = PRODUCTION TRANSPORT:\n  A test using localhost for both caller and server is transport-equivalent to the real reverse-SSH tunnel (both bind 127.0.0.1). The hermetic test fully validates the A2A HTTP path; the tunnel is pure network plumbing.\n\n(5) EXISTING SECURITY INVARIANTS INHERITED:\n  - ask-only: peer-bridge refuses non-ask before any HTTP send\n  - recursion + depth: threaded as X-AgentMesh-Path/Depth headers (see a2a-http-dual-transport-dispatch)\n  - failure-as-data: unreachable peer → ok:false Task, never throws\n  - marker-validated registry: x-agentmesh-generated:true required\n\nProvenance: PR #632 (2026-06-29).",
+    "provenance": {
+      "source": "PR #632: feat(a2a): cross-machine A2A bridge — concierge delegates to remote agents over HTTP peers (tested)",
+      "ts": "2026-06-29"
+    }
   }
 }
