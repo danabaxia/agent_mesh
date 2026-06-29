@@ -62,3 +62,22 @@ test('usage is null when the brain reports none (and on hop exhaustion)', async 
   const exhausted = await runBrainLoop({ systemPrompt: 's', messages: [{ role: 'user', text: 'x' }], tools, brain: async () => ({ toolCall: { name: 'mesh_status', args: {} } }), maxHops: 2 });
   assert.equal(exhausted.usage, null);
 });
+
+test('hop exhaustion forces a final no-tools turn so the brain RELAYS (not empty)', async () => {
+  // brain that keeps calling a tool while any tools are offered, but replies once tools are withheld
+  const brain = async ({ toolSpecs }) =>
+    (toolSpecs && toolSpecs.length > 0)
+      ? { toolCall: { name: 'mesh_status', args: {} } }
+      : { reply: 'There are 5 open issues — relayed.' };
+  const out = await runBrainLoop({ systemPrompt: 's', messages: [{ role: 'user', text: 'how many issues?' }], tools, brain, maxHops: 3 });
+  assert.equal(out.reply, 'There are 5 open issues — relayed.'); // forced no-tools turn produced a relay
+  assert.equal(out.hops, 3);
+});
+
+test('hop exhaustion with a still-looping brain stays empty (graceful, no throw)', async () => {
+  // brain that calls a tool even when none are offered → nothing to relay; must not throw
+  const brain = async () => ({ toolCall: { name: 'mesh_status', args: {} } });
+  const out = await runBrainLoop({ systemPrompt: 's', messages: [{ role: 'user', text: 'x' }], tools, brain, maxHops: 2 });
+  assert.equal(out.reply, '');
+  assert.equal(out.hops, 2);
+});

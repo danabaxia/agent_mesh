@@ -20,5 +20,11 @@ export async function runBrainLoop({ systemPrompt, messages, tools, brain, maxHo
     }
     return { reply: String(step?.reply ?? ''), enrichment, hops, usage: step?.usage ?? null };
   }
-  return { reply: '', enrichment, hops, usage: null };
+  // Hop budget exhausted while still calling tools. Rather than return an empty reply
+  // (a weaker model can loop on tools and never relay), force ONE final turn with NO
+  // tools offered — the brain must then produce a spoken reply, relaying what it
+  // gathered (e.g. the peer's ask_peer answer). If it still emits a toolCall, we ignore
+  // it and return '' gracefully.
+  const final = await brain({ systemPrompt, messages: convo, toolSpecs: [], signal });
+  return { reply: String(final?.reply ?? ''), enrichment, hops, usage: final?.usage ?? null };
 }
