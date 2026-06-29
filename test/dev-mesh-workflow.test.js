@@ -356,6 +356,7 @@ test('dogfood: real-claude, materializes the real mesh, read-only & non-merging'
   assert.match(dogfood, /contents:\s*read/, 'dogfood must be read-only (no pushes)');
   assert.match(dogfood, /upload-artifact/, 'dogfood artifacts its run logs');
   assert.doesNotMatch(dogfood, /gh pr merge|merge_pull_request|--auto\b/i, 'dogfood never merges');
+  assert.match(dogfood, /--allowedTools/, 'dogfood must declare an explicit tool allowlist');
 });
 
 // --- PR janitor (elevated-permission scheduled sweep) ---
