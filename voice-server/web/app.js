@@ -31,14 +31,15 @@ document.getElementById('lang-en').onclick = () => applyLang('en');
 
 function applyStt(s) {
   stt = s; localStorage.setItem('mesh_voice_stt', s);
-  document.getElementById('stt-gemini').classList.toggle('on', s === 'gemini');
-  document.getElementById('stt-local').classList.toggle('on', s === 'local');
+  // null-safe: a stale cached index.html may not have the toggle yet — never crash
+  document.getElementById('stt-gemini')?.classList.toggle('on', s === 'gemini');
+  document.getElementById('stt-local')?.classList.toggle('on', s === 'local');
   if (room && room.localParticipant) {
     try { room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ stt: s })), { reliable: true }); } catch {}
   }
 }
-document.getElementById('stt-gemini').onclick = () => applyStt('gemini');
-document.getElementById('stt-local').onclick = () => applyStt('local');
+const _sttG = document.getElementById('stt-gemini'); if (_sttG) _sttG.onclick = () => applyStt('gemini');
+const _sttL = document.getElementById('stt-local'); if (_sttL) _sttL.onclick = () => applyStt('local');
 
 let holding = false;
 function talk(on) {
