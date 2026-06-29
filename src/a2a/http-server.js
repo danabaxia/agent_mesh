@@ -213,7 +213,7 @@ async function handleMessage({ message, root, env, card, doQueue, agentModes }) 
     }
 
     const started = process.hrtime.bigint();
-    const run = () => runAgent({ root, env, input: validation.value.input });
+    const run = () => runAgent({ root, env, input: validation.value.input, contextId: params.message?.contextId });
     const result = validation.value.input.mode === 'do'
       ? await runSerialized({ queue: doQueue, run, started })
       : await runWithMetrics({ run, started, queueWaitMs: 0 });
