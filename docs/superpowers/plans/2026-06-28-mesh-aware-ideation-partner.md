@@ -599,6 +599,46 @@ test('brainstorm_seeds default backend degrades to {seeds:[]} on read failure', 
   const r = await dispatch('brainstorm_seeds', {});
   assert.deepEqual(r.seeds, []);
 });
+
+test('brainstorm_seeds default backend (no deps.brainstorm) serves cache when Mac is offline', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'bseed-'));
+  const cacheFile = join(dir, 'cache.json');
+  writeFileSync(cacheFile, JSON.stringify({ seeds: [{ theme: 't', spark: 'from-cache', why: 'w', sources: [], relatedCaptures: [] }], generatedAt: 'old' }));
+  const prev = process.env.AGENT_MESH_INSPIRATION_CACHE;
+  process.env.AGENT_MESH_INSPIRATION_CACHE = cacheFile;
+  try {
+    // No deps.brainstorm override — exercises the real default backend with a failing fetch.
+    const { dispatch } = buildToolAdapters({ root: '/tmp/agent', env: {}, callEnv: {}, deps: {
+      fetchImpl: async () => { throw new Error('mac offline'); },
+    }});
+    const r = await dispatch('brainstorm_seeds', {});
+    assert.equal(r.seeds[0].spark, 'from-cache');
+  } finally {
+    if (prev === undefined) delete process.env.AGENT_MESH_INSPIRATION_CACHE;
+    else process.env.AGENT_MESH_INSPIRATION_CACHE = prev;
+  }
+});
+
+test('resolveInspirationConfig: INSPIRATION_URL derives from MAC_CAPTURE_URL; cache path defaults under HOME', async () => {
+  const { resolveInspirationConfig } = await import('../src/brains/tools.js');
+  const { homedir } = await import('node:os');
+  const { join } = await import('node:path');
+  // standard /capture path
+  assert.equal(resolveInspirationConfig({ MAC_CAPTURE_URL: 'http://mac.local:9001/capture' }).url, 'http://mac.local:9001/inspiration');
+  // nested path
+  assert.equal(resolveInspirationConfig({ MAC_CAPTURE_URL: 'http://mac.local:9001/api/v1/capture' }).url, 'http://mac.local:9001/api/v1/inspiration');
+  // explicit INSPIRATION_URL takes precedence
+  assert.equal(resolveInspirationConfig({ INSPIRATION_URL: 'http://mac/insp', MAC_CAPTURE_URL: 'http://mac/capture' }).url, 'http://mac/insp');
+  // known edge case: /captures does not match word boundary — URL unchanged (documents, not fixes)
+  assert.equal(resolveInspirationConfig({ MAC_CAPTURE_URL: 'http://mac.local:9001/captures' }).url, 'http://mac.local:9001/captures');
+  // cache path defaults under HOME
+  assert.equal(resolveInspirationConfig({}).cachePath, join(homedir(), '.agent-mesh', 'inspiration-cache.json'));
+  // AGENT_MESH_INSPIRATION_CACHE overrides the default
+  assert.equal(resolveInspirationConfig({ AGENT_MESH_INSPIRATION_CACHE: '/custom/cache.json' }).cachePath, '/custom/cache.json');
+});
 ```
 
 - [ ] **Step 2: Run it — verify it fails** — FAIL (`unknown_tool`).
@@ -610,14 +650,34 @@ test('brainstorm_seeds default backend degrades to {seeds:[]} on read failure', 
     parameters: { type: 'object', properties: { topic: { type: 'string' } } } },
 ```
 
-In `buildToolAdapters`, add the default backend (mirroring `listAgents`) — it calls `readInspiration` with the box config; failure → `{seeds:[]}`:
+Add a small exported helper **before** `buildToolAdapters` (import `homedir` from `node:os` and `join` from `node:path` at the top of the file):
+
+```js
+// Exported for config-resolution tests — computes url + cachePath from env.
+export function resolveInspirationConfig(env = process.env) {
+  const url = env.INSPIRATION_URL
+    || (env.MAC_CAPTURE_URL || '').replace(/\/capture\b.*$/, '/inspiration');
+  const cachePath = env.AGENT_MESH_INSPIRATION_CACHE
+    || join(homedir(), '.agent-mesh', 'inspiration-cache.json');
+  return { url, cachePath };
+}
+```
+
+In `buildToolAdapters`, add the default backend (mirroring `listAgents`) — it calls `readInspiration` with file-backed `readCache`/`writeCache` wired from `resolveInspirationConfig`; `deps.fetchImpl` may override the HTTP client for tests; failure → `{seeds:[]}`:
 
 ```js
   const brainstorm = deps.brainstorm || (async ({ topic } = {}) => {
     try {
       const { readInspiration } = await import('./inspiration-reader.js');
-      const url = process.env.INSPIRATION_URL || (process.env.MAC_CAPTURE_URL || '').replace(/\/capture\b.*$/, '/inspiration');
-      const d = await readInspiration({ url, token: process.env.MAC_INSPIRATION_TOKEN, /* cache wired in the run shell */ });
+      const { readFile, writeFile } = await import('node:fs/promises');
+      const { url, cachePath } = resolveInspirationConfig();
+      const readCache = async () => { try { return JSON.parse(await readFile(cachePath, 'utf8')); } catch { return null; } };
+      const writeCache = async (v) => { try { await writeFile(cachePath, JSON.stringify(v)); } catch {} };
+      const d = await readInspiration({
+        ...(deps.fetchImpl && { fetchImpl: deps.fetchImpl }),
+        url, token: process.env.MAC_INSPIRATION_TOKEN,
+        readCache, writeCache,
+      });
       const seeds = topic ? (d.seeds || []).filter((s) => `${s.theme} ${s.spark}`.toLowerCase().includes(String(topic).toLowerCase())) : (d.seeds || []);
       return { seeds, generatedAt: d.generatedAt ?? null, degraded: d.degraded ?? [] };
     } catch { return { seeds: [] }; }
