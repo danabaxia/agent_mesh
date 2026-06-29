@@ -2128,5 +2128,16 @@
       "source": "PR #661: spec: perf: enable Anthropic prompt caching on static agent system prompts (#659)",
       "ts": "2026-06-29"
     }
+  },
+  "headless-claude-omit-allowedtools": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Omitting --allowedTools in headless claude -p → model attempts full tool set → ≥5 denials → health gate RED.",
+    "l1": "PR #664 / Issue #663: dogfood claude -p had no --allowedTools; model reached for Bash/Write in an observability-only run. 12 auto-denials exceeded BLOCKED_DENIALS_THRESHOLD (5) → classifyRunHealth flagged the run \"blocked\" (RED) despite a valid result. Fix: --allowedTools \"Read,Grep,Glob\" matches the stated read-only intent. Structural lint in test/dev-mesh-workflow.test.js asserts dogfood declares an explicit allowlist. Related to but distinct from [[bash-tool-wildcard]] (wrong Bash arg form vs. no list at all).",
+    "value": "Pattern: every headless 'claude -p' invocation MUST declare --allowedTools scoped to what the task actually needs.\n\n(1) DENY MECHANISM: in headless -p mode, the model receives the FULL default tool set unless restricted. If the prompt describes a read-only task but the model reaches for Bash/Write, those calls auto-deny. Denials accumulate. classifyRunHealth fails the run as 'blocked' (RED) at ≥ BLOCKED_DENIALS_THRESHOLD (5) — even if the run finishes without error and produces valid output.\n\n(2) MINIMUM SCOPE RULE: set --allowedTools to the minimum the task needs:\n  - Observability/read-only: \"Read,Grep,Glob\"\n  - With node dry-run: \"Read,Grep,Glob,Bash(node:*)\"\n  - Do-worker: \"Read,Grep,Glob,Edit,Write,Bash(git:*),Bash(gh:*)\" etc.\n  Never omit --allowedTools from any automated claude -p invocation.\n\n(3) STRUCTURAL GUARD: add a test assertion that each automation workflow declares --allowedTools. Without it, accidental omission is invisible until the health monitor reddens. Pattern (test/dev-mesh-workflow.test.js):\n    assert.match(dogfood, /--allowedTools/, 'dogfood must declare an explicit tool allowlist');\n  Pair with an exact workflow-count guard so adding a new workflow forces a deliberate update.\n\n(4) REVIEWER NOTE (PR #664 review): --allowedTools fixes READ denials but cannot fix a missing --mcp-config. The peer bridge (agentmesh_peerbridge) requires --mcp-config to load; delegation gaps are a separate failure mode not addressed by this fix.\n\n(5) DISTINCT FROM [[bash-tool-wildcard]]: that lesson covers using Bash(cmd:*) vs. Bash(cmd) (bare form blocks all args). This lesson covers the orthogonal case: OMITTING --allowedTools gives the model an unconstrained surface where it guesses what to reach for.\n\nProvenance: PR #664 (2026-06-29), Issue #663.",
+    "provenance": {
+      "source": "PR #664 (2026-06-29): bug: dogfood claude -p has no --allowedTools, causing 12 permission denials that red the health monitor",
+      "ts": "2026-06-29"
+    }
   }
 }
