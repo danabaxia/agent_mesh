@@ -2117,5 +2117,16 @@
       "source": "PR #652 (2026-06-29): spec: daemon sweep: add retry/backoff around gh API calls to handle transient network failures (#649)",
       "ts": "2026-06-29"
     }
+  },
+  "prompt-depth-fan-out-latency": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Prompt-deepening PRs multiply cold-start latency across parallel fan-outs — run 3x-disjoint perf cell before/after.",
+    "l1": "PR #620 deepened each agent's --append-system-prompt (Gemini brain layer). In a 3-peer disjoint fan-out all three peers cold-start concurrently, compounding the penalty: 28,634ms→31,372ms (+9.6%). Recovery: Anthropic prompt caching (cache_control: ephemeral on the static prefix), but the claude CLI's --append-system-prompt is plain text — cache_control is an API message-block property. Phase 0 feasibility gate: confirm whether the CLI exposes a cache_control breakpoint mechanism before implementing. Spec: PR #661 / issue #659 (2026-06-29).",
+    "value": "Pattern: prompt-depth latency tax in parallel fan-outs.\n\nAny PR that deepens agent system prompts (brain layer, framed memory, injected roster) extends the static prefix on every claude -p spawn. In a parallel fan-out (e.g. 3x-disjoint — three peers cold-started concurrently), the cold-start penalty multiplies: PR #620 caused +9.6% on 3x-disjoint latency (28,634ms→31,372ms). Routing precision/recall were unchanged; zero wasted hops — pure cold-start cost.\n\nRecovery: cache_control: {\"type\": \"ephemeral\"} on the shared static prefix. In a 3-peer disjoint fan-out all peers share the same static prefix; warm-cache reads cut ~90% input-token cost and lower TTFT.\n\nFeasibility gate (Phase 0): the claude CLI passes system prompt as plain text via --append-system-prompt. cache_control is an Anthropic API message-block property — not a text concept. Before implementing: confirm whether the CLI exposes a cache_control breakpoint mechanism (structured file, annotation, env var). If not, approach must switch to direct Anthropic API calls or rely on CLI-internal TTL caching.\n\nPre-warm: a pre-warm call writes the prefix cache before the fan-out fires, converting cold writes to reads — best-effort only, never blocks the fan-out (failure-is-data).\n\nDetection: run node scripts/eval-perf.mjs on the 3x-disjoint cell before AND after any prompt-deepening PR.\n\nProvenance: PR #661, issue #659 (2026-06-29).",
+    "provenance": {
+      "source": "PR #661: spec: perf: enable Anthropic prompt caching on static agent system prompts (#659)",
+      "ts": "2026-06-29"
+    }
   }
 }
