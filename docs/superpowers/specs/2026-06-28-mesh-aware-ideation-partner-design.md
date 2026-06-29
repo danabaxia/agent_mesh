@@ -1,6 +1,6 @@
 # Mesh-aware ideation partner — design
 
-**Status:** design (brainstormed 2026-06-28, approved; pre–Codex-review)
+**Status:** design (brainstormed 2026-06-28, approved; **Codex-converged round 5 — VERDICT: APPROVED**)
 **Governs:** CLAUDE.md Principles P1–P3 (voice = data ingress · logic = registered mesh agent · MVP→production spec-first)
 
 ## Goal
@@ -155,3 +155,5 @@ So producer, server, and reader agree exactly (env, all optional with defaults):
 
 **Round 4 (Codex, CHANGES_REQUESTED → addressed):**
 - [MAJOR] History is keyed by `session.id` (`_anon`/absent), not `contextId`, so empty-history wasn't reliably per phone-session → spec now **threads `message.contextId` through both `runAgent` transports into `runGeminiAgent` as the history key** (data-only JS, ingress untouched), with stdio+HTTP tests. This is a named prerequisite of Component C.
+
+**Round 5 (Codex): `VERDICT: APPROVED`** — no actionable findings. Spec converged.
