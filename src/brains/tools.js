@@ -36,7 +36,18 @@ export function buildToolAdapters({ root, env = {}, callEnv = {}, deps = {} } = 
     return { answer: r?.summary ?? '', status: r?.status, ok: r?.ok };
   });
   const meshStatus = deps.meshStatus || (async () => ({ error: 'mesh_status backend not wired' }));
-  const listAgents = deps.listAgents || (async () => []);
+  const listAgents = deps.listAgents || (async () => {
+    // Default backend: the SAME marker-validated registry ask_peer uses, so the
+    // concierge can actually enumerate its peers. Without this it returned [],
+    // making the brain report "no agents registered" even though ask_peer could
+    // reach them. Failures degrade to [] (never throw the loop).
+    try {
+      const bridge = createBridge({ root, env: { ...env, ...callEnv } });
+      return await bridge.listPeers();
+    } catch {
+      return [];
+    }
+  });
 
   async function run(name, args) {
     switch (name) {
