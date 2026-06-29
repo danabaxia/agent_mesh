@@ -2051,5 +2051,16 @@
       "source": "PR #632: feat(a2a): cross-machine A2A bridge — concierge delegates to remote agents over HTTP peers (tested)",
       "ts": "2026-06-29"
     }
+  },
+  "brain-loop-relay-on-hop-exhaustion": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Brain loop on maxHops: force one tool-free final turn to relay — empty-returning loop silently drops all gathered data.",
+    "l1": "In src/brains/loop.js `runBrainLoop`, when the model exhausts `maxHops` by looping on tool calls, the prior code returned ''  — silently discarding everything gathered. The brain (gemini-2.5-flash in the voice concierge) had collected a peer answer via `ask_peer` but never relayed it as text. Fix: on exhaustion, run ONE final turn with tools=[]. A model that still won't produce text stays gracefully empty (no throw). Paired with a concierge prompt update: 'call at most one tool, then answer; relay ask_peer's result right away'. PR #634 (2026-06-29).",
+    "value": "When building a multi-turn brain loop that calls tools (e.g. ask_peer, web_search), the loop must not silently return ''  on hop exhaustion — it must force one final tool-free turn so the model produces a relay response. Pattern: detect hops >= maxHops, strip the tools list, and make ONE final model call. The model has already gathered context across prior turns; a tool-free prompt compels it to produce a summary/relay instead of another tool call. Still-looping models on the forced turn stay gracefully empty (no throw — returning ''  is a valid fallback for callers rendering partial results). Pairing: update the brain's system prompt to converge early ('call at most one tool, then answer; relay the peer's result right away') so maxHops is rarely reached. Implementation: src/brains/loop.js runBrainLoop + test/brains-loop.test.js. PR #634 (2026-06-29), fixing voice-concierge empty-reply where gemini-2.5-flash looped on tools across all 4 hops without relaying the ask_peer answer.",
+    "provenance": {
+      "source": "PR #634: fix(brains): relay peer answers on hop exhaustion + concierge prompt",
+      "ts": "2026-06-29"
+    }
   }
 }
