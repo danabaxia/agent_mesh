@@ -2073,5 +2073,16 @@
       "source": "PR #636: feat(bridge): reproducible cross-machine A2A bridge setup (Mac + box scripts + docs)",
       "ts": "2026-06-29"
     }
+  },
+  "dep-injection-default-consistency": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "DI tool defaults must wire the SAME source as sibling tools — empty default creates visible tool-set disagreement.",
+    "l1": "`list_mesh_agents` in `src/brains/tools.js` defaulted `listAgents` to `async () => []`. `gemini-agent.js` passed bare `{}` deps so no real backend was wired. `ask_peer` already defaulted to the marker-validated registry — the two tools diverged and the voice brain reported \"no agents\" even though the registry and agents were correct. Fix: default `listAgents` to `createBridge().listPeers()`, the same source as `ask_peer`, degrading to `[]` on failure.",
+    "value": "When a module exposes multiple DI-injectable tools over the same data source (e.g. list-peers and ask-peer in a voice brain), ALL tool defaults must wire to the same canonical reader. A silent `async () => []` default on the list op while the ask op already reads the real source creates user-visible inconsistency: the brain truthfully reports an empty list while send operations work fine, appearing as a config or mesh problem.\n\nFix pattern (brains/tools.js):\n  const listAgents = deps.listAgents || (() => createBridge().listPeers().catch(() => []));\nSame source as `ask_peer`, degrades to [] on failure — never throws into the brain loop.\n\nTest lesson: tests that always inject the dependency via `deps` leave the DEFAULT path uncovered. For every DI function with a production default, add at least: (1) a test where the dep is NOT injected but the backend (marked registry) works — the tool must return real data; (2) a test where the dep is NOT injected and the backend is absent (markerless/stale registry) — must return []. PR #638 added exactly these two cases; full L0 suite 280/280.\n\nProvenance: PR #638 (2026-06-29).",
+    "provenance": {
+      "source": "PR #638: fix(concierge): list_mesh_agents reads the real registry (was always empty)",
+      "ts": "2026-06-29"
+    }
   }
 }
