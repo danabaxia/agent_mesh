@@ -2150,5 +2150,16 @@
       "source": "PR #666: feat(ideation): mesh-aware ideation partner — IMPLEMENTATION (re-land; #645 merged docs-only)",
       "ts": "2026-06-30"
     }
+  },
+  "llm-structured-output-fenced-json": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "LLM JSON output: prompt for a fenced ```json block; extract the last such block in the parser — never bare JSON.parse.",
+    "l1": "PR #668: analyst `inspiration-digest` ran on real `claude` and returned a markdown table instead of raw JSON. `parseInspiration`'s bare `JSON.parse` produced 0 seeds and overwrote the digest silently. Hermetic tests all passed — they feed clean JSON, so model format divergence is invisible until a live run. Fix mirrors `parseIdeas`/`analyst-daily-review`: prompt asks for 'Output ONLY a fenced ```json block — no prose'; parser extracts the last ```json block via regex, falls back to whole string for clean-JSON callers. PR #668 (2026-06-30).",
+    "value": "Two-rule pattern — apply together whenever prompting an LLM for structured JSON output.\n\n(1) PROMPT: ask for a SINGLE fenced ```json block explicitly. Add 'Output ONLY that fenced ```json block — no prose, no tables, no preamble.' LLMs default to markdown; without explicit framing they may return regression tables or prose-wrapped JSON. This convention is already validated for the analyst role (analyst-daily-review, parseIdeas).\n\n(2) PARSER: extract the LAST fenced ```json block before parsing:\n  const blocks = [...raw.matchAll(/```json\\s*([\\s\\S]*?)```/g)];\n  const candidate = blocks.length ? blocks[blocks.length - 1][1].trim() : raw;\n  try { obj = JSON.parse(candidate); } catch { return safeDefault; }\nFall back to the raw string so clean-JSON callers (unit tests, other integrations) continue to pass. Return a safe empty default on failure — never throw.\n\n(3) TEST CASES to add: (a) fenced JSON amid prose/tables → data extracted; (b) last of several blocks wins; (c) markdown table only → safe default (e.g. {seeds:[]}). Existing clean-JSON tests unchanged.\n\n(4) WHY HERMETIC TESTS DON'T CATCH THIS: unit tests inject clean JSON; model format choices are invisible until a live run. Apply this pair at write time for every new LLM-to-JSON path — not after a live failure.\n\nProvenance: PR #668 (2026-06-30), fixing live-run 0-seeds failure in `inspiration-digest`.",
+    "provenance": {
+      "source": "PR #668: fix(ideation): analyst digest fenced-json prompt + tolerant parse (live run yielded 0 seeds)",
+      "ts": "2026-06-30"
+    }
   }
 }
