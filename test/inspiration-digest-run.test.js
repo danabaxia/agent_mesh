@@ -35,3 +35,17 @@ test('analyst not done → keeps last good file (no write)', async () => {
   assert.equal(r.status, 'skip');
   assert.equal(writes.length, 0);
 });
+
+// Guard (after a LIVE run wiped a good digest, 2026-06-29): zero parseable seeds → SKIP,
+// never overwrite the last-good inspiration.json.
+test('analyst returns text but 0 parseable seeds → skip, no write', async () => {
+  const writes = [];
+  const r = await runInspirationDigest({
+    readers: readers(100),
+    dispatchAnalyst: async () => ({ done: true, text: '**Regressions only** | # | ID |\n|---|---|\n| 1 | p-001 |' }),
+    writeFile: async (p, c) => writes.push({ p, c }),
+    file: '/tmp/insp.json', now: 100,
+  });
+  assert.equal(r.status, 'skip');
+  assert.equal(writes.length, 0);
+});
