@@ -67,18 +67,31 @@ export function classifyRunHealth(envelope) {
   // before counting — a model misbehaving on an inert skill must not red a run that
   // otherwise did its job. The count-only form has no detail to filter, so use it as-is.
   let denials;
+  let usingArrayForm = false;
   if (envelope.permission_denials_count != null) {
     denials = Number(envelope.permission_denials_count);
   } else if (Array.isArray(envelope.permission_denials)) {
     denials = envelope.permission_denials.filter((d) => !isInertDenial(d)).length;
+    usingArrayForm = true;
   } else {
     denials = 0;
   }
-  if (denials >= BLOCKED_DENIALS_THRESHOLD) {
+  // Only fire "blocked" when denials explain a missing/empty result. High denials with
+  // a completed result mean the model probed unavailable tools on the way to a correct
+  // answer (e.g. Sonnet trying Bash 20+ times under --allowedTools "Read,Grep,Glob").
+  // This exception applies ONLY to the array form — per-denial detail is available and
+  // inert denials have already been filtered out. The count form carries no detail, so
+  // a blocked-but-talkative agent that produces a result string must still be `blocked`.
+  const hasCompletedTask = usingArrayForm
+    && !envelope.is_error
+    && Number(envelope.num_turns ?? 0) > 0
+    && typeof envelope.result === 'string'
+    && envelope.result.trim().length > 0;
+  if (denials >= BLOCKED_DENIALS_THRESHOLD && !hasCompletedTask) {
     return { healthy: false, status: 'blocked', reason: `ran but was blocked — ${denials} permission denials (missing/incorrect tool grants?)` };
   }
   const billed = cost > 0 ? `$${cost.toFixed(4)}` : '$0 (subscription)';
-  return { healthy: true, status: 'ok', reason: `ok (${turns} turns, ${billed})` };
+  return { healthy: true, status: 'ok', reason: `ok (${turns} turns, ${billed}${denials > 0 ? `, ${denials} tool denials (inert)` : ''})` };
 }
 
 /**
