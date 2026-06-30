@@ -1,8 +1,23 @@
- artifact alongside the aggregate report; one entry per (cell, hop).
+# Eval: Add Per-Hop Quality Telemetry to Localize Regression Source in Multi-Peer Topologies — Design
+
+**Date:** 2026-06-30
+**Status:** Design (pending review)
+**Issue:** #677
+
+## Goal
+
+The fileable `perf:3x-disjoint:quality_per_1k_tokens` regression (−16.2%) and the non-fileable 6x-confusable dip (−7.7%) both have `evidence.scorecardPath: null` — no drill-down data exists to distinguish whether quality loss originates at **dispatch** (wrong peer selected), **execution** (peer response is verbose or off-target), or **synthesis** (orchestrator wastes tokens re-summarizing). Without per-hop instrumentation the regression is unfalsifiable.
+
+Extend the eval harness to record `quality_per_1k_tokens` at each hop boundary (dispatch → peer → result) and emit a per-hop scorecard alongside the aggregate report. A reviewer or MIR can then open the scorecard and localize any regression to the hop that caused it — making the signal actionable rather than just observable.
+
+## Components
+
+- **Per-hop collector** — instruments the eval harness at each hop boundary (dispatch / peer-execution / synthesis) to record the tokens consumed and a quality signal; raw hop records are consumed by the scorer and scorecard writer.
+- **Scorecard writer** — emits `<cell>-hops-scorecard.json` as an artifact alongside the aggregate report; one entry per (cell, hop).
 - **Quality-per-hop scorer (pure)** — given a hop's output and tokens, computes its quality and `quality_per_1k_tokens` consistently with the aggregate scorer (so hops roll up correctly). Pure, table-testable.
 - **Finding evidence wiring (report/finding-filer)** — sets `evidence.scorecardPath` on fileable findings to the per-hop scorecard for the affected cell.
 - **Aggregate report (unchanged)** — continues to emit the existing top-level metrics; per-hop data is additive beside it.
-- **Config** — optional toggle for per-hop capture (default on for multi-peer cells); applies to `3x-disjoint` and `6x-confusable` at minimum.
+- **Config** — `AGENT_MESH_PERF_PER_HOP_DISABLED` (unset; set to `1` to suppress per-hop capture and revert to aggregate-only output); applies to `3x-disjoint` and `6x-confusable` cells at minimum. Default is on for multi-peer cells.
 
 ## Data flow
 
@@ -21,12 +36,12 @@
 Pure-scorer and harness tests (hermetic):
 
 - **Per-hop breakdown present:** running `3x-disjoint` and `6x-confusable` produces a per-hop scorecard with dispatch / peer-execution / synthesis entries, each carrying `quality`, `tokens`, `quality_per_1k_tokens`.
-- **Roll-up consistency:** per-hop figures reconcile with the existing aggregate `quality_per_1k_tokens` for the cell (no contradictory totals).
+- **Roll-up consistency:** per-hop `quality_per_1k_tokens` figures reconcile with the existing aggregate using a weighted-average formula (`sum(quality_i * tokens_i) / sum(tokens_i)`); the reconciliation allows for framework-overhead slack (metadata / context-passing tokens not attributed to any hop) — strict token-sum equality is not required, only that the weighted quality is within a small tolerance (e.g. ±1%).
 - **`scorecardPath` populated:** a fileable finding's `evidence.scorecardPath` is **non-null** and points at the per-hop scorecard (the acceptance criterion / fixes the `null` gap).
 - **Additive schema:** existing aggregate metrics and their schema are byte-unchanged; a consumer reading only the aggregate is unaffected (regression lock).
 - **Localization fixture:** a synthetic run where quality loss is injected at the synthesis hop yields a per-hop scorecard showing the drop at synthesis (and not dispatch/execution) — proving the telemetry actually localizes.
 - **Per-peer attribution:** in the disjoint cell, each peer's execution hop is attributed to the correct peer.
-- **Toggle:** disabling per-hop capture reverts to aggregate-only output; no scorecard written, `scorecardPath` behaves as before.
+- **Toggle:** disabling per-hop capture (`AGENT_MESH_PERF_PER_HOP_DISABLED=1`) reverts to aggregate-only output; no scorecard written, `scorecardPath` behaves as before.
 - **Resilience:** a missing/failed hop measurement is recorded as such (no crash, no phantom perfect score).
 
 ## Out of scope
