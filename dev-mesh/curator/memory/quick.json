@@ -2139,5 +2139,16 @@
       "source": "PR #664 (2026-06-29): bug: dogfood claude -p has no --allowedTools, causing 12 permission denials that red the health monitor",
       "ts": "2026-06-29"
     }
+  },
+  "spec-impl-automerge-split": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Spec-auto-merge split: if a PR merges docs-only, implementation must be a NEW PR — post-merge pushes are orphaned.",
+    "l1": "PR #645 auto-merged containing only spec+plan docs (1001 insertions, 2 files). 8 implementation commits pushed after to the same branch were never part of the merge — the push re-created the branch unattached to the already-merged PR. PR #666 re-landed the implementation onto current main as a fresh PR.",
+    "value": "After auto-merge of a docs-only PR: (1) assume branch is detached — post-merge pushes are orphaned. (2) Open a NEW PR onto current main; do NOT re-attach to the closed PR. (3) Push/cherry-pick implementation commits fresh. (4) Label the re-land 'IMPLEMENTATION (re-land; #N)' for audit trail. (5) Run the full L0 gate on the re-land base.",
+    "provenance": {
+      "source": "PR #666: feat(ideation): mesh-aware ideation partner — IMPLEMENTATION (re-land; #645 merged docs-only)",
+      "ts": "2026-06-30"
+    }
   }
 }
