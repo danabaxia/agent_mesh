@@ -318,7 +318,7 @@ async function handleMessage({ message, root, env, card, doQueue, agentModes, ag
       ? () => fastPathExecute({ root, env, toolCall, task: validation.value.input.task, parentRunId })
       : agentRole === 'orchestrator'
         ? () => orchestrate({ root, env, input: validation.value.input, parentRunId })
-        : () => runAgent({ root, env, input: validation.value.input, parentRunId, session, thinkingEffort });
+        : () => runAgent({ root, env, input: validation.value.input, parentRunId, session, thinkingEffort, contextId: params.message?.contextId });
     const result =
       validation.value.input.mode === 'do'
         ? await runSerialized({ queue: doQueue, run, started })

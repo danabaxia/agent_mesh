@@ -36,7 +36,7 @@ function withDeadline(promise, ms, controller) {
  * Run one ask turn for a gemini-brained agent. Returns the delegate-result shape
  * so buildTaskFromDelegateResult maps it to an A2A Task unchanged.
  */
-export async function runGeminiAgent({ root, env = {}, input, session = {}, parentRunId = null, brain = runGemini, deps = {}, now = Date.now() } = {}) {
+export async function runGeminiAgent({ root, env = {}, input, session = {}, contextId, parentRunId = null, brain = runGemini, deps = {}, now = Date.now() } = {}) {
   // ask-only — refuse before any run-log / brain / tool / recursion work.
   if (input?.mode !== 'ask') {
     return { files_changed: null, log_path: null, run_id: null, usage: null, status: 'refused',
@@ -57,13 +57,16 @@ export async function runGeminiAgent({ root, env = {}, input, session = {}, pare
   const base = { files_changed: null, log_path: logPath, run_id: runId, usage: null };
   await appendRunLog(logPath, { id: runId, parent_run_id: parentRunId, brain: 'gemini', state: 'started', mode: 'ask', started_at: startedAt, route: 'a2a', root });
 
-  // For the single-user voice box, session.id collapses to a stable per-server key
-  // (the ingress sends contextId but no agentmesh/caller, so stdio's deriveCallerSession
-  // yields a stable _anon session); multi-session keying would require threading the
-  // message contextId.
-  const contextId = session.id || 'anon';
-  const systemPrompt = (await readObeyedPrompt(root)) + (await readFramedMemory(root));
-  const history = await loadHistory(root, contextId, { now });
+  // Prefer the A2A message contextId (the voice ingress stamps it per phone session);
+  // fall back to the derived caller session, then 'anon'. This makes history — and the
+  // first-turn check below — reliably per-session across stdio AND http transports.
+  const sessionKey = contextId || session.id || 'anon';
+  const obeyed = (await readObeyedPrompt(root)) + (await readFramedMemory(root));
+  const history = await loadHistory(root, sessionKey, { now });
+  // First turn of a session = no prior history. A one-line note (data, not a new tool)
+  // lets the prompt's ideation behavior open with a spark; absent on later turns.
+  const firstTurn = history.length === 0;
+  const systemPrompt = obeyed + (firstTurn ? '\n\n(This is the first turn of this session.)' : '');
   const tools = buildToolAdapters({ root, env, callEnv: entered.env, deps });
   const messages = [...history.map((t) => ({ role: t.role, text: t.text })), { role: 'user', text: String(input.task ?? '') }];
 
@@ -80,8 +83,8 @@ export async function runGeminiAgent({ root, env = {}, input, session = {}, pare
     }
 
     // Persist the turn pair (durable, capped history).
-    await appendTurn(root, contextId, { role: 'user', text: String(input.task ?? ''), ts: now });
-    if (out.reply) await appendTurn(root, contextId, { role: 'assistant', text: out.reply, ts: now });
+    await appendTurn(root, sessionKey, { role: 'user', text: String(input.task ?? ''), ts: now });
+    if (out.reply) await appendTurn(root, sessionKey, { role: 'assistant', text: out.reply, ts: now });
 
     const result = { ...base, status: 'done', summary: out.reply, usage: out.usage ?? null };
     if (out.enrichment) result.enrichment = out.enrichment;

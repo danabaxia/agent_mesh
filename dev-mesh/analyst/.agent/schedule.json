@@ -17,6 +17,15 @@
       "cadence": { "kind": "every", "minutes": 120 },
       "enabled": true,
       "description": "Read-only: Analyst researches needs-human escalations (web + host-collected PR/issue context) and posts a diagnosis + strategy comment. No code changes."
+    },
+    {
+      "id": "inspiration-digest",
+      "name": "inspiration-digest — daily mesh inspiration digest for the concierge",
+      "kind": "builtin",
+      "builtin": "inspiration-digest",
+      "cadence": { "kind": "daily", "at": "08:30" },
+      "enabled": true,
+      "saveArtifact": true
     }
   ]
 }

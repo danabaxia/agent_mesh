@@ -29,7 +29,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdirSync, appendFileSync, rmSync, realpathSync, writeFileSync, readFileSync, renameSync } from 'node:fs';
+import { mkdirSync, appendFileSync, rmSync, realpathSync, writeFileSync, readFileSync, renameSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createA2AClient } from '../src/a2a/stdio-client.js';
@@ -60,6 +60,8 @@ import { runResearchEscalation, runMergedPrCleanup } from '../src/dev-society/re
 import { runResearchFix } from '../src/dev-society/research-fix-run.js';
 import { planPostMergeReconcile } from '../src/dev-society/post-merge-reconcile.js';
 import { planAutofixPrSweep } from '../src/dev-society/autofix-pr-sweep.js';
+import { runInspirationDigest } from '../src/dev-society/inspiration-digest-run.js';
+import { DEFAULT_MIR_DIR, DEFAULT_INSPIRATION_INTERVAL_MS, DEFAULT_INSPIRATION_MAX_SEEDS, DEFAULT_INSPIRATION_STALE_MS, DEFAULT_INSPIRATION_FILE_SUFFIX, readPositiveInt } from '../src/config.js';
 
 const sh = promisify(execFile);
 const repoRoot = realpathSync(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -299,6 +301,72 @@ if (!once && !selftest) {
     'health-alert-sweep': () => healthAlertTick()
       .then(() => ({ status: 'ok', output: 'health-alert sweep complete' }))
       .catch((e) => { log('health-alert-sweep error:', e.message); return { status: 'fail', error: e.message }; }),
+    // Inspiration-digest: gather mesh signals (MIR, open-issue gaps via gh, voice captures, gh-activity)
+    // → ask the Analyst for idea seeds → atomically write inspiration.json.
+    // Ask-only (no code/PR spawn). Failure is data — keeps the last good file on any dispatch failure.
+    'inspiration-digest': () => (async () => {
+      const inspirationFile = process.env.AGENT_MESH_INSPIRATION_FILE
+        || join(repoRoot, DEFAULT_INSPIRATION_FILE_SUFFIX);
+      const maxSeeds = readPositiveInt(process.env.AGENT_MESH_INSPIRATION_MAX_SEEDS, DEFAULT_INSPIRATION_MAX_SEEDS);
+      const staleMs = readPositiveInt(process.env.AGENT_MESH_INSPIRATION_STALE_MS, DEFAULT_INSPIRATION_STALE_MS);
+      const mirDir = process.env.AGENT_MESH_MIR_DIR || join(repoRoot, DEFAULT_MIR_DIR);
+      const ghActivityPath = process.env.AGENT_MESH_GH_ACTIVITY || join(repoRoot, '.dev-society', 'gh-activity.json');
+      const capturesPath = process.env.AGENT_MESH_CAPTURES_FILE || join(repoRoot, '.captures', 'captures.jsonl');
+
+      // Real readers: each resolves to { asOf: epochMs, data: any } or throws (→ degraded).
+      const readers = {
+        mir: async () => {
+          // Find the latest mir-*.json under mirDir (same pattern as analyst-review-run.mjs).
+          const { latestMirPath } = await import('../src/mesh-improvement/collect.js');
+          const mirPath = latestMirPath(mirDir);
+          if (!mirPath) throw new Error('no MIR file');
+          const { mtimeMs } = statSync(mirPath);
+          return { asOf: mtimeMs, data: JSON.parse(readFileSync(mirPath, 'utf8')) };
+        },
+        gaps: async () => {
+          // Open issues as a gap signal: list top-50 open issues (gh, read-only, no auth change).
+          const raw = (await sh('gh', ['issue', 'list', '--repo', cfg.repo, '--state', 'open', '--limit', '50', '--json', 'number,title,labels'], { maxBuffer: 1 << 24 })).stdout;
+          return { asOf: Date.now(), data: { stale: JSON.parse(raw) } };
+        },
+        captures: async () => {
+          const { mtimeMs } = statSync(capturesPath);   // throws → degraded (absent)
+          const lines = readFileSync(capturesPath, 'utf8').split('\n').filter(Boolean);
+          const items = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+          return { asOf: mtimeMs, data: items };
+        },
+        activity: async () => {
+          const { mtimeMs } = statSync(ghActivityPath);   // throws → degraded (absent)
+          return { asOf: mtimeMs, data: JSON.parse(readFileSync(ghActivityPath, 'utf8')) };
+        },
+      };
+
+      // Atomic write: tmp + rename — never leaves a partial file.
+      const atomicWrite = async (filePath, content) => {
+        const tmp = `${filePath}.tmp`;
+        mkdirSync(dirname(filePath), { recursive: true });
+        writeFileSync(tmp, content);
+        renameSync(tmp, filePath);
+      };
+
+      // dispatchAnalyst: open a fresh A2A client to the analyst, ask once, close.
+      const dispatchAnalyst = async ({ prompt }) => {
+        const reg = core.advisoryRegistry({ binPath: BIN, meshRoot: SCHED_MESH_ROOT });
+        let client = null;
+        try {
+          client = await createA2AClient(reg, { requestTimeoutMs: cfg.timeoutMs });
+          const task = await client.send('analyst', core.a2aMessage('ask', prompt, { caller: 'inspiration-digest' }));
+          return { done: core.taskSucceeded(task), text: core.taskText(task) };
+        } finally { await client?.close().catch(() => {}); }
+      };
+
+      const res = await runInspirationDigest({
+        readers, dispatchAnalyst, writeFile: atomicWrite, file: inspirationFile,
+        now: Date.now(), maxSeeds, staleMs, log: (...a) => log('inspiration:', ...a),
+      });
+      return res.status === 'ok'
+        ? { status: 'ok', output: `inspiration-digest: wrote ${res.seeds.length} seeds` }
+        : { status: 'skip', output: `inspiration-digest: skipped (${res.degraded?.join(',') || 'no reason'})` };
+    })().catch((e) => { log('inspiration-digest error:', e.message); return { status: 'fail', error: e.message }; }),
   };
   // Materialize managed wiring (registry.json / .mcp.json) before the scheduler
   // can fire any job — the daemon (unlike the dashboard) has no auto-sync, so

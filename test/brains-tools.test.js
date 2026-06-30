@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildToolAdapters } from '../src/brains/tools.js';
+import { promises as fsp } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { buildToolAdapters, fileCache } from '../src/brains/tools.js';
 
 function adapters(overrides = {}) {
   return buildToolAdapters({
@@ -17,9 +19,9 @@ function adapters(overrides = {}) {
   });
 }
 
-test('exposes exactly the four ask-only tools', () => {
+test('exposes exactly the five ask-only tools', () => {
   const names = adapters().specs.map((s) => s.name).sort();
-  assert.deepEqual(names, ['ask_peer', 'list_mesh_agents', 'mesh_status', 'propose_idea']);
+  assert.deepEqual(names, ['ask_peer', 'brainstorm_seeds', 'list_mesh_agents', 'mesh_status', 'propose_idea']);
 });
 
 test('propose_idea returns enrichment and performs NO write', async () => {
@@ -72,8 +74,46 @@ test('default list_mesh_agents ignores a markerless registry', async () => {
   assert.deepEqual(r.agents, []);
 });
 
+test('brainstorm_seeds returns digest seeds and filters by topic', async () => {
+  const seeds = [{ theme: 'voice latency', spark: 'cache STT' }, { theme: 'docs', spark: 'auto-changelog' }];
+  const { dispatch } = buildToolAdapters({ root: '/tmp/agent', env: {}, callEnv: {}, deps: {
+    brainstorm: async ({ topic }) => ({ seeds: topic ? seeds.filter((s) => (s.theme + s.spark).includes(topic)) : seeds, generatedAt: 'z', degraded: [] }),
+  }});
+  const all = await dispatch('brainstorm_seeds', {});
+  assert.equal(all.seeds.length, 2);
+  const filtered = await dispatch('brainstorm_seeds', { topic: 'voice' });
+  assert.equal(filtered.seeds.length, 1);
+  assert.equal(filtered.seeds[0].spark, 'cache STT');
+});
+
+test('brainstorm_seeds default backend degrades to {seeds:[]} on read failure', async () => {
+  const { dispatch } = buildToolAdapters({ root: '/tmp/agent', env: {}, callEnv: {}, deps: {
+    brainstorm: async () => { throw new Error('offline'); },
+  }});
+  const r = await dispatch('brainstorm_seeds', {});
+  assert.deepEqual(r.seeds, []);
+});
+
 test('unknown tool is rejected, not thrown', async () => {
   assert.deepEqual(await adapters().dispatch('rm_rf', {}), { error: 'unknown_tool' });
+});
+
+test('fileCache: write then read roundtrip returns the digest', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'filecache-'));
+  const cacheFile = join(dir, 'sub', 'inspiration-cache.json');
+  const { readCache, writeCache } = fileCache(cacheFile, { readFile: fsp.readFile, writeFile: fsp.writeFile, mkdir: fsp.mkdir, rename: fsp.rename, randomUUID });
+  const digest = { seeds: [{ theme: 'x', spark: 'y' }], generatedAt: 'g', degraded: [], fetchedAt: 999 };
+  await writeCache(digest);
+  const got = await readCache();
+  assert.deepEqual(got, digest);
+});
+
+test('fileCache: miss → null (no file yet)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'filecache-miss-'));
+  const cacheFile = join(dir, 'does-not-exist.json');
+  const { readCache } = fileCache(cacheFile, { readFile: fsp.readFile, writeFile: fsp.writeFile, mkdir: fsp.mkdir, rename: fsp.rename, randomUUID });
+  const got = await readCache();
+  assert.equal(got, null);
 });
 
 test('a backend error becomes data, never throws the loop', async () => {
