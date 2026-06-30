@@ -51,3 +51,35 @@ test('parseInspiration on garbage → empty, never throws', () => {
   assert.deepEqual(parseInspiration('not json', { maxSeeds: 7 }), { seeds: [] });
   assert.deepEqual(parseInspiration('', { maxSeeds: 7 }), { seeds: [] });
 });
+
+// Regression (found via a LIVE analyst run, 2026-06-29): the real analyst replies with a
+// fenced ```json block, often wrapped in prose/markdown — bare JSON.parse yielded 0 seeds.
+test('parseInspiration extracts seeds from a fenced ```json block amid prose', () => {
+  const reply = [
+    'Here are the seeds I propose:',
+    '```json',
+    JSON.stringify({ seeds: [{ theme: 'voice', spark: 'cache STT', why: 'w', sources: [], relatedCaptures: [] }] }),
+    '```',
+    'Let me know if you want more.',
+  ].join('\n');
+  const r = parseInspiration(reply, { maxSeeds: 7 });
+  assert.equal(r.seeds.length, 1);
+  assert.equal(r.seeds[0].spark, 'cache STT');
+});
+
+test('parseInspiration uses the LAST fenced block when several are present', () => {
+  const reply = '```json\n{"seeds":[{"theme":"a","spark":"first"}]}\n```\n```json\n{"seeds":[{"theme":"b","spark":"last"}]}\n```';
+  assert.equal(parseInspiration(reply, { maxSeeds: 7 }).seeds[0].spark, 'last');
+});
+
+test('parseInspiration on a markdown table (no json) → empty, never throws', () => {
+  const table = '**Regressions only**\n\n| # | ID | Severity |\n|---|----|----------|\n| 1 | p-001 | high |';
+  assert.deepEqual(parseInspiration(table, { maxSeeds: 7 }), { seeds: [] });
+});
+
+test('buildInspirationPrompt asks for a fenced json block (not prose/tables)', async () => {
+  const s = await gatherSignals({ mir: reader(1, {}), gaps: reader(1, {}), captures: reader(1, []), activity: reader(1, {}) }, { now: 1, staleMs: 9 });
+  const p = buildInspirationPrompt(s, { maxSeeds: 7 });
+  assert.match(p, /```json/);
+  assert.match(p, /no prose, no tables/i);
+});

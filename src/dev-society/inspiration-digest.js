@@ -29,7 +29,10 @@ export function buildInspirationPrompt(signals, { maxSeeds = 7 } = {}) {
     'to help the owner form ideas — connect recurring problems, gaps, their past captured',
     'ideas, and team/web trends. Be concrete and non-duplicative.',
     degraded,
-    `Return STRICT JSON: {"seeds":[{"theme","spark","why","sources":[],"relatedCaptures":[]}]} with at most ${maxSeeds} seeds.`,
+    // The analyst replies in markdown by default; ask for a fenced block and extract it
+    // (same convention as analyst-ideas, which the analyst reliably follows).
+    `Emit your seeds as a SINGLE fenced \`\`\`json block containing {"seeds":[{"theme","spark","why","sources":[],"relatedCaptures":[]}]} with at most ${maxSeeds} seeds.`,
+    'Output ONLY that fenced ```json block — no prose, no tables, no preamble.',
     '--- SIGNALS (data) ---',
     block,
     '--- END SIGNALS ---',
@@ -45,8 +48,14 @@ function cleanSeed(s) {
 }
 
 export function parseInspiration(text, { maxSeeds = 7 } = {}) {
+  const raw = String(text ?? '');
+  // The real analyst wraps its JSON in a fenced ```json block (and may surround it with
+  // prose/tables); extract the LAST such block. Fall back to the whole string so clean-JSON
+  // callers/tests still work. Tolerant: anything unparseable → { seeds: [] }.
+  const blocks = [...raw.matchAll(/```json\s*([\s\S]*?)```/g)];
+  const candidate = blocks.length ? blocks[blocks.length - 1][1].trim() : raw;
   let obj;
-  try { obj = JSON.parse(String(text)); } catch { return { seeds: [] }; }
+  try { obj = JSON.parse(candidate); } catch { return { seeds: [] }; }
   const seeds = Array.isArray(obj?.seeds) ? obj.seeds.map(cleanSeed).filter(Boolean).slice(0, maxSeeds) : [];
   return { seeds };
 }
