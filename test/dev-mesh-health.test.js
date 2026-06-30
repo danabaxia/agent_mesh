@@ -195,3 +195,19 @@ test('classifyRunHealth: high denials + no result still blocked (original blocke
   assert.equal(h.healthy, false);
   assert.equal(h.status, 'blocked');
 });
+
+test('classifyRunHealth: count form + non-empty result is still blocked (blocked-but-talkative)', () => {
+  // The count form carries no per-denial detail — a blocked-but-talkative agent that
+  // produced a result like "I attempted to push but Bash was denied." must still be
+  // classified blocked. The hasCompletedTask exception is scoped to the array form only,
+  // where inert denials have been filtered and the nature of each denial is known.
+  const h = classifyRunHealth({
+    is_error: false,
+    num_turns: 62,
+    total_cost_usd: 1.6,
+    permission_denials_count: 25,
+    result: 'I attempted to push but Bash was denied.',
+  });
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'blocked');
+});
