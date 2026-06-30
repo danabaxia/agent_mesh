@@ -173,3 +173,25 @@ test('renderHealthReport: a blocked probe renders its row', () => {
   const a = assessMesh({ runs: [{ name: 'backlog', envelope: { is_error: false, num_turns: 62, total_cost_usd: 1.6, permission_denials_count: 25 } }] });
   assert.match(renderHealthReport(a), /\| backlog \| 🔴 blocked \|/);
 });
+
+test('classifyRunHealth: #681 — high denials + completed result is healthy (false-positive fix)', () => {
+  // Real case 2026-06-30: Sonnet probed Bash 36 times under --allowedTools Read,Grep,Glob
+  // before settling, but result was complete (15 checks confirmed). Must not be blocked.
+  const envelope = {
+    is_error: false, num_turns: 14, result: 'All 15 checks passed.',
+    total_cost_usd: 2.52,
+    permission_denials: Array.from({ length: 36 }, (_, i) => ({
+      tool_name: 'Bash', tool_use_id: `id_${i}`,
+      tool_input: { command: 'node --test test/backlog.test.js' },
+    })),
+  };
+  assert.equal(classifyRunHealth(envelope).healthy, true);
+  assert.equal(classifyRunHealth(envelope).status, 'ok');
+});
+
+test('classifyRunHealth: high denials + no result still blocked (original blocked case unchanged)', () => {
+  // Denials with no meaningful result → tool grants are genuinely missing.
+  const h = classifyRunHealth({ is_error: false, num_turns: 62, total_cost_usd: 1.6, permission_denials_count: 25 });
+  assert.equal(h.healthy, false);
+  assert.equal(h.status, 'blocked');
+});
