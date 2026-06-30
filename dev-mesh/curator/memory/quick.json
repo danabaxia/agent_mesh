@@ -2183,5 +2183,16 @@
       "source": "PR #678: spec: eval: add per-hop quality telemetry to localize regression source in multi-peer topologies (#677)",
       "ts": "2026-06-30"
     }
+  },
+  "digest-writer-zero-result-skip-not-write": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Digest writer: zero parsed results from a producer is a SKIP, not a write — never overwrite last-good cached state.",
+    "l1": "PR #684: inspiration-digest-run wrote an empty digest whenever parseInspiration returned 0 seeds (analyst prose, transient, parse miss), overwriting good seeds — happened twice on live runs. Fix: zero seeds now takes the same skip branch as analyst-not-done, preserving the last-good inspiration.json. Complements llm-structured-output-fenced-json (PR #668): that PR's 'safe empty default' on parse failure stops a throw but doesn't stop a bad write — the caller still has to refuse to commit an empty result.",
+    "value": "Pattern: any cache/digest writer fed by an async or LLM-backed producer must treat a degenerate/empty result the same as a producer failure — both take the 'skip, keep last-good' branch, never the 'write' branch.\n\n(1) Enumerate ALL ways the producer can yield nothing useful: explicit error, not-done/timeout, AND succeeded-but-empty-parse (model returned prose/wrong shape, transient, partial match). Hermetic tests usually only cover success-with-good-data and explicit failure — the 'succeeded but parsed to empty' case is the gap a live run finds.\n\n(2) Add the empty-result check as a peer of the existing not-done/error guard, not a special case bolted onto the write path:\n  if (!res?.done) return skip;\n  if (parsed.length === 0) return skip;\n  write(parsed);\n\n(3) A parser returning a 'safe empty default' (e.g. {seeds:[]}) on unparseable input is necessary but NOT sufficient — that only stops a throw. The caller must still distinguish 'empty because nothing to report' from 'empty because parsing degraded', and default to skip when ambiguous: overwriting good cached state with an empty result is strictly worse than leaving stale-but-good data for one more cycle.\n\n(4) Regression test: feed the parser's exact degenerate output (e.g. a markdown table instead of JSON) through the FULL writer path and assert {status:'skip', writes:[]} — not just that the parser alone returns an empty array.\n\nProvenance: PR #684 (2026-06-30), found after a live analyst run twice wiped inspiration.json to empty; the underlying parse-format gap was already fixed in PR #668, but the writer still needed its own independent skip guard.",
+    "provenance": {
+      "source": "PR #684: fix(ideation): zero-seed digest run is a SKIP, never wipe the last-good digest",
+      "ts": "2026-06-30"
+    }
   }
 }
