@@ -1,6 +1,23 @@
 import { createBridge } from '../a2a/peer-bridge.js';
+import { dirname } from 'node:path';
 
 const TOOL_TIMEOUT_MS = 20_000;
+
+/**
+ * Build a file-backed readCache/writeCache pair for readInspiration.
+ * Uses atomic write (tmp + rename) to avoid partial reads.
+ */
+export function fileCache(cacheFile, { readFile, writeFile, mkdir, rename, randomUUID }) {
+  return {
+    readCache: async () => { try { return JSON.parse(await readFile(cacheFile, 'utf8')); } catch { return null; } },
+    writeCache: async (digest) => {
+      await mkdir(dirname(cacheFile), { recursive: true });
+      const tmp = `${cacheFile}.${randomUUID()}.tmp`;
+      await writeFile(tmp, JSON.stringify(digest));
+      await rename(tmp, cacheFile);
+    },
+  };
+}
 
 const SPECS = [
   { name: 'mesh_status', description: 'Live mesh status: open issue/PR counts and headline items.', parameters: { type: 'object', properties: {} } },
@@ -53,8 +70,15 @@ export function buildToolAdapters({ root, env = {}, callEnv = {}, deps = {} } = 
   const brainstorm = deps.brainstorm || (async ({ topic } = {}) => {
     try {
       const { readInspiration } = await import('./inspiration-reader.js');
+      const { homedir } = await import('node:os');
+      const { join } = await import('node:path');
+      const fsp = await import('node:fs/promises');
+      const { randomUUID } = await import('node:crypto');
       const url = process.env.INSPIRATION_URL || (process.env.MAC_CAPTURE_URL || '').replace(/\/capture\b.*$/, '/inspiration');
-      const d = await readInspiration({ url, token: process.env.MAC_INSPIRATION_TOKEN, /* cache wired in the run shell */ });
+      const cacheFile = process.env.AGENT_MESH_INSPIRATION_CACHE || join(homedir(), '.agent-mesh', 'inspiration-cache.json');
+      const ttlMs = Number(process.env.INSPIRATION_CACHE_TTL_MS) || 3_600_000;
+      const { readCache, writeCache } = fileCache(cacheFile, { readFile: fsp.readFile, writeFile: fsp.writeFile, mkdir: fsp.mkdir, rename: fsp.rename, randomUUID });
+      const d = await readInspiration({ url, token: process.env.MAC_INSPIRATION_TOKEN, ttlMs, readCache, writeCache });
       const seeds = topic ? (d.seeds || []).filter((s) => `${s.theme} ${s.spark}`.toLowerCase().includes(String(topic).toLowerCase())) : (d.seeds || []);
       return { seeds, generatedAt: d.generatedAt ?? null, degraded: d.degraded ?? [] };
     } catch { return { seeds: [] }; }

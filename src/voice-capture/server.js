@@ -8,7 +8,7 @@ export function createCaptureServer({ token, dir, inspirationToken, inspirationF
   const store = makeStore(dir);
   return http.createServer((req, res) => {
     // Read route — least privilege: its OWN token; the capture(write) token must not read.
-    if (req.method === 'GET' && req.url === '/inspiration') {
+    if (req.method === 'GET' && req.url.split('?')[0] === '/inspiration') {
       if (!inspirationToken || (req.headers['authorization'] || '') !== `Bearer ${inspirationToken}`) return void res.writeHead(401).end();
       readFile(inspirationFile, 'utf8')
         .then((raw) => { res.writeHead(200, { 'content-type': 'application/json' }).end(raw.slice(0, 200_000)); })

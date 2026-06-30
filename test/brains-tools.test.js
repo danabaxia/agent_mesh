@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildToolAdapters } from '../src/brains/tools.js';
+import { promises as fsp } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { buildToolAdapters, fileCache } from '../src/brains/tools.js';
 
 function adapters(overrides = {}) {
   return buildToolAdapters({
@@ -94,6 +96,24 @@ test('brainstorm_seeds default backend degrades to {seeds:[]} on read failure', 
 
 test('unknown tool is rejected, not thrown', async () => {
   assert.deepEqual(await adapters().dispatch('rm_rf', {}), { error: 'unknown_tool' });
+});
+
+test('fileCache: write then read roundtrip returns the digest', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'filecache-'));
+  const cacheFile = join(dir, 'sub', 'inspiration-cache.json');
+  const { readCache, writeCache } = fileCache(cacheFile, { readFile: fsp.readFile, writeFile: fsp.writeFile, mkdir: fsp.mkdir, rename: fsp.rename, randomUUID });
+  const digest = { seeds: [{ theme: 'x', spark: 'y' }], generatedAt: 'g', degraded: [], fetchedAt: 999 };
+  await writeCache(digest);
+  const got = await readCache();
+  assert.deepEqual(got, digest);
+});
+
+test('fileCache: miss → null (no file yet)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'filecache-miss-'));
+  const cacheFile = join(dir, 'does-not-exist.json');
+  const { readCache } = fileCache(cacheFile, { readFile: fsp.readFile, writeFile: fsp.writeFile, mkdir: fsp.mkdir, rename: fsp.rename, randomUUID });
+  const got = await readCache();
+  assert.equal(got, null);
 });
 
 test('a backend error becomes data, never throws the loop', async () => {

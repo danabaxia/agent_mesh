@@ -4,13 +4,16 @@ export async function readInspiration({
   readCache = async () => null, writeCache = async () => {},
 } = {}) {
   const cached = await readCache().catch(() => null);
-  // (TTL check left to the caller's cache file mtime; here cached is the parsed digest.)
+  // Fresh cache (stamped within ttlMs) → serve without hitting the network.
+  if (cached && typeof cached.fetchedAt === 'number' && (now - cached.fetchedAt) <= ttlMs && Array.isArray(cached.seeds)) {
+    return { seeds: cached.seeds, generatedAt: cached.generatedAt ?? null, degraded: cached.degraded ?? [] };
+  }
   try {
     const res = await fetchImpl(url, { headers: { authorization: `Bearer ${token}` } });
     if (!res?.ok) throw new Error(`http ${res?.status}`);
     const body = await res.json();
     const digest = { seeds: Array.isArray(body?.seeds) ? body.seeds : [], generatedAt: body?.generatedAt ?? null, degraded: body?.degraded ?? [] };
-    await writeCache(digest).catch(() => {});
+    await writeCache({ ...digest, fetchedAt: now }).catch(() => {});
     return digest;
   } catch {
     if (cached && Array.isArray(cached.seeds)) return { seeds: cached.seeds, generatedAt: cached.generatedAt ?? null, degraded: cached.degraded ?? [] };
