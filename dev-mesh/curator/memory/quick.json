@@ -2172,5 +2172,16 @@
       "source": "PR #672 (2026-06-30): spec: inline peer-confidence on delegation results — attach historical peer success-rate to A2A Task metrics (#671)",
       "ts": "2026-06-30"
     }
+  },
+  "eval-regression-hop-localization": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "Multi-hop eval: add hop-boundary scores; aggregate alone can't localize dispatch vs exec vs synthesis regressions.",
+    "l1": "PR #678 / Issue #677: quality_per_1k_tokens regressions in 3x-disjoint (−16.2%) and 6x-confusable (−7.7%) both had evidence.scorecardPath: null — no drill-down to distinguish dispatch (wrong peer selected), execution (peer off-target), or synthesis (re-summarization waste). Without per-hop instrumentation the regression is unfalsifiable. Spec: per-hop collector records tokens+quality at each boundary; scorecard writer emits <cell>-hops-scorecard.json; scorecardPath becomes non-null.",
+    "value": "When eval metrics regress in a multi-peer topology: (1) Instrument at hop boundaries (dispatch, peer-execution, synthesis) — aggregate score alone cannot distinguish which hop failed; one clear indicator is evidence.scorecardPath: null, making the finding unactionable. (2) Emit a per-hop scorecard (<cell>-hops-scorecard.json) beside the aggregate report; set evidence.scorecardPath on fileable findings to that artifact. (3) Roll-up consistency: per-hop quality_per_1k_tokens reconciles with aggregate via weighted average sum(quality_i * tokens_i) / sum(tokens_i); framework-overhead slack allowed. (4) Additive schema: aggregate metrics byte-unchanged; per-hop data beside them (regression lock for existing consumers). (5) Config opt-out: AGENT_MESH_PERF_PER_HOP_DISABLED=1 reverts to aggregate-only; applies to multi-peer cells (3x-disjoint, 6x-confusable minimum) only. Provenance: PR #678 (2026-06-30), spec Issue #677.",
+    "provenance": {
+      "source": "PR #678: spec: eval: add per-hop quality telemetry to localize regression source in multi-peer topologies (#677)",
+      "ts": "2026-06-30"
+    }
   }
 }
