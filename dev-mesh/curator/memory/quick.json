@@ -2194,5 +2194,16 @@
       "source": "PR #684: fix(ideation): zero-seed digest run is a SKIP, never wipe the last-good digest",
       "ts": "2026-06-30"
     }
+  },
+  "ingress-modality-join-at-skip-point": {
+    "status": "active",
+    "valid_to": null,
+    "l0": "New ingress modality joins a pipeline by matching the skipped stage's output shape — never branch per-modality logic.",
+    "l1": "PR #686: typed text on the phone PWA joins the SAME turn pipeline as voice, skipping only STT. serve_turn.py made the '_stt' closure return the typed text directly instead of branching handle_turn/concierge/TTS per mode. turn_input.py (pure, unit-tested) just classifies mode+bounds the text; zero new logic in the ingress, zero duplicated downstream path. Generalizes the existing voice-logic-in-mesh-agent P1 split (ingress=data, concierge=logic) to multi-modal ingress convergence.",
+    "value": "Apply whenever an existing single-modality pipeline (e.g. voice: STT -> brain -> TTS) gains a second input modality (e.g. typed text) that should share the same downstream behavior.\n\nRULE: find the exact point where modalities produce equivalent data, and join there by substituting for the SKIPPED stage's output — do not add an if/branch that duplicates or reroutes downstream stages per modality.\n\nPATTERN (from PR #686, phone text-chat):\n- turn_input.parse_turn_request(query) is a pure classifier: text present -> mode='text' (bounded length); absent -> mode='audio'. No I/O, unit-tested in isolation.\n- The one stage that differs (STT) is short-circuited in place: the '_stt' closure returns the typed text directly instead of invoking the real transcriber. Every stage after STT (capture, concierge A2A call, TTS, reply headers) runs UNCHANGED and unaware a second modality exists.\n- The client-side symmetry (PWA bubbles) mirrors this: one render path for both typed and spoken turns, keyed by matching transcript text, not by a separate typed-message code path.\n\nWHY: keeps the ingress-holds-no-logic invariant (see voice-logic-in-mesh-agent) intact automatically — a new modality cannot smuggle in new logic if it can only ever satisfy the interface of the stage it replaces. It also caps the diff size and test surface to the one pure classifier + one closure swap, not a parallel pipeline.\n\nEDGE CASES: bound the new modality's input (typed text truncated to 4000 chars) at the SAME layer as the classifier, not downstream. An empty/whitespace typed message is ignored client-side AND agent-side (defense in depth, not trust-the-client).\n\nProvenance: PR #686 (2026-07-01) - feat(voice): phone text-chat input (type to the concierge, bubbles).",
+    "provenance": {
+      "source": "PR #686 (2026-07-01): feat(voice): phone text-chat input (type to the concierge, bubbles)",
+      "ts": "2026-07-01"
+    }
   }
 }
