@@ -155,6 +155,33 @@ class Bridge:
             self.preroll.clear(); self.preroll_n = 0
             self.busy = False
 
+    async def text_turn(self, text):
+        # Typed message: same turn pipeline as voice, minus STT. Respects the busy lock so
+        # a typed turn never overlaps a voice turn. Reply is spoken + sent, exactly like voice.
+        text = (text or "").strip()
+        if not text or self.busy:
+            return
+        self.busy = True; spoke = False
+        try:
+            url = build_turn_url(TURN_URL, self.stt_backend, self.lang) + "&text=" + urllib.parse.quote(text)
+            body, H = await asyncio.get_event_loop().run_in_executor(None, post_turn, b"", url)
+            transcript = urllib.parse.unquote(H.get("X-Transcript", "")) or text
+            reply = urllib.parse.unquote(H.get("X-Reply", ""))
+            idea = urllib.parse.unquote(H.get("X-Idea", ""))
+            print(f"[text-turn] you={transcript!r}  bot={reply!r}", flush=True)
+            spoke = True
+            await self.publish()
+            await self.send({"speaking": True})
+            await self.send({"transcript": transcript, "reply": reply, "idea": idea, "stt": H.get("X-STT", "")})
+            await self.play_wav(body)
+        except Exception as e:
+            print("text-turn error:", e, flush=True)
+        finally:
+            if spoke:
+                await asyncio.sleep(0.5)
+                await self.send({"speaking": False})
+            self.busy = False
+
     async def play_wav(self, wav_bytes):
         w = wave.open(io.BytesIO(wav_bytes), "rb")
         sr = w.getframerate()
@@ -212,6 +239,9 @@ async def main():
                 else:
                     bridge.talking = False                       # released -> process the full clean clip
                     asyncio.create_task(bridge.flush())
+            # the PWA's text box sends {"text":"..."} — run it as a turn, skipping STT
+            if isinstance(m.get("text"), str) and m["text"].strip():
+                asyncio.create_task(bridge.text_turn(m["text"]))
         except Exception:
             pass
 

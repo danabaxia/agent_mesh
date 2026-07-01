@@ -29,8 +29,16 @@
     button:active { transform:scale(.98); }
     button.stop { background:#21262d; color:var(--fg); border:1px solid #30363d; }
     button:disabled { opacity:.4; }
-    .log { font-size:13px; color:var(--muted); max-height:34vh; overflow:auto; margin-top:14px; }
-    .log .you { color:var(--fg); } .log .bot { color:var(--accent); }
+    .log { display:flex; flex-direction:column; gap:8px; font-size:14px; max-height:34vh; overflow:auto; margin-top:14px; }
+    .msg { max-width:82%; padding:9px 13px; border-radius:16px; line-height:1.35; overflow-wrap:anywhere; }
+    .msg.you { align-self:flex-end; background:var(--accent); color:#fff; border-bottom-right-radius:5px; }
+    .msg.bot { align-self:flex-start; background:#161b22; color:var(--fg); border:1px solid #21262d; border-bottom-left-radius:5px; }
+    .msg .idea { display:block; margin-top:4px; font-size:12px; color:var(--ok); }
+    .inputbar { display:flex; gap:8px; align-items:center; margin-top:12px; }
+    .inputbar input { flex:1; width:auto; font:inherit; padding:13px 15px; border-radius:999px;
+      background:#0f141b; color:var(--fg); border:1px solid #30363d; outline:none; }
+    .inputbar input:focus { border-color:var(--accent); }
+    .inputbar button { width:auto; padding:12px 16px; border-radius:999px; font-size:18px; line-height:1; }
     .langtoggle { display:flex; gap:8px; justify-content:center; margin:6px 0 0; }
     .langbtn { width:auto; padding:8px 20px; border-radius:999px; background:#161b22; color:var(--muted);
       border:1px solid #30363d; font-size:14px; font-weight:600; }
@@ -53,6 +61,11 @@
     <div class="hwinfo" id="hwinfo">STT: Gemini ☁️ · TTS: GPU 🖥️</div>
     <button id="go">Connect &amp; talk</button>
     <div class="log" id="log"></div>
+    <div class="inputbar">
+      <input id="textin" type="text" placeholder="Type a message…" autocomplete="off"
+             autocapitalize="sentences" enterkeyhint="send" />
+      <button id="send" aria-label="Send">➤</button>
+    </div>
   </div>
   <audio id="sink" autoplay playsinline></audio>
   <script src="https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.umd.min.js"></script>

@@ -14,6 +14,7 @@ from agent import handle_turn
 from a2a_client import A2AHttpClient
 from audio_gate import has_speech, wav_samples
 from stt_bias import stt_prompt
+from turn_input import parse_turn_request
 
 for line in open("/opt/voice/.voice-env"):
     line = line.strip()
@@ -113,21 +114,23 @@ class H(BaseHTTPRequestHandler):
         if u.path != "/turn":
             self.send_response(404); self.end_headers(); return
         _q = urllib.parse.parse_qs(u.query)
-        stt_b = _q.get("stt", [DEFAULT_STT])[0].lower()
-        forced = _q.get("lang", [""])[0].lower()
-        forced = forced if forced in ("zh", "en") else ""   # manual UI language lock
+        req = parse_turn_request(_q, default_stt=DEFAULT_STT)
+        stt_b = req["stt"]; forced = req["lang"]; text_in = req["text"]   # text_in set → typed turn, skip STT
         raw = self.rfile.read(int(self.headers.get("content-length", 0)))
-        try: clean = preprocess_audio(raw)
-        except Exception: clean = raw
-        with open("/tmp/in.wav", "wb") as f: f.write(clean)
-        try:
-            open("/opt/voice/last_in.wav", "wb").write(raw)   # keep the most recent turn for diagnosis
-            import glob
-            os.makedirs("/opt/voice/clips", exist_ok=True)
-            open(f"/opt/voice/clips/{int(time.time()*1000)}.wav","wb").write(raw)
-            for old in sorted(glob.glob("/opt/voice/clips/*.wav"))[:-24]: os.remove(old)
-        except Exception:
-            pass
+        if text_in:
+            with open("/tmp/in.wav", "wb") as f: f.write(b"")   # typed turn: no audio, STT is skipped below
+        else:
+            try: clean = preprocess_audio(raw)
+            except Exception: clean = raw
+            with open("/tmp/in.wav", "wb") as f: f.write(clean)
+            try:
+                open("/opt/voice/last_in.wav", "wb").write(raw)   # keep the most recent turn for diagnosis
+                import glob
+                os.makedirs("/opt/voice/clips", exist_ok=True)
+                open(f"/opt/voice/clips/{int(time.time()*1000)}.wav","wb").write(raw)
+                for old in sorted(glob.glob("/opt/voice/clips/*.wav"))[:-24]: os.remove(old)
+            except Exception:
+                pass
         t0 = time.perf_counter()
         ts = datetime.datetime.utcnow().isoformat() + "Z"
         wlang = ""
@@ -137,7 +140,9 @@ class H(BaseHTTPRequestHandler):
             # Fast ack path: skip the A2A call; capture + STT + cached audio only
             rid = OB.capture("/tmp/in.wav", ts)
             try:
-                if stt_b == "gemini":
+                if text_in:
+                    transcript = text_in; wlang = ""     # typed turn — skip STT
+                elif stt_b == "gemini":
                     transcript = stt_gemini("/tmp/in.wav", forced)
                     wlang = ""
                 else:
@@ -156,7 +161,9 @@ class H(BaseHTTPRequestHandler):
             def tts(text):
                 spoken["reply"] = text
 
-            if stt_b == "gemini":
+            if text_in:
+                def _stt(ref): return text_in       # typed turn — skip STT, use the message as-is
+            elif stt_b == "gemini":
                 def _stt(ref): return stt_gemini(ref, forced)
             else:
                 def _stt(ref):

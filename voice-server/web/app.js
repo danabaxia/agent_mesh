@@ -57,11 +57,30 @@ function setupHold() {
   orb.addEventListener('pointercancel', up);
   orb.addEventListener('pointerleave', up);
 }
-function log(who, text) {
+function log(who, text, idea) {
   const d = document.createElement('div');
-  d.className = who; d.innerHTML = `<span class="${who}">${who === 'you' ? 'you' : 'bot'}:</span> ${text}`;
-  logEl.prepend(d);
+  d.className = 'msg ' + who;
+  d.textContent = text;   // textContent, not innerHTML — never render reply/transcript as markup
+  if (idea) { const s = document.createElement('span'); s.className = 'idea'; s.textContent = '✓ saved: ' + idea; d.appendChild(s); }
+  logEl.appendChild(d);   // newest at the bottom (chat order)
+  logEl.scrollTop = logEl.scrollHeight;
 }
+
+let pendingText = null;   // the typed message we optimistically rendered; dedupe its echoed transcript
+function sendText() {
+  const el = document.getElementById('textin');
+  const msg = ((el && el.value) || '').trim();
+  if (!msg) return;
+  if (!room || !room.localParticipant) { setStatus('connect first to chat'); return; }
+  try { room.localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ text: msg })), { reliable: true }); } catch {}
+  log('you', msg);        // optimistic — show your bubble immediately
+  pendingText = msg;
+  el.value = '';
+  setStatus('⏳ processing…');
+}
+const _send = document.getElementById('send'); if (_send) _send.onclick = sendText;
+const _tin = document.getElementById('textin');
+if (_tin) _tin.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendText(); } });
 
 async function mintToken() {
   const r = await fetch(MINT_URL, {
@@ -100,8 +119,11 @@ async function connect() {
           const s = m.stt.startsWith('gemini') ? 'Gemini ☁️' : 'GPU 🖥️ (whisper)';
           document.getElementById('hwinfo').textContent = `STT: ${s} · TTS: GPU 🖥️ (Kokoro)`;
         }
-        if (m.transcript) log('you', m.transcript);
-        if (m.reply) log('bot', m.reply + (m.idea ? `  ✓ saved: ${m.idea}` : ''));
+        if (m.transcript) {
+          if (m.transcript === pendingText) { pendingText = null; }   // typed turn — already shown optimistically
+          else { log('you', m.transcript); }                          // voice turn — show the STT result
+        }
+        if (m.reply) log('bot', m.reply, m.idea);
       } catch {}
     });
     room.on(LK.RoomEvent.Disconnected, () => { orb.classList.remove('live'); setStatus('disconnected'); resetBtn(); });
