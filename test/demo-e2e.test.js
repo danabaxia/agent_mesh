@@ -65,10 +65,9 @@ test('real claude: A delegates a do task to B, write confined to B', { skip, tim
     'claude',
     [
       '-p',
-      'Use the library peer\'s delegate_task tool with mode "do" to add a ' +
-        'truncateSlug(str, max) helper to its strings library (slugify then ' +
-        'cut at the last "-" at or before max, no trailing "-"). Then report ' +
-        'which files changed.',
+      'Add a truncateSlug(str, max) helper to the library peer\'s strings library — ' +
+        'slugify the string then cut at the last "-" at or before max, no trailing "-". ' +
+        'Delegate this code change to the library peer in do mode. Then report which files changed.',
       '--strict-mcp-config',
       '--mcp-config',
       join(agentA, '.mcp.json'),
