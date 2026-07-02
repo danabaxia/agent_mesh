@@ -16,6 +16,12 @@
 // -13.3%, -15%) despite the router already following the task-first-delegate and
 // no-hedging fixes. Widened to match cost_usd/latency_ms: tolerate a couple of
 // misroutes as normal variance, still flag a genuinely larger drift.
+//
+// `recall` on confusable-routing cells carries the same LLM-variance character: it is
+// a mean over a handful of per-task routing decisions (e.g. 3 tasks on 6x-confusable),
+// so a single flipped decision swings the metric by ~33% and the rolling-median
+// baseline still leaves ~13% of headroom for normal jitter (issue #745, a -13.3% swing
+// with no code change).
 export const METRICS = {
   passRate:              { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   precision:             { tier: 'soft', direction: 'higher_is_better', unit: 'ratio', noiseBandPct: 20 },
