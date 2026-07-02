@@ -181,6 +181,18 @@ test('buildTools: delegate_to_peer mode field has no enum restriction (I6 schema
   assert.equal(modeProp.minLength, 1);
 });
 
+// Routing-precision guidance: steer the model toward delegating to the ONE peer whose
+// description actually covers the task, instead of guessing/answering locally or
+// delegating to a loosely-matching neighbor — the lever for the routing `precision`
+// regression in the 3x-disjoint cell (#742).
+test('buildTools: list_peers and delegate_to_peer descriptions carry routing-precision guidance', () => {
+  const listPeers = buildTools().find((t) => t.name === 'list_peers');
+  assert.match(listPeers.description, /single peer whose description most specifically covers it/i);
+
+  const delegateToPeer = buildTools().find((t) => t.name === 'delegate_to_peer');
+  assert.match(delegateToPeer.description, /answering from your own knowledge or delegating to the wrong peer are both routing errors/i);
+});
+
 test('delegateToPeer defaults mode to ask', async () => {
   const { root, meshRoot } = await meshAgentRootWith(MARKED);
   const { factory, calls } = fakeClientFactory();
