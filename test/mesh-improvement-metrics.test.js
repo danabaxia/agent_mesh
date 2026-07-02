@@ -38,6 +38,11 @@ test('high-variance metrics use their own wider band, not the global one', () =>
   // A deterministic metric without an override still uses the caller's global band.
   assert.equal(isRegression('wasted_hops', -19, 10), true);
   assert.equal(isRegression('precision', -15.9, 10), true);
+  // recall also carries noiseBandPct:20 — a -13.3% swing on a 3-task confusable cell
+  // (issue #745) is a single flipped routing decision, not fileable…
+  assert.equal(isRegression('recall', -13.3, 10), false);
+  // …while a swing past the per-metric band still flags.
+  assert.equal(isRegression('recall', -25, 10), true);
 });
 
 test('per-metric noiseBandPct overrides a wider global band', () => {
