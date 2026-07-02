@@ -49,9 +49,15 @@ root cause — recognize both when triaging a perf-regression finding.
 ## Evidence
 
 Precision perf-regression `bug` issues open concurrently after PR #758 merged without
-a sibling fix: #742, #746, #752, #754, #756.
+a sibling fix: #742, #746, #752, #754, #756. PR #766 (2026-07-02) closed the gap by
+gating `precision` the same way, closing #752 — but left #742/#754/#756 open; see
+[[close-duplicate-generated-issues]] for that follow-on lesson (the merge-reconcile
+convention only closes the literally-referenced issue number, not every duplicate the
+scanner had already filed for the same root cause).
 
 ## Provenance
 
-PR #758 (2026-07-02), closing #745. Related: `quick.json#per-metric-noise-band-llm-variance`
+PR #758 (2026-07-02), closing #745. Follow-up: PR #766 (2026-07-02), closing #752,
+confirmed steps 1-3 of this pattern and surfaced [[close-duplicate-generated-issues]].
+Related: `quick.json#per-metric-noise-band-llm-variance`
 (PR #461), `quick.json#mir-noise-band-reversion` (PR #477).
