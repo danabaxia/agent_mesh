@@ -1,7 +1,7 @@
 ---
 slug: sibling-metric-noise-band-audit
 status: active
-provenance: "PR #758 (2026-07-02), closing #745; PR #761 (2026-07-02), closing #746; follows quick.json#per-metric-noise-band-llm-variance (PR #461)"
+provenance: "PR #758 (2026-07-02), closing #745; PR #761 (2026-07-02), closing #746; PR #766 (2026-07-02), closing #752; follows quick.json#per-metric-noise-band-llm-variance (PR #461)"
 ---
 
 # Pattern: audit sibling metrics before landing a per-metric noise-band fix
@@ -62,15 +62,21 @@ root cause — recognize both when triaging a perf-regression finding.
 ## Evidence
 
 Precision perf-regression `bug` issues filed against the ungated metric, two batches
-from two separate mesh-scan runs before PR #761 closed the gap: first run (10:19:40Z)
+from two separate mesh-scan runs before the gating fix landed: first run (10:19:40Z)
 — #742, #743 (recall), #744, #745 (recall), #746; second run (11:30:14Z, same natural
 keys as three first-run issues, i.e. the coalesce-by-natural-key intake guard did not
 catch these as dups of an already-open issue) — #752, #754, #756. PR #758 closed #745
-(recall); PR #761 closed #746 and referenced #743/#744 in its merge body — but #742,
-#754, #756 remain open post-fix (step 5).
+(recall); PR #761 closed #746 and referenced #743/#744 in its merge body; PR #766
+(2026-07-02) independently closed #752 by gating `precision` the same way — but #742,
+#754, #756 remain open post-fix (step 5). `recall` duplicates #755/#757 were similarly
+left open after PR #758. See [[close-duplicate-generated-issues]] for the follow-on
+lesson: merge-reconcile automation only closes the literally-referenced issue number,
+not every duplicate the scanner had already filed for the same root cause.
 
 ## Provenance
 
-PR #758 (2026-07-02), closing #745; PR #761 (2026-07-02), closing #746. Related:
+PR #758 (2026-07-02), closing #745; PR #761 (2026-07-02), closing #746; PR #766
+(2026-07-02), closing #752, confirmed steps 1-3 of this pattern and surfaced
+[[close-duplicate-generated-issues]]. Related:
 `quick.json#per-metric-noise-band-llm-variance` (PR #461),
 `quick.json#mir-noise-band-reversion` (PR #477).
