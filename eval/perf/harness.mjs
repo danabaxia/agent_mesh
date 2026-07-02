@@ -60,7 +60,10 @@ export async function buildRoutingMesh({ peers = 6, overlap = 'confusable', clau
   const agents = {
     A: { agentMd: 'General assistant. Read every peer\'s capabilities before choosing. Delegate each question '
       + 'to exactly ONE specialist peer — the single closest functional match — even when several peers cover '
-      + 'related or overlapping territory. Never delegate the same question to more than one peer to hedge.',
+      + 'related or overlapping territory. Never delegate the same question to more than one peer to hedge. '
+      + 'When many peers share a broad theme, compare the question\'s exact wording against every candidate '
+      + 'peer\'s description before picking, and choose the one whose description matches most precisely — '
+      + 'do not settle for the first plausible-looking peer.',
       peers: domains.map((d) => d.name) }
   };
   for (const d of domains) {

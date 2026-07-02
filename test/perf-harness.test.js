@@ -206,6 +206,16 @@ test('buildRoutingMesh: marker-valid registry, N domain peers, planted facts', a
     assert.equal(mesh.driven, 'A');
     assert.equal(mesh.domains.length, 3);
     assert.deepEqual(Object.keys(mesh.agents).sort(), ['A', ...mesh.domains.map((d) => d.name)].sort());
+    // No-hedge single-peer directive (dev-mesh/curator/memory/workflows/
+    // no-hedge-single-peer-directive.md, PR #750) belongs in the caller's
+    // PERSISTENT agentMd, not a per-task prompt — assert on the exact literal so a
+    // future edit can't silently drop it (flagged as an untested gap on PR #750;
+    // issue #747 adds a precision-comparison clause alongside it for the
+    // 12x-confusable recall regression, asserted here too).
+    const callerAgentMd = await readFile(join(mesh.agents.A.root, 'AGENT.md'), 'utf8');
+    assert.match(callerAgentMd, /exactly one/i);
+    assert.match(callerAgentMd, /never.*more than one/i);
+    assert.match(callerAgentMd, /compare the question.s exact wording/i);
     const reg = await readManagedRegistry(mesh.agents.A.root);
     assert.equal(reg.ok, true);
     assert.equal(Object.keys(reg.registry.peers).length, 3);
