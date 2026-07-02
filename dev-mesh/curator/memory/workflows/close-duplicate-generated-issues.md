@@ -1,7 +1,7 @@
 ---
 slug: close-duplicate-generated-issues
 status: active
-provenance: "PR #766 (2026-07-02), closing #752; same gap also observed after PR #758 (2026-07-02), closing #745"
+provenance: "PR #770 (2026-07-02), closing #754 — 4th instance; refines the mechanism first documented after PR #766 (2026-07-02, closing #752) and PR #758 (2026-07-02, closing #745)"
 ---
 
 # Pattern: close every duplicate generated issue when landing a shared-root-cause fix
@@ -35,9 +35,27 @@ on the identical fix shape ([[sibling-metric-noise-band-audit]]):
   fix that #766 already carried for every cell.
 
 Because `noiseBandPct` gates per-metric globally (not per-cell), one fix resolves
-every cell's duplicate for that metric — but nothing closes them. Left alone these
-accumulate indefinitely and invite redundant fix PRs against issues a merged PR
-already resolved.
+every cell's duplicate for that metric — but nothing closes them *immediately*.
+
+**Correction (PR #770): this is not actually a permanent leak.** `planIssues` in
+`src/mesh-improvement/issues.js` dedupes strictly by `ledger[id].issueNumber`
+(never by reading issue bodies) and already emits a `close` action once a finding's
+ledger entry has gone clean for `recoverRuns` consecutive mesh-scan runs
+(`AGENT_MESH_MIR_RECOVER_RUNS`, default 2 — `src/config.js`). Each sibling
+`id` (e.g. `perf:6x-confusable:precision` vs `perf:3x-disjoint:precision`) has its
+own ledger entry, so once a `noiseBandPct` fix makes every cell clean, EVERY
+sibling's issue self-closes within `recoverRuns` scan cycles with no manual action.
+
+What's actually happening across four occurrences — PR #748 (closed #742), #761
+(closed #746), #766 (closed #752), #770 (closed #754) — is that a Coder/triage
+cycle keeps landing a **separate one-off PR per sibling duplicate**, each closing
+exactly one issue by hand, racing ahead of the ledger's own auto-recovery instead
+of either (a) batch-closing every sibling in the SAME PR that lands the fix (Steps
+below), or (b) simply leaving the rest to self-heal over the next 1-2 scan cycles.
+Both are fine; what's wasteful is a fourth separate PR-and-review cycle to close
+one issue that would have closed itself. Left running long enough, this pattern
+converges anyway (per-id auto-recovery) — the cost is redundant PR/review overhead
+during convergence, not a permanent duplicate-issue pileup.
 
 ## Steps
 
@@ -58,14 +76,27 @@ already resolved.
 4. If a reviewer flags the duplicate list (as PR #766's review did), execute the
    closes as part of landing the fix — a non-blocking review comment that nobody
    acts on reproduces this exact gap next time.
+5. Before opening a NEW one-off PR against a lingering sibling duplicate, check its
+   ledger `cleanRuns` (or just how many mesh-scan runs have happened since the
+   fix merged) against `recoverRuns` (default 2) — it may self-close within a
+   cycle or two with zero further PRs. A one-off close-only PR is only worth the
+   review overhead if the duplicate has clearly outlived `recoverRuns` runs
+   without auto-closing (which would itself indicate a real ledger bug, not just
+   pending convergence).
 
 ## Evidence
 
-`recall` duplicates left open after PR #758: #755, #757.
-`precision` duplicates left open after PR #766: #742, #754, #756 (plus a redundant
-in-flight fix PR #748 opened against #742).
+`recall` duplicates left open after PR #758: #755, #757 (still open as of PR #770 —
+worth checking whether their ledger entries are actually accumulating `cleanRuns`,
+since #757 in particular has now outlived several scan cycles).
+`precision` duplicates from PR #766's fix, each closed by its own separate PR
+instead of self-healing or a batch close: #742 (PR #748), #746 (PR #761), #752
+(PR #766 itself), #754 (PR #770). #756 remains open.
 
 ## Provenance
 
-PR #766 (2026-07-02), closing #752. Prior instance: PR #758 (2026-07-02), closing
-#745. Related: [[sibling-metric-noise-band-audit]].
+PR #770 (2026-07-02), closing #754 — 4th instance of the same fix-then-duplicate
+pattern, and the one that surfaced the `issues.js`/`recoverRuns` auto-recovery
+mechanism this file previously didn't account for. Prior instances: PR #766
+(2026-07-02, closing #752), PR #758 (2026-07-02, closing #745). Related:
+[[sibling-metric-noise-band-audit]].
