@@ -57,14 +57,19 @@ export async function buildRoutingMesh({ peers = 6, overlap = 'confusable', clau
   const chosen = pool.slice(0, peers);
 
   const domains = chosen.map((d) => ({ name: d.name, blurb: d.blurb, fact: plant(d.name.toUpperCase().slice(0, 6)) }));
+  // The no-hedge/precision-comparison directive must land in prompts/system.md, not
+  // AGENT.md: buildAgentRuntimePrompt (src/agent-context.js) assembles A's own obeyed
+  // prompt from prompts/system.md -> memory -> workflows -> mode prompt -> skills ->
+  // peer roster — AGENT.md is never in that list (it's only A's self-description shown
+  // to callers, which A has none of here). Caught in PR #765 review (issue #747).
+  const routingDirective = 'General assistant. Read every peer\'s capabilities before choosing. Delegate each question '
+    + 'to exactly ONE specialist peer — the single closest functional match — even when several peers cover '
+    + 'related or overlapping territory. Never delegate the same question to more than one peer to hedge. '
+    + 'When many peers share a broad theme, compare the question\'s exact wording against every candidate '
+    + 'peer\'s description before picking, and choose the one whose description matches most precisely — '
+    + 'do not settle for the first plausible-looking peer.';
   const agents = {
-    A: { agentMd: 'General assistant. Read every peer\'s capabilities before choosing. Delegate each question '
-      + 'to exactly ONE specialist peer — the single closest functional match — even when several peers cover '
-      + 'related or overlapping territory. Never delegate the same question to more than one peer to hedge. '
-      + 'When many peers share a broad theme, compare the question\'s exact wording against every candidate '
-      + 'peer\'s description before picking, and choose the one whose description matches most precisely — '
-      + 'do not settle for the first plausible-looking peer.',
-      peers: domains.map((d) => d.name) }
+    A: { files: { 'prompts/system.md': routingDirective }, peers: domains.map((d) => d.name) }
   };
   for (const d of domains) {
     agents[d.name] = {
