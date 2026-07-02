@@ -76,6 +76,14 @@ export async function buildRoutingMesh({ peers = 6, overlap = 'confusable', clau
  * Build ground-truth-labelled tasks from a routing mesh's planted domains. Picks
  * `count` domains spread across the roster and phrases each FUNCTIONALLY (by the
  * domain's blurb, never the peer name) so routing is genuine, not name-matching.
+ *
+ * Task-first, delegate-second (dev-mesh/curator/memory/workflows/
+ * task-first-delegate-prompt.md, PR #700): the task is stated first, then a short
+ * trailing sentence explicitly directs delegation. Burying the delegation intent
+ * inside "find the specialist who owns it" invites the model to reason about
+ * whether/how to act instead of just invoking delegate_to_peer — a source of
+ * routing-recall flakiness in real-LLM eval prompts (never names the peer, so
+ * routing stays genuine — see the test that asserts the prompt excludes it).
  */
 export function routingTasks(mesh, { count = 3 } = {}) {
   const ds = mesh.domains || [];
@@ -83,7 +91,7 @@ export function routingTasks(mesh, { count = 3 } = {}) {
   const picks = [];
   for (let i = 0; i < n; i++) picks.push(ds[Math.floor((i + 0.5) * ds.length / n)]);
   return picks.map((d) => ({
-    prompt: `I need the current configured value for this area: "${d.blurb}" — find the specialist who owns it and report the exact value.`,
+    prompt: `I need the current configured value for this area: "${d.blurb}" Delegate this to the specialist peer who owns it, then report the exact value.`,
     correctPeer: d.name,
     acceptablePeers: [d.name],
     groundTruth: d.fact,
