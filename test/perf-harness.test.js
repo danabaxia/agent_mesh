@@ -220,6 +220,10 @@ test('buildRoutingMesh: marker-valid registry, N domain peers, planted facts', a
       assert.ok(t.correctPeer && t.groundTruth && t.prompt);
       assert.deepEqual(t.acceptablePeers, [t.correctPeer]);
       assert.ok(!t.prompt.includes(t.correctPeer), 'prompt is functional, not naming the peer');
+      // Task-first, delegate-second (dev-mesh/curator/memory/workflows/
+      // task-first-delegate-prompt.md): an explicit trailing delegate directive,
+      // not just implicit "find the specialist" language (issue #743).
+      assert.match(t.prompt, /delegate this to/i);
     }
   } finally { await cleanupMesh(mesh); }
 });
