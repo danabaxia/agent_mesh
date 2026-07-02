@@ -32,9 +32,16 @@ test('high-variance metrics use their own wider band, not the global one', () =>
   assert.equal(isRegression('latency_ms', -19, 10), false);
   assert.equal(isRegression('latency_ms', -15.9, 10), false);
   assert.equal(isRegression('cost_usd', -19, 10), false);
+  // precision/recall on a confusable routing cell carry noiseBandPct:20 too — a single
+  // stochastic near-miss out of ~15-20 sampled routing decisions (-13.3%, issues
+  // #743/#744; -15%, issue #746) is normal variance, not fileable…
+  assert.equal(isRegression('precision', -13.3, 10), false);
+  assert.equal(isRegression('recall', -13.3, 10), false);
+  assert.equal(isRegression('precision', -15, 10), false);
   // …while swings past the per-metric band still flag.
   assert.equal(isRegression('latency_ms', -25, 10), true);
   assert.equal(isRegression('latency_ms', -35, 10), true);
+  assert.equal(isRegression('precision', -25, 10), true);
   // A deterministic metric without an override still uses the caller's global band.
   assert.equal(isRegression('wasted_hops', -19, 10), true);
   // recall also carries noiseBandPct:20 — a -13.3% swing on a 3-task confusable cell
