@@ -51,16 +51,47 @@ PR #750; as of merge it was still unaddressed.
 - [ ] Precision dropped while recall held ~1.0 in a confusable/overlapping-peer
       eval cell? Check `routing()`'s `precision = hit/delegated.length` first —
       suspect hedging (`delegated.length > 1`), not a wrong-peer miss.
-- [ ] Put the fix in the **persistent** system prompt (`agentMd`) for the
-      caller peer, not a per-task prompt string — hedging is a standing bias.
-- [ ] Add a hermetic assertion on the exact `agentMd` literal (e.g.
-      `assert.match(agents.A.agentMd, /exactly one/i)` and a `/never.*more than
-      one/i`-style check) in the same test file that builds the fixture — do
-      not rely on the unrelated per-task-prompt assertion to cover this.
+- [ ] Put the fix in the **persistent** obeyed prompt for the caller peer —
+      `agents.A.files['prompts/system.md']` in `buildRoutingMesh` — never
+      `agentMd`/`AGENT.md` (see Correction below). Hedging is a standing bias
+      across every task in the run, so the fix has to be standing too.
+- [ ] Add a hermetic assertion on the exact literal by reading the fixture's
+      real `prompts/system.md` off disk (e.g. `readFile(join(mesh.agents.A.root,
+      'prompts', 'system.md'), 'utf8')` then `assert.match(.../exactly one/i)`
+      and a `/never.*more than one/i`-style check) — asserting against an
+      `agents.A.agentMd` string proves nothing about what the driven agent's
+      real prompt contains.
 - [ ] Prefer positive framing ("pick the single closest match; do not also
       delegate to related peers") over a pure negative instruction
       ("never... to hedge") if the directive needs revisiting — negative
       instructions are generally less reliable for LLMs.
+
+## Correction (superseded by PR #765, 2026-07-02)
+
+PR #750's fix (and this doc, as originally written) put the no-hedge directive
+in `agents.A.agentMd` — the string `buildRoutingMesh` writes to A's `AGENT.md`.
+**That file is never read as A's obeyed system prompt.** `buildAgentRuntimePrompt`
+(`src/agent-context.js`) assembles the prompt a driven agent actually behaves
+under exclusively from `prompts/system.md` → `memory/*` → `workflows/*` →
+`prompts/<mode>.md` → skill summaries → peer roster — `AGENT.md` is not in that
+list. `AGENT.md` is only ever consumed as (a) a peer's *self-description* shown
+to other callers, or (b) the AgentCard `description` in the A2A handshake
+(`src/brains/gemini-agent.js:15`: *"AGENT.md is NEVER read here"*; PROJECT.md
+§1.5/§2.3, the AGENT.md-as-data invariant). Agent A here has no callers of its
+own describe_self, so the directive text sat in a file the framework
+contractually never obeys — inert on every real-`claude` eval run, even though
+the hermetic test (which only checks the literal landed in `AGENT.md` on disk)
+stayed green throughout.
+
+PR #765 (fixing the compounding `-15%` recall regression on the 12x-confusable
+cell, Issue #747) moved the directive to `agents.A.files['prompts/system.md']`
+and rewrote the test to read the fixture's real `prompts/system.md` off disk
+instead of asserting on the `agentMd` string. **General rule: any eval-harness
+fixture that needs to steer a driven agent's own behavior (not its
+self-description to others) must inject via `files['prompts/system.md']`
+(or `memory`/`workflows`), never `agentMd`/`AGENT.md`.** A test that only
+confirms a string landed in `AGENT.md` gives false confidence — it doesn't
+prove the string ever reaches the model.
 
 ## Related
 
@@ -74,3 +105,7 @@ fixes when citing either.
 PR #750 (2026-07-02): `fix: eval/perf/harness.mjs` — precision-regression fix
 for `[mesh-scan] perf-regression: precision regressed (-13.3%)`, closing
 Issue #744.
+
+PR #765 (2026-07-02): `[mesh-scan] perf-regression: recall regressed (-15%)`,
+closing Issue #747 — corrected the placement bug this doc originally shipped
+with (see Correction above).
