@@ -16,6 +16,19 @@ export function parseStuckPr(body) {
   return pr ? Number(pr[1]) : null;
 }
 
+// remediation-run.js stamps `- detail: not-clean:UNSTABLE` on a needs-human body when
+// GitHub's own mergeStateStatus is UNSTABLE (mergeable, but a non-required/pending check
+// is unmet). That state is structurally outside code's reach — no conflict to fix, no
+// failing required check to repair — so it's a branch-protection/CI action for a human,
+// not something an Analyst can diagnose or a Coder can fix. Skip it here so ③a/③b don't
+// burn dispatches producing empty diagnoses or unfixable "fixes" for it.
+const UNSTABLE_DETAIL_RE = /-\s*detail:\s*not-clean:UNSTABLE\b/;
+
+/** True iff the needs-human body is the UNSTABLE/non-required-check case (see above). */
+export function isUnstableNonRequiredCheck(body) {
+  return UNSTABLE_DETAIL_RE.test(String(body || ''));
+}
+
 /**
  * planResearch(issues, researchedNums, cfg) → { toResearch: [{ number, prNum, body }] }
  *   issues: [{ number, body }] open needs-human issues (any order)
@@ -31,6 +44,7 @@ export function planResearch(issues, researchedNums, cfg = {}) {
   for (const iss of Array.isArray(issues) ? issues : []) {
     if (!iss || typeof iss.number !== 'number') continue;
     if (done.has(iss.number)) continue;
+    if (isUnstableNonRequiredCheck(iss.body)) continue;
     const prNum = parseStuckPr(iss.body);
     if (prNum == null) continue;
     picked.push({ number: iss.number, prNum, body: String(iss.body || '') });

@@ -27,6 +27,13 @@ test('planResearchFix: default cap 1', () => {
   assert.equal(out.toFix[0].number, 1);
 });
 
+test('planResearchFix: skips UNSTABLE/non-required-check items even when diagnosed — no code fix exists for them', () => {
+  const unstable = iss(20, 2);
+  unstable.body += '\n- detail: not-clean:UNSTABLE';
+  const out = planResearchFix([unstable, iss(10, 1)], { capPerRun: 5 });
+  assert.deepEqual(out.toFix.map((f) => f.number), [10]);
+});
+
 test('researchFixPrompt: includes issue + diagnosis-as-untrusted-strategy + minimal/suite-green rule', () => {
   const p = researchFixPrompt({ number: 9, title: 'fix X' }, 'do the thing');
   assert.match(p, /#9/);

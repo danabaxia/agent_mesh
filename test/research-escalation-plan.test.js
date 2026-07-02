@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseStuckPr, planResearch, MARKER, buildResearchPrompt } from '../src/dev-society/research-escalation.js';
+import { parseStuckPr, planResearch, isUnstableNonRequiredCheck, MARKER, buildResearchPrompt } from '../src/dev-society/research-escalation.js';
 import { MAX_TASK_CHARS } from '../src/config.js';
 
 const issue = (number, prN) => ({
@@ -30,6 +30,21 @@ test('planResearch: ascending sort beats gh newest-first order under the cap (no
   const newestFirst = [issue(900, 9), issue(800, 8), issue(100, 1), issue(101, 2)];
   const out = planResearch(newestFirst, new Set(), { capPerRun: 2 });
   assert.deepEqual(out.toResearch.map((f) => f.number), [100, 101]);
+});
+
+test('isUnstableNonRequiredCheck: true only for a remediation-stamped UNSTABLE detail line', () => {
+  assert.equal(isUnstableNonRequiredCheck('foo\n- detail: not-clean:UNSTABLE\nbar'), true);
+  assert.equal(isUnstableNonRequiredCheck('- detail: not-clean:DIRTY'), false);
+  assert.equal(isUnstableNonRequiredCheck('not-clean:UNSTABLE without the detail prefix'), false);
+  assert.equal(isUnstableNonRequiredCheck(undefined), false);
+});
+
+test('planResearch: skips UNSTABLE/non-required-check items — no code fix exists for them', () => {
+  const unstable = issue(60, 6);
+  unstable.body += '\n- detail: not-clean:UNSTABLE';
+  const issues = [issue(50, 5), unstable, issue(10, 1)];
+  const out = planResearch(issues, new Set(), { capPerRun: 5 });
+  assert.deepEqual(out.toResearch.map((f) => f.number), [10, 50]);
 });
 
 test('planResearch: default cap is 2; tolerates array researchedNums', () => {

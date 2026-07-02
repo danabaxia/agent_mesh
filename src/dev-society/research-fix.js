@@ -1,5 +1,5 @@
 // src/dev-society/research-fix.js — pure planning + prompt for ③b (do-mode draft fix).
-import { parseStuckPr } from './research-escalation.js';
+import { parseStuckPr, isUnstableNonRequiredCheck } from './research-escalation.js';
 
 export const FIX_MARKER = '<!-- research-fix -->';
 export const DIAG_MARKER = '<!-- research-escalation -->';
@@ -17,6 +17,7 @@ export function planResearchFix(issues, cfg = {}) {
     if (!iss || typeof iss.number !== 'number') continue;
     if (iss.attempted) continue;
     if (!iss.diagnosis) continue;
+    if (isUnstableNonRequiredCheck(iss.body)) continue;
     const prNum = parseStuckPr(iss.body);
     if (prNum == null) continue;
     picked.push({ number: iss.number, prNum, diagnosis: String(iss.diagnosis) });
