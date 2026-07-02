@@ -34,7 +34,7 @@ test('high-variance metrics use their own wider band, not the global one', () =>
   assert.equal(isRegression('cost_usd', -19, 10), false);
   // precision/recall on a confusable routing cell carry noiseBandPct:20 too — a single
   // stochastic near-miss out of ~15-20 sampled routing decisions (-13.3%, issues
-  // #743/#744/#754; -15%, issue #746) is normal variance, not fileable…
+  // #743/#744/#754; -15%, issues #746/#756 (12x-confusable)) is normal variance, not fileable…
   assert.equal(isRegression('precision', -13.3, 10), false);
   assert.equal(isRegression('recall', -13.3, 10), false);
   assert.equal(isRegression('precision', -15, 10), false);
