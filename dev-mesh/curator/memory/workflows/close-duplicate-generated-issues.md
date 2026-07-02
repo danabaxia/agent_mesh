@@ -1,7 +1,7 @@
 ---
 slug: close-duplicate-generated-issues
 status: active
-provenance: "PR #770 (2026-07-02), closing #754 — 4th instance; refines the mechanism first documented after PR #766 (2026-07-02, closing #752) and PR #758 (2026-07-02, closing #745)"
+provenance: "PR #774 (2026-07-02), closing #756 — 5th instance, chain now fully closed; refines the mechanism first documented after PR #766 (2026-07-02, closing #752) and PR #758 (2026-07-02, closing #745)"
 ---
 
 # Pattern: close every duplicate generated issue when landing a shared-root-cause fix
@@ -91,12 +91,24 @@ worth checking whether their ledger entries are actually accumulating `cleanRuns
 since #757 in particular has now outlived several scan cycles).
 `precision` duplicates from PR #766's fix, each closed by its own separate PR
 instead of self-healing or a batch close: #742 (PR #748), #746 (PR #761), #752
-(PR #766 itself), #754 (PR #770). #756 remains open.
+(PR #766 itself), #754 (PR #770), #756 (PR #774) — chain now fully closed, 5
+separate PR/review cycles for one root cause.
+
+PR #774 is the sharpest confirmation yet that this is wasteful: unlike the four
+prior closes, it made **zero functional change** — `metrics.js`'s
+`noiseBandPct: 20` for `precision` (landed by PR #761/#766) already covered
+-15% swings before #774 ever opened, so the whole PR is a citation-list comment
+update (`#743/#744/#746/#754` → `#743/#744/#746/#754/#756`). The fix was
+complete; only the paper trail was stale. That means #756 was fully eligible for
+either (a) inclusion in a batch close alongside #754 (PR #770, same day), or
+(b) the ledger's own `recoverRuns`-cycle auto-close — a whole PR-author +
+review round-trip bought nothing but an updated comment.
 
 ## Provenance
 
-PR #770 (2026-07-02), closing #754 — 4th instance of the same fix-then-duplicate
-pattern, and the one that surfaced the `issues.js`/`recoverRuns` auto-recovery
-mechanism this file previously didn't account for. Prior instances: PR #766
-(2026-07-02, closing #752), PR #758 (2026-07-02, closing #745). Related:
-[[sibling-metric-noise-band-audit]].
+PR #774 (2026-07-02), closing #756 — 5th instance of the same fix-then-duplicate
+pattern, and the first with a diff containing no functional change at all (pure
+comment/citation update), sharpening the case for Step 5 (check `recoverRuns`
+before opening a new one-off PR). Prior instances: PR #770 (2026-07-02, closing
+#754), PR #766 (2026-07-02, closing #752), PR #758 (2026-07-02, closing #745).
+Related: [[sibling-metric-noise-band-audit]].
