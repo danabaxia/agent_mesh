@@ -1,7 +1,7 @@
 ---
 slug: sibling-metric-noise-band-audit
 status: active
-provenance: "PR #758 (2026-07-02), closing #745; follows quick.json#per-metric-noise-band-llm-variance (PR #461)"
+provenance: "PR #758 (2026-07-02), closing #745; PR #761 (2026-07-02), closing #746; PR #766 (2026-07-02), closing #752; follows quick.json#per-metric-noise-band-llm-variance (PR #461)"
 ---
 
 # Pattern: audit sibling metrics before landing a per-metric noise-band fix
@@ -45,19 +45,38 @@ root cause — recognize both when triaging a perf-regression finding.
    the sibling's forward-pointer issue immediately as part of the same PR — a review
    comment that "this should probably get its own issue" does not stop the next
    mesh-scan run from auto-filing duplicate `bug` issues against the ungated sibling.
+5. After the gating fix merges, sweep OPEN issues carrying the same finding marker
+   (`<!-- mesh-scan:perf:<cell>:<metric> -->`) as any issue the fix PR's `Closes #N`
+   references, and close the rest as duplicates too. A merged PR only auto-closes /
+   post-merge-reconciles the issue number(s) literally in its `Closes` line
+   (`planPostMergeReconcile` keys off `closingIssuesReferences`) — it does not know
+   about other open issues that share the same natural key. Confirmed gap: PR #761
+   fixed `precision`'s band (closing #746) and its merge-commit body also names
+   #743/#744, but three same-key duplicates filed by a second mesh-scan run before the
+   fix landed — #742 (`perf:3x-disjoint:precision`, dup of #752), #754
+   (`perf:6x-confusable:precision`, dup of #744), #756 (`perf:12x-confusable:precision`,
+   dup of #746) — were never referenced anywhere and are still OPEN after the fix
+   merged. They will stay open forever unless something explicitly closes them; the
+   fix alone only stops the *next* scan from refiling.
 
 ## Evidence
 
-Precision perf-regression `bug` issues open concurrently after PR #758 merged without
-a sibling fix: #742, #746, #752, #754, #756. PR #766 (2026-07-02) closed the gap by
-gating `precision` the same way, closing #752 — but left #742/#754/#756 open; see
-[[close-duplicate-generated-issues]] for that follow-on lesson (the merge-reconcile
-convention only closes the literally-referenced issue number, not every duplicate the
-scanner had already filed for the same root cause).
+Precision perf-regression `bug` issues filed against the ungated metric, two batches
+from two separate mesh-scan runs before the gating fix landed: first run (10:19:40Z)
+— #742, #743 (recall), #744, #745 (recall), #746; second run (11:30:14Z, same natural
+keys as three first-run issues, i.e. the coalesce-by-natural-key intake guard did not
+catch these as dups of an already-open issue) — #752, #754, #756. PR #758 closed #745
+(recall); PR #761 closed #746 and referenced #743/#744 in its merge body; PR #766
+(2026-07-02) independently closed #752 by gating `precision` the same way — but #742,
+#754, #756 remain open post-fix (step 5). `recall` duplicates #755/#757 were similarly
+left open after PR #758. See [[close-duplicate-generated-issues]] for the follow-on
+lesson: merge-reconcile automation only closes the literally-referenced issue number,
+not every duplicate the scanner had already filed for the same root cause.
 
 ## Provenance
 
-PR #758 (2026-07-02), closing #745. Follow-up: PR #766 (2026-07-02), closing #752,
-confirmed steps 1-3 of this pattern and surfaced [[close-duplicate-generated-issues]].
-Related: `quick.json#per-metric-noise-band-llm-variance`
-(PR #461), `quick.json#mir-noise-band-reversion` (PR #477).
+PR #758 (2026-07-02), closing #745; PR #761 (2026-07-02), closing #746; PR #766
+(2026-07-02), closing #752, confirmed steps 1-3 of this pattern and surfaced
+[[close-duplicate-generated-issues]]. Related:
+`quick.json#per-metric-noise-band-llm-variance` (PR #461),
+`quick.json#mir-noise-band-reversion` (PR #477).
