@@ -12,10 +12,11 @@
 // decisions (peers×trials — e.g. 15 for 6x-confusable, 20 for 12x-confusable), so a
 // SINGLE stochastic near-miss between two genuinely overlapping domains (the whole
 // point of the `confusable` pool) already swings the ratio by 1/N — 5-13% just from
-// one wrong pick. Issues #743/#744/#746 each filed on exactly one such swing (-13.3%,
-// -13.3%, -15%) despite the router already following the task-first-delegate and
-// no-hedging fixes. Widened to match cost_usd/latency_ms: tolerate a couple of
-// misroutes as normal variance, still flag a genuinely larger drift.
+// one wrong pick. Issues #743/#744/#746/#754 each filed on exactly one such swing
+// (-13.3%, -13.3%, -15%, -13.3%) despite the router already following the
+// task-first-delegate and no-hedging fixes. Widened to match cost_usd/latency_ms:
+// tolerate a couple of misroutes as normal variance, still flag a genuinely larger
+// drift.
 //
 // `recall` on confusable-routing cells carries the same LLM-variance character: it is
 // a mean over a handful of per-task routing decisions (e.g. 3 tasks on 6x-confusable),
