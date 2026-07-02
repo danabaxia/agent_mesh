@@ -206,6 +206,17 @@ test('buildRoutingMesh: marker-valid registry, N domain peers, planted facts', a
     assert.equal(mesh.driven, 'A');
     assert.equal(mesh.domains.length, 3);
     assert.deepEqual(Object.keys(mesh.agents).sort(), ['A', ...mesh.domains.map((d) => d.name)].sort());
+    // No-hedge single-peer directive (dev-mesh/curator/memory/workflows/
+    // no-hedge-single-peer-directive.md, PR #750) must land in prompts/system.md, the
+    // file buildAgentRuntimePrompt (src/agent-context.js) actually assembles into A's
+    // own obeyed prompt — AGENT.md is never read there (issue #747 PR #765 review).
+    // Assert on the exact literal so a future edit can't silently drop it or move it
+    // back to the inert location (issue #747 adds a precision-comparison clause
+    // alongside it for the 12x-confusable recall regression, asserted here too).
+    const callerSystemPrompt = await readFile(join(mesh.agents.A.root, 'prompts', 'system.md'), 'utf8');
+    assert.match(callerSystemPrompt, /exactly one/i);
+    assert.match(callerSystemPrompt, /never.*more than one/i);
+    assert.match(callerSystemPrompt, /compare the question.s exact wording/i);
     const reg = await readManagedRegistry(mesh.agents.A.root);
     assert.equal(reg.ok, true);
     assert.equal(Object.keys(reg.registry.peers).length, 3);
