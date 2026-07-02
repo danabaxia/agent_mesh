@@ -6,10 +6,16 @@
 // deterministic ratio/count metrics — so the generic 10% band false-positives on them
 // (e.g. a ~16-19% swing is normal LLM-latency noise, not a code regression).
 // A wider band requires a genuinely large move before filing.
+//
+// `recall` on confusable-routing cells carries the same LLM-variance character: it is
+// a mean over a handful of per-task routing decisions (e.g. 3 tasks on 6x-confusable),
+// so a single flipped decision swings the metric by ~33% and the rolling-median
+// baseline still leaves ~13% of headroom for normal jitter (issue #745, a -13.3% swing
+// with no code change).
 export const METRICS = {
   passRate:              { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
   precision:             { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
-  recall:                { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
+  recall:                { tier: 'soft', direction: 'higher_is_better', unit: 'ratio', noiseBandPct: 20 },
   quality_per_1k_tokens: { tier: 'soft', direction: 'higher_is_better', unit: 'score' },
   cost_usd:              { tier: 'soft', direction: 'lower_is_better',  unit: 'usd', noiseBandPct: 20 },
   latency_ms:            { tier: 'soft', direction: 'lower_is_better',  unit: 'ms', noiseBandPct: 20 },
