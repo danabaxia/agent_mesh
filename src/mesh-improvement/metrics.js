@@ -12,9 +12,14 @@
 // so a single flipped decision swings the metric by ~33% and the rolling-median
 // baseline still leaves ~13% of headroom for normal jitter (issue #745, a -13.3% swing
 // with no code change).
+//
+// `precision` carries the same character on disjoint-routing cells: it is also a mean
+// over a handful of per-task delegation decisions (e.g. 3 tasks on 3x-disjoint), so one
+// stray extra delegation swings the metric by the same ~13-33% no-code-change jitter
+// (issue #752, a -13.3% swing).
 export const METRICS = {
   passRate:              { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
-  precision:             { tier: 'soft', direction: 'higher_is_better', unit: 'ratio' },
+  precision:             { tier: 'soft', direction: 'higher_is_better', unit: 'ratio', noiseBandPct: 20 },
   recall:                { tier: 'soft', direction: 'higher_is_better', unit: 'ratio', noiseBandPct: 20 },
   quality_per_1k_tokens: { tier: 'soft', direction: 'higher_is_better', unit: 'score' },
   cost_usd:              { tier: 'soft', direction: 'lower_is_better',  unit: 'usd', noiseBandPct: 20 },
