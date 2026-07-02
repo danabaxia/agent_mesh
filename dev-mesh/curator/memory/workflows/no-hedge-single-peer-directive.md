@@ -100,6 +100,11 @@ per-task instruction ordering) in the same family of real-LLM eval-prompt
 reliability fixes; don't conflate persistent-prompt fixes with per-task-prompt
 fixes when citing either.
 
+`[[production-vs-fixture-precision-fix]]` — the sibling regression (Issue
+#742, 3x-disjoint cell), fixed at the production `src/a2a/peer-bridge.js`
+tool-description locus instead of this doc's eval-fixture locus. Read both
+before deciding where a future routing-precision fix belongs.
+
 ## Provenance
 
 PR #750 (2026-07-02): `fix: eval/perf/harness.mjs` — precision-regression fix
